@@ -82,6 +82,16 @@ npm run preview     # preview the production build
 npm run typecheck   # tsc --noEmit
 ```
 
+## Deployment
+
+Deploys to **Azure Static Web Apps (Free SKU)** via GitHub Actions
+([`.github/workflows/azure-deploy.yml`](.github/workflows/azure-deploy.yml)) on every push to
+`main`; PRs get a preview environment. SPA routing is handled by
+[`public/staticwebapp.config.json`](public/staticwebapp.config.json).
+
+**First deploy** (create the Static Web App, get the deployment token, add GitHub secrets, wire
+CORS): follow [DEPLOY.md](DEPLOY.md).
+
 ## Notes / follow-ups
 
 - **Backend/contract gaps that shape the UI are tracked in [backend-gaps.md](backend-gaps.md)** —
