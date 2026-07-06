@@ -1,0 +1,213 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   Forma Fitness — design tokens (ported from the design system
+   tokens/colors.css + typography.css). Light is default; dark
+   flips via [data-theme="dark"] on <html>.
+   ============================================================ */
+:root {
+  /* Brand ramp */
+  --forma-navy: #06224d;
+  --forma-aqua: #34d2c1;
+  --forma-sky: #39b1f2;
+  --forma-ice: #f3f5f8;
+  --forma-mint: #c9f0e6;
+  --forma-midnight: #031631;
+  --forma-slate: #113768;
+
+  --forma-gradient: linear-gradient(150deg, var(--forma-aqua) 0%, var(--forma-sky) 100%);
+  --forma-gradient-soft: linear-gradient(150deg, #5fe0d2 0%, #5bc0f5 100%);
+
+  /* Functional / status */
+  --forma-sleep: #1e4f86;
+  --forma-sleep-dark: #8dbeff;
+  --forma-gold: #f5c542;
+  --forma-success: #1f8a5b;
+  --forma-danger: #ef4444;
+
+  /* Light theme (default) */
+  --bg-app: var(--forma-ice);
+  --bg-surface: #ffffff;
+  --bg-subtle: #f7fbf9;
+  --bg-subtle-alt: #f4faf7;
+  --bg-selected: var(--forma-mint);
+  --bg-selected-sky: #dceffe;
+
+  --border-base: #d8e3dc;
+  --border-strong: #c8d6cc;
+  --border-subtle: #e2eae5;
+
+  --text-primary: var(--forma-navy);
+  --text-secondary: #4f6173;
+  --text-muted: #71879d;
+  --text-label: #586c80;
+  --text-on-accent: var(--forma-navy);
+  --text-on-mint: #0e4c45;
+
+  --accent: var(--forma-aqua);
+  --accent-text: #0e4c45;
+  --accent-secondary: var(--forma-sky);
+
+  --tab-active: var(--forma-aqua);
+  --tab-inactive: #6e8094;
+  --tab-bg: #ffffff;
+  --tab-border: #d6e2db;
+
+  --shadow-sm: 0 1px 2px rgba(6, 34, 77, 0.06);
+  --shadow-md: 0 4px 14px rgba(6, 34, 77, 0.08);
+  --shadow-lg: 0 18px 48px rgba(6, 34, 77, 0.14);
+
+  --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
+}
+
+[data-theme='dark'] {
+  --bg-app: #0f1714;
+  --bg-surface: #18251f;
+  --bg-subtle: #121e19;
+  --bg-subtle-alt: #121e19;
+  --bg-selected: var(--forma-mint);
+  --bg-selected-sky: #233544;
+
+  --border-base: #2e3f36;
+  --border-strong: #3a5145;
+  --border-subtle: #30463b;
+
+  --text-primary: #ffffff;
+  --text-secondary: #b7ccc0;
+  --text-muted: #8fa99a;
+  --text-label: #afd0bf;
+  --text-on-accent: var(--forma-navy);
+  --text-on-mint: #0e4c45;
+
+  --accent: var(--forma-aqua);
+  --accent-text: #34d2c1;
+  --accent-secondary: var(--forma-sky);
+
+  --tab-active: var(--forma-aqua);
+  --tab-inactive: #91a99e;
+  --tab-bg: #18251f;
+  --tab-border: #2d4137;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--bg-app);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+/* Numeric/metric display uses the mono/tabular figures for a data feel */
+.tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Restrained, brand-tinted scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* Chat streaming caret */
+.stream-caret::after {
+  content: '▌';
+  margin-left: 1px;
+  color: var(--accent);
+  animation: caret-blink 1s steps(2, start) infinite;
+}
+@keyframes caret-blink {
+  to {
+    visibility: hidden;
+  }
+}
+
+.typing-dot {
+  animation: typing-dot 1.2s infinite ease-in-out;
+}
+@keyframes typing-dot {
+  0%,
+  60%,
+  100% {
+    opacity: 0.25;
+    transform: translateY(0);
+  }
+  30% {
+    opacity: 1;
+    transform: translateY(-3px);
+  }
+}
+
+/* Markdown rendered coach messages */
+.md-body p {
+  margin: 0 0 10px;
+  line-height: 1.6;
+}
+.md-body p:last-child {
+  margin-bottom: 0;
+}
+.md-body ul,
+.md-body ol {
+  margin: 0 0 10px;
+  padding-left: 20px;
+}
+.md-body li {
+  margin: 2px 0;
+  line-height: 1.55;
+}
+.md-body strong {
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.md-body h1,
+.md-body h2,
+.md-body h3 {
+  margin: 12px 0 6px;
+  font-weight: 800;
+  color: var(--text-primary);
+}
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  background: var(--bg-subtle);
+  color: var(--accent-text);
+  padding: 1px 5px;
+  border-radius: 6px;
+}
+.md-body pre {
+  background: var(--bg-subtle);
+  border: 1px solid var(--border-base);
+  border-radius: 12px;
+  padding: 12px;
+  overflow-x: auto;
+}
+.md-body pre code {
+  background: transparent;
+  padding: 0;
+}
+.md-body a {
+  color: var(--accent-secondary);
+  text-decoration: underline;
+}
