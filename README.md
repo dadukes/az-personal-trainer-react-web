@@ -84,8 +84,10 @@ npm run typecheck   # tsc --noEmit
 
 ## Notes / follow-ups
 
-- The Progress "This week" stats (streak / workouts / minutes) are illustrative — the
-  backend `GET /api/progress` returns level, XP, and health insights only. Wire them
-  up when a stats endpoint exists.
-- `Fuel` "Recent meals" list is session-local (there is no meal-history GET endpoint yet).
+- **Backend/contract gaps that shape the UI are tracked in [backend-gaps.md](backend-gaps.md)** —
+  e.g. `primary_goal` isn't writable on the profile, there's no weekly-stats or meal-history
+  endpoint (so Progress "This week" is illustrative and Fuel "Recent meals" is session-local),
+  and health-insight `icon` values are open-ended. Read it before "fixing" placeholder-looking UI.
 - Consider code-splitting (dynamic `import()`) if bundle size becomes a concern.
+- Contributor/agent guidance lives in `CLAUDE.md` at the root and in `src/lib/`, `src/pages/`,
+  and `src/components/`.
