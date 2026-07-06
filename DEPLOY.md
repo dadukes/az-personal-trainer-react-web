@@ -56,12 +56,12 @@ az group create --name rg-forma --location eastus2
 # Create the Static Web App (Free SKU, no GitHub link — we deploy from our own workflow)
 az staticwebapp create \
   --name forma-web \
-  --resource-group rg-forma \
-  --location eastus2 \
+  --resource-group forma-fitness \
+  --location westeurope \
   --sku Free
 ```
 
-The resource's default hostname is `https://forma-web.azurestaticapps.net`
+The resource's default hostname is `https://green-rock-04e044103.7.azurestaticapps.net`
 (shown as `defaultHostname` in the create output).
 
 ---
