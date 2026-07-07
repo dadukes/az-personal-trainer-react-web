@@ -5,6 +5,7 @@ import AppShell from '@/components/AppShell';
 import { useAuth } from '@/providers/AuthProvider';
 import ChatHistoryPage from '@/pages/ChatHistoryPage';
 import CoachPage from '@/pages/CoachPage';
+import ExerciseDetailPage from '@/pages/ExerciseDetailPage';
 import FuelPage from '@/pages/FuelPage';
 import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
@@ -74,6 +75,7 @@ export default function App() {
       <Route path="/progress" element={<RequireAuth><ProgressPage /></RequireAuth>} />
       <Route path="/workout/:day" element={<RequireAuth><WorkoutSessionPage /></RequireAuth>} />
       <Route path="/plan/:day" element={<RequireAuth><PlanDayPage /></RequireAuth>} />
+      <Route path="/plan/:day/exercise/:section/:index" element={<RequireAuth><ExerciseDetailPage /></RequireAuth>} />
       <Route path="/chat-history" element={<RequireAuth><ChatHistoryPage /></RequireAuth>} />
 
       <Route path="*" element={<Navigate to="/" replace />} />

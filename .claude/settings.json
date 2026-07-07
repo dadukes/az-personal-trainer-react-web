@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find ../ai-personal-trainer-expo-ui/app ../ai-personal-trainer-expo-ui/components -iname '*workout*' -o -iname '*session*' 2>/dev/null | grep -v node_modules)",
+      "Read(//home/duke/vscode/node_projects/ai-personal-trainer-expo-ui/**)",
+      "Bash(npm run *)"
+    ]
+  }
+}

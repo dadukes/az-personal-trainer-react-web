@@ -44,10 +44,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-full min-h-screen" style={{ background: 'var(--bg-app)' }}>
+    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-app)' }}>
       {/* ── Desktop sidebar (≥1024) ─────────────────────────────────────────── */}
       <aside
-        className="sticky top-0 hidden h-screen w-[264px] min-w-[264px] flex-col justify-between p-4 lg:flex"
+        className="hidden h-full w-[264px] min-w-[264px] flex-col justify-between p-4 lg:flex"
         style={{ background: 'var(--bg-surface)', borderRight: '1px solid var(--border-base)' }}
       >
         <div className="flex flex-col gap-7">
@@ -125,7 +125,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ── Tablet icon rail (768–1023) ─────────────────────────────────────── */}
       <aside
-        className="sticky top-0 hidden h-screen w-[88px] min-w-[88px] flex-col items-center justify-between py-6 md:flex lg:hidden"
+        className="hidden h-full w-[88px] min-w-[88px] flex-col items-center justify-between py-6 md:flex lg:hidden"
         style={{ background: 'var(--bg-surface)', borderRight: '1px solid var(--border-base)' }}
       >
         <div className="flex flex-col items-center gap-6">
@@ -159,7 +159,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col pb-[74px] md:pb-0">{children}</main>
+      <main className="flex h-full min-w-0 flex-1 flex-col overflow-y-auto pb-[74px] md:pb-0">
+        {children}
+      </main>
 
       {/* ── Mobile bottom tab bar (<768) ────────────────────────────────────── */}
       <nav

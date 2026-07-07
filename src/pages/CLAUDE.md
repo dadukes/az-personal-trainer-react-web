@@ -26,7 +26,8 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + AI health insights |
-| `/plan/:day` | `PlanDayPage` | Read-only day plan (`getWorkoutPlan`) + start CTA |
+| `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
+| `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link/alternatives, remove |
 | `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → `logWorkout` |
 | `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts) |
 
@@ -44,6 +45,13 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   session-local (no history endpoint — see [../../backend-gaps.md](../../backend-gaps.md)).
 - **Progress**: `getProgress` returns level/XP + insights only; the "This week" stat tiles are
   **illustrative placeholders** pending a stats endpoint (see backend-gaps.md).
+- **Plan / Exercise detail**: edits go to a shared `planDraft` slice in the Zustand store (both
+  `/plan/:day` and the exercise route read/write it), not straight to the backend. `PlanDayPage`
+  seeds the draft from `getWorkoutPlan` (without clobbering unsaved edits) and is the **only**
+  place that persists — one `updatePlanDay` PATCH on `Save changes`, then `markPlanSaved`. On PATCH
+  the backend fuzzy-matches any `name`-without-`exercise_id` and stamps the canonical id, so a
+  manually typed exercise self-links on save; the detail page's search just lets the user pick the
+  exact match instead. `main` section ↔ the plan's `exercises` array.
 
 ## UI & branding
 

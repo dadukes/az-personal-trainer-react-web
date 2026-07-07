@@ -1,8 +1,40 @@
 import { create } from 'zustand';
 
-import type { CoachPersonality, FitnessLevel, PrimaryGoal } from '@/lib/api';
+import type {
+  CoachPersonality,
+  DashboardDayPlan,
+  DashboardExercise,
+  FitnessLevel,
+  PrimaryGoal,
+} from '@/lib/api';
 
 export type { CoachPersonality, FitnessLevel, PrimaryGoal };
+
+/** UI section keys; `main` maps to the plan's `exercises` array. */
+export type PlanSection = 'warmup' | 'main' | 'cooldown';
+
+const SECTION_FIELD: Record<PlanSection, 'warmup' | 'exercises' | 'cooldown'> = {
+  warmup: 'warmup',
+  main: 'exercises',
+  cooldown: 'cooldown',
+};
+
+/** An unsaved, editable copy of a single day's plan, shared across the plan + exercise routes. */
+export interface PlanDraft {
+  planId?: string;
+  day: string;
+  dayPlan: DashboardDayPlan;
+  dirty: boolean;
+}
+
+function mutateSection(
+  dayPlan: DashboardDayPlan,
+  section: PlanSection,
+  fn: (list: DashboardExercise[]) => DashboardExercise[],
+): DashboardDayPlan {
+  const field = SECTION_FIELD[section];
+  return { ...dayPlan, [field]: fn([...(dayPlan[field] ?? [])]) };
+}
 
 export interface UserProfile {
   display_name: string;
@@ -85,7 +117,25 @@ interface HealthSlice {
   setWeekPlan: (plan: WorkoutDay[]) => void;
 }
 
-type AppStore = ProfileSlice & ChatSlice & GamificationSlice & HealthSlice;
+interface PlanDraftSlice {
+  planDraft: PlanDraft | null;
+  /** Seeds the draft from the server plan, unless unsaved edits for the same day already exist. */
+  initPlanDraft: (planId: string | undefined, day: string, dayPlan: DashboardDayPlan) => void;
+  patchDraftExercise: (
+    section: PlanSection,
+    index: number,
+    patch: Partial<DashboardExercise>,
+  ) => void;
+  replaceDraftExercise: (section: PlanSection, index: number, exercise: DashboardExercise) => void;
+  addDraftExercise: (section: PlanSection, exercise: DashboardExercise) => void;
+  removeDraftExercise: (section: PlanSection, index: number) => void;
+  moveDraftExercise: (section: PlanSection, index: number, direction: -1 | 1) => void;
+  /** Replaces the draft with the canonical saved plan and clears the dirty flag. */
+  markPlanSaved: (dayPlan: DashboardDayPlan) => void;
+  clearPlanDraft: () => void;
+}
+
+type AppStore = ProfileSlice & ChatSlice & GamificationSlice & HealthSlice & PlanDraftSlice;
 
 export const INITIAL_PROFILE: UserProfile = {
   display_name: '',
@@ -181,4 +231,60 @@ export const useAppStore = create<AppStore>((set) => ({
   setHealthSnapshot: (partial) =>
     set((state) => ({ healthSnapshot: { ...state.healthSnapshot, ...partial } })),
   setWeekPlan: (plan) => set({ weekPlan: plan }),
+
+  // Plan draft (editable day plan)
+  planDraft: null,
+  initPlanDraft: (planId, day, dayPlan) =>
+    set((state) => {
+      const current = state.planDraft;
+      if (current && current.day === day && current.planId === planId && current.dirty) {
+        return {}; // keep unsaved edits
+      }
+      return { planDraft: { planId, day, dayPlan, dirty: false } };
+    }),
+  patchDraftExercise: (section, index, patch) =>
+    set((state) => {
+      if (!state.planDraft) return {};
+      const dayPlan = mutateSection(state.planDraft.dayPlan, section, (list) =>
+        list.map((ex, i) => (i === index ? { ...ex, ...patch } : ex)),
+      );
+      return { planDraft: { ...state.planDraft, dayPlan, dirty: true } };
+    }),
+  replaceDraftExercise: (section, index, exercise) =>
+    set((state) => {
+      if (!state.planDraft) return {};
+      const dayPlan = mutateSection(state.planDraft.dayPlan, section, (list) =>
+        list.map((ex, i) => (i === index ? exercise : ex)),
+      );
+      return { planDraft: { ...state.planDraft, dayPlan, dirty: true } };
+    }),
+  addDraftExercise: (section, exercise) =>
+    set((state) => {
+      if (!state.planDraft) return {};
+      const dayPlan = mutateSection(state.planDraft.dayPlan, section, (list) => [...list, exercise]);
+      return { planDraft: { ...state.planDraft, dayPlan, dirty: true } };
+    }),
+  removeDraftExercise: (section, index) =>
+    set((state) => {
+      if (!state.planDraft) return {};
+      const dayPlan = mutateSection(state.planDraft.dayPlan, section, (list) =>
+        list.filter((_, i) => i !== index),
+      );
+      return { planDraft: { ...state.planDraft, dayPlan, dirty: true } };
+    }),
+  moveDraftExercise: (section, index, direction) =>
+    set((state) => {
+      if (!state.planDraft) return {};
+      const target = index + direction;
+      const dayPlan = mutateSection(state.planDraft.dayPlan, section, (list) => {
+        if (target < 0 || target >= list.length) return list;
+        const next = [...list];
+        [next[index], next[target]] = [next[target], next[index]];
+        return next;
+      });
+      return { planDraft: { ...state.planDraft, dayPlan, dirty: true } };
+    }),
+  markPlanSaved: (dayPlan) =>
+    set((state) => (state.planDraft ? { planDraft: { ...state.planDraft, dayPlan, dirty: false } } : {})),
+  clearPlanDraft: () => set({ planDraft: null }),
 }));

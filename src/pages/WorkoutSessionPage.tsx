@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, Clock, Dumbbell, Minus, Plus, Trophy } from 'lucide-react';
+import { Check, ChevronLeft, Clock, Dumbbell, Minus, Pause, Play, Plus, RotateCcw, Trophy } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -12,10 +12,12 @@ import {
   type WeightUnit,
   type WorkoutSection,
 } from '@/lib/api';
+import { isTimedExercise } from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+const SESSION_KEY = 'forma:workout-session';
 
 function resolveDayKey(param?: string): string {
   if (param && DAY_KEYS.includes(param)) return param;
@@ -35,11 +37,21 @@ interface Block {
   section: WorkoutSection;
   timed: boolean;
   durationSeconds?: number;
+  repText?: string;
   repTarget: number;
   weight: number;
   weightUnit: WeightUnit;
   notes?: string;
   sets: SetActual[];
+}
+
+/** Only the mutable per-set progress is persisted; block structure is rebuilt from the plan. */
+interface PersistedSession {
+  planId?: string;
+  dayKey: string;
+  startedAt: string;
+  signature: string;
+  sets: SetActual[][];
 }
 
 function parseRepTarget(reps?: string): number {
@@ -58,7 +70,10 @@ function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[] {
   sections.forEach(([section, list]) => {
     (list ?? []).forEach((ex, i) => {
       const setCount = Math.max(1, ex.sets ?? 1);
-      const timed = ex.duration_seconds != null && (ex.reps == null || ex.reps === '');
+      // The backend fills `reps` with a descriptive string even for holds/carries
+      // (e.g. "30s hold", "45s walk", "3 minutes"), so `duration_seconds` is the
+      // reliable timed signal — pure rep-based exercises have no duration.
+      const timed = isTimedExercise(ex);
       const repTarget = parseRepTarget(ex.reps);
       const weight = ex.target_weight ?? ex.last_performance?.weight ?? 0;
       blocks.push({
@@ -68,6 +83,7 @@ function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[] {
         section,
         timed,
         durationSeconds: ex.duration_seconds,
+        repText: ex.reps,
         repTarget,
         weight,
         weightUnit: (ex.weight_unit as WeightUnit) ?? unit,
@@ -83,13 +99,36 @@ function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[] {
   return blocks;
 }
 
+/** Structural fingerprint used to decide whether a persisted session still matches the plan. */
+function signatureOf(blocks: Block[]): string {
+  return blocks.map((b) => `${b.key}:${b.sets.length}`).join('|');
+}
+
+function readPersisted(): PersistedSession | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as PersistedSession) : null;
+  } catch {
+    return null;
+  }
+}
+
+function clearPersisted() {
+  try {
+    localStorage.removeItem(SESSION_KEY);
+  } catch {
+    // ignore
+  }
+}
+
 function sectionLabel(section: WorkoutSection): string {
   return section === 'warmup' ? 'Warm-up' : section === 'cooldown' ? 'Cool-down' : 'Main';
 }
 
 function formatClock(total: number): string {
-  const m = Math.floor(total / 60);
-  const s = total % 60;
+  const t = Math.max(0, Math.floor(total));
+  const m = Math.floor(t / 60);
+  const s = t % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
@@ -106,11 +145,12 @@ export default function WorkoutSessionPage() {
   const [blocks, setBlocks] = useState<Block[]>([]);
   const [planId, setPlanId] = useState<string | undefined>();
   const [dayNotes, setDayNotes] = useState<string | undefined>();
+  const [startedAt, setStartedAt] = useState<Date | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
   const [xpEarned, setXpEarned] = useState<number | null>(null);
-  const startedAtRef = useRef(new Date());
+  const restoredRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -127,7 +167,30 @@ export default function WorkoutSessionPage() {
         const dp = plan?.plan?.[dayKey] ?? null;
         setPlanId(plan?.id);
         setDayNotes(dp?.ai_notes);
-        setBlocks(dp && !dp.is_rest_day ? buildBlocks(dp, unit) : []);
+        const fresh = dp && !dp.is_rest_day ? buildBlocks(dp, unit) : [];
+
+        // Restore in-progress captures from a previous (possibly backgrounded) session.
+        const persisted = readPersisted();
+        if (
+          fresh.length > 0 &&
+          persisted &&
+          persisted.dayKey === dayKey &&
+          persisted.planId === plan?.id &&
+          persisted.signature === signatureOf(fresh)
+        ) {
+          fresh.forEach((b, bi) => {
+            const savedSets = persisted.sets[bi];
+            if (savedSets) {
+              b.sets = b.sets.map((s, si) => savedSets[si] ?? s);
+            }
+          });
+          setStartedAt(new Date(persisted.startedAt));
+        } else {
+          if (fresh.length > 0) clearPersisted();
+          setStartedAt(new Date());
+        }
+        restoredRef.current = true;
+        setBlocks(fresh);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load your workout.');
       } finally {
@@ -139,11 +202,41 @@ export default function WorkoutSessionPage() {
     };
   }, [session, dayKey, unit]);
 
+  // Persist captured progress so nothing is lost when the screen goes inactive.
   useEffect(() => {
-    if (finished) return;
-    const id = setInterval(() => setElapsed((e) => e + 1), 1000);
-    return () => clearInterval(id);
-  }, [finished]);
+    if (!restoredRef.current || finished || !startedAt || blocks.length === 0) return;
+    const payload: PersistedSession = {
+      planId,
+      dayKey,
+      startedAt: startedAt.toISOString(),
+      signature: signatureOf(blocks),
+      sets: blocks.map((b) => b.sets),
+    };
+    try {
+      localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
+    } catch {
+      // ignore quota/serialization errors
+    }
+  }, [blocks, planId, dayKey, startedAt, finished]);
+
+  // Wall-clock timer: derive elapsed from the start time so backgrounding/screen-lock
+  // (which throttles JS timers) never loses accumulated workout time.
+  useEffect(() => {
+    if (finished || !startedAt) return;
+    const tick = () => setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000));
+    tick();
+    const id = setInterval(tick, 1000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tick();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    window.addEventListener('focus', tick);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+      window.removeEventListener('focus', tick);
+    };
+  }, [finished, startedAt]);
 
   const totalSets = useMemo(() => blocks.reduce((n, b) => n + b.sets.length, 0), [blocks]);
   const completedSets = useMemo(
@@ -165,6 +258,7 @@ export default function WorkoutSessionPage() {
 
   const finish = useCallback(async () => {
     setFinished(true);
+    clearPersisted();
     if (!session?.access_token) return;
     const loggedExercises: LoggedExercise[] = blocks.map((b) => ({
       exercise_id: b.exercise_id,
@@ -184,7 +278,7 @@ export default function WorkoutSessionPage() {
       const result = await logWorkout(session.access_token, {
         plan_id: planId,
         day: dayKey,
-        started_at: startedAtRef.current.toISOString(),
+        started_at: (startedAt ?? new Date()).toISOString(),
         completed_at: new Date().toISOString(),
         duration_seconds: elapsed,
         exercises: loggedExercises,
@@ -196,11 +290,11 @@ export default function WorkoutSessionPage() {
     } finally {
       setSaving(false);
     }
-  }, [session, blocks, planId, dayKey, elapsed, addXp]);
+  }, [session, blocks, planId, dayKey, elapsed, startedAt, addXp]);
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center" style={{ background: 'var(--bg-app)' }}>
+      <div className="flex h-full items-center justify-center" style={{ background: 'var(--bg-app)' }}>
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
       </div>
     );
@@ -268,7 +362,7 @@ export default function WorkoutSessionPage() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-5 p-5 pb-32 sm:p-8">
+    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-5 p-5 pb-40 sm:p-8 sm:pb-40">
       {/* Header */}
       <div className="flex items-center gap-3">
         <button
@@ -309,6 +403,11 @@ export default function WorkoutSessionPage() {
               <div className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>
                 {block.name}
               </div>
+              {block.timed && block.repText ? (
+                <div className="mt-0.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
+                  {block.repText}
+                </div>
+              ) : null}
               {block.notes ? (
                 <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
                   {block.notes}
@@ -319,32 +418,38 @@ export default function WorkoutSessionPage() {
           </div>
 
           <div className="flex flex-col gap-2">
-            {block.sets.map((set, si) => (
-              <div
-                key={si}
-                className="flex items-center gap-3 rounded-xl px-3 py-2.5"
-                style={{
-                  background: set.completed ? 'var(--bg-selected)' : 'var(--bg-subtle)',
-                  border: `1px solid ${set.completed ? 'var(--accent)' : 'var(--border-base)'}`,
-                }}
-              >
-                <span
-                  className="tabular w-12 text-[12px] font-bold"
-                  style={{ color: set.completed ? 'var(--text-on-mint)' : 'var(--text-muted)' }}
+            {block.sets.map((set, si) =>
+              block.timed ? (
+                <TimedSetRow
+                  key={si}
+                  index={si}
+                  durationSeconds={block.durationSeconds ?? 30}
+                  completed={set.completed}
+                  onToggle={() => mutateSet(bi, si, { completed: !set.completed })}
+                  onComplete={() => mutateSet(bi, si, { completed: true })}
+                />
+              ) : (
+                <div
+                  key={si}
+                  className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                  style={{
+                    background: set.completed ? 'var(--bg-selected)' : 'var(--bg-subtle)',
+                    border: `1px solid ${set.completed ? 'var(--accent)' : 'var(--border-base)'}`,
+                  }}
                 >
-                  {block.timed ? 'Hold' : `Set ${si + 1}`}
-                </span>
-
-                {block.timed ? (
-                  <span className="tabular flex-1 text-[14px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {block.durationSeconds ?? 30}s
+                  <span
+                    className="tabular w-12 text-[12px] font-bold"
+                    style={{ color: set.completed ? 'var(--text-on-mint)' : 'var(--text-muted)' }}
+                  >
+                    {`Set ${si + 1}`}
                   </span>
-                ) : (
+
                   <div className="flex flex-1 items-center gap-4">
                     <Stepper
                       label="reps"
                       value={set.reps}
-                      onDelta={(d) => mutateSet(bi, si, { reps: Math.max(0, set.reps + d) })}
+                      step={1}
+                      onDelta={(d) => mutateSet(bi, si, { reps: Math.max(0, Math.round(set.reps + d)) })}
                     />
                     <Stepper
                       label={block.weightUnit}
@@ -353,28 +458,28 @@ export default function WorkoutSessionPage() {
                       onDelta={(d) => mutateSet(bi, si, { weight: Math.max(0, Math.round((set.weight + d) * 10) / 10) })}
                     />
                   </div>
-                )}
 
-                <button
-                  onClick={() => mutateSet(bi, si, { completed: !set.completed })}
-                  aria-label={set.completed ? 'Mark set incomplete' : 'Mark set complete'}
-                  className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
-                  style={{
-                    background: set.completed ? 'var(--accent)' : 'transparent',
-                    border: set.completed ? 'none' : '1.5px solid var(--border-strong)',
-                  }}
-                >
-                  {set.completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
-                </button>
-              </div>
-            ))}
+                  <button
+                    onClick={() => mutateSet(bi, si, { completed: !set.completed })}
+                    aria-label={set.completed ? 'Mark set incomplete' : 'Mark set complete'}
+                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+                    style={{
+                      background: set.completed ? 'var(--accent)' : 'transparent',
+                      border: set.completed ? 'none' : '1.5px solid var(--border-strong)',
+                    }}
+                  >
+                    {set.completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
+                  </button>
+                </div>
+              ),
+            )}
           </div>
         </Card>
       ))}
 
-      {/* Sticky finish bar */}
+      {/* Sticky finish bar — sits above the mobile tab bar (bottom-[74px]) so it stays reachable. */}
       <div
-        className="fixed inset-x-0 bottom-0 z-20 px-5 py-4 md:left-[264px]"
+        className="fixed inset-x-0 bottom-[74px] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
         style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
       >
         <div className="mx-auto flex max-w-[760px] items-center gap-3">
@@ -386,6 +491,159 @@ export default function WorkoutSessionPage() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * A timed / hold set with a countdown stopwatch. Uses a wall-clock deadline so the
+ * countdown stays accurate across screen-lock / tab-backgrounding (JS timers throttle
+ * or stall there). Auto-marks the set complete when the countdown reaches zero.
+ */
+function TimedSetRow({
+  index,
+  durationSeconds,
+  completed,
+  onToggle,
+  onComplete,
+}: {
+  index: number;
+  durationSeconds: number;
+  completed: boolean;
+  onToggle: () => void;
+  onComplete: () => void;
+}) {
+  type Status = 'idle' | 'running' | 'paused' | 'done';
+  const [status, setStatus] = useState<Status>('idle');
+  const [remaining, setRemaining] = useState(durationSeconds);
+  const endsAtRef = useRef<number | null>(null);
+  const firedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  const evaluate = useCallback(() => {
+    const endsAt = endsAtRef.current;
+    if (endsAt == null) return;
+    const next = Math.max(0, (endsAt - Date.now()) / 1000);
+    setRemaining(next);
+    if (next <= 0 && !firedRef.current) {
+      firedRef.current = true;
+      endsAtRef.current = null;
+      setStatus('done');
+      onCompleteRef.current();
+    }
+  }, []);
+
+  useEffect(() => {
+    if (status !== 'running') return;
+    const id = setInterval(evaluate, 200);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') evaluate();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [status, evaluate]);
+
+  const toggleTimer = useCallback(() => {
+    if (status === 'running') {
+      const endsAt = endsAtRef.current;
+      if (endsAt != null) setRemaining(Math.max(0, (endsAt - Date.now()) / 1000));
+      endsAtRef.current = null;
+      setStatus('paused');
+    } else {
+      // (re)start from whatever is on the clock
+      const from = status === 'idle' ? durationSeconds : remaining;
+      firedRef.current = false;
+      endsAtRef.current = Date.now() + from * 1000;
+      setRemaining(from);
+      setStatus('running');
+    }
+  }, [status, remaining, durationSeconds]);
+
+  const reset = useCallback(() => {
+    endsAtRef.current = null;
+    firedRef.current = false;
+    setRemaining(durationSeconds);
+    setStatus('idle');
+  }, [durationSeconds]);
+
+  const isRunning = status === 'running';
+  const progress = durationSeconds > 0 ? Math.min(1, Math.max(0, (durationSeconds - remaining) / durationSeconds)) : 0;
+  const displaySeconds = Math.ceil(Math.max(0, remaining));
+
+  return (
+    <div
+      className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+      style={{
+        background: completed ? 'var(--bg-selected)' : 'var(--bg-subtle)',
+        border: `1px solid ${completed ? 'var(--accent)' : 'var(--border-base)'}`,
+      }}
+    >
+      <span
+        className="tabular w-12 text-[12px] font-bold"
+        style={{ color: completed ? 'var(--text-on-mint)' : 'var(--text-muted)' }}
+      >
+        Hold
+      </span>
+
+      <div className="flex flex-1 items-center gap-3">
+        <button
+          onClick={toggleTimer}
+          disabled={completed}
+          aria-label={isRunning ? 'Pause timer' : status === 'idle' ? 'Start timer' : 'Resume timer'}
+          className="relative flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90 disabled:opacity-40"
+          style={{
+            background: isRunning ? 'var(--bg-surface)' : 'var(--accent)',
+            border: isRunning ? '1.5px solid var(--accent)' : 'none',
+          }}
+        >
+          {isRunning ? (
+            <Pause size={15} color="var(--accent-text)" strokeWidth={2.4} fill="var(--accent-text)" />
+          ) : (
+            <Play size={15} color="#06224D" strokeWidth={2.4} fill="#06224D" />
+          )}
+        </button>
+
+        <div className="min-w-0 flex-1">
+          <div
+            className="tabular text-[15px] font-extrabold"
+            style={{ color: status === 'paused' ? 'var(--text-muted)' : 'var(--text-primary)' }}
+          >
+            {formatClock(displaySeconds)}
+          </div>
+          <div className="mt-0.5 h-1 overflow-hidden rounded-full" style={{ background: 'var(--border-base)' }}>
+            <div className="h-full rounded-full" style={{ width: `${progress * 100}%`, background: 'var(--accent)' }} />
+          </div>
+        </div>
+
+        {status === 'paused' || (completed && status !== 'idle') ? (
+          <button
+            onClick={reset}
+            aria-label="Reset timer"
+            className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+          >
+            <RotateCcw size={13} color="var(--text-secondary)" />
+          </button>
+        ) : null}
+      </div>
+
+      <button
+        onClick={onToggle}
+        aria-label={completed ? 'Mark hold incomplete' : 'Mark hold complete'}
+        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+        style={{
+          background: completed ? 'var(--accent)' : 'transparent',
+          border: completed ? 'none' : '1.5px solid var(--border-strong)',
+        }}
+      >
+        {completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
+      </button>
+
+      <span className="sr-only">Set {index + 1}</span>
     </div>
   );
 }
