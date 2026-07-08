@@ -75,6 +75,24 @@ The design's Step 2 collects a training **rhythm** as *3 / 4 / 5 days*. The back
 - **Note / optional fix:** if specific-day selection matters, add a day-picker to onboarding and
   send the actual chosen days instead of a synthesized spread. Not blocking — just a fidelity gap.
 
+## 6. 🟡 No workout-completion status in the dashboard
+
+**Endpoint:** `GET /api/dashboard` → `active_workout_plan.plan[<day>]`
+
+`POST /api/workouts/log` records a completed session (and awards XP), but the dashboard's
+per-day plan (`DashboardDayPlan`) exposes **no flag** for "this day's workout was completed"
+(no `completed`, `last_completed_at`, `logged`, etc.). So after finishing a workout there is no
+server-side way to know the day is done, nor to show a completed badge on return visits /
+other devices.
+
+- **Current web behavior:** completion is tracked **client-side only** in `localStorage`
+  (see `src/lib/workout.ts` + the `completedWorkouts` slice in `src/store/useAppStore.ts`),
+  keyed by `plan_id + calendar date`. Drives the "Completed 💪" badge on Home's today card and
+  the week-view watermark. This does **not** sync across devices and is cleared with site data.
+- **Fix:** expose completion on the dashboard day plan — e.g. `completed_at` / `logged: boolean`
+  (ideally derived from the workout log for the plan + date), then the UI can read authoritative
+  status instead of the local mirror.
+
 ---
 
 ## Not gaps (verified working against the local backend)
@@ -84,5 +102,8 @@ The design's Step 2 collects a training **rhythm** as *3 / 4 / 5 days*. The back
 - `GET /api/profile`, `GET /api/dashboard`, `GET /api/progress` return `200` with real data. ✅
 - `POST /api/workouts/log` **is** registered, so `logWorkout`'s primary path works;
   the `POST /api/activity/log` fallback in `logWorkout` is just belt-and-suspenders. ✅
-- CORS: the backend's `local.settings.json` has `Host.CORS: "*"`, so the browser origin
-  (`http://localhost:5173`) is allowed with no changes. ✅
+- CORS: the **local** backend's `local.settings.json` has `Host.CORS: "*"`, so the dev origin
+  (`http://localhost:5173`) is allowed with no changes. ✅ **Note:** the **deployed** Azure
+  Functions app does **not** allow `http://localhost:5173` — running the dev server against the
+  deployed API is blocked by CORS in the browser (server-to-server calls are unaffected). Add the
+  dev origin to the deployed app's CORS allow-list to test the dev build against prod data.

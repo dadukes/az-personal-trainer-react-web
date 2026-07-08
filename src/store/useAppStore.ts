@@ -7,6 +7,7 @@ import type {
   FitnessLevel,
   PrimaryGoal,
 } from '@/lib/api';
+import { completionKey } from '@/lib/workout';
 
 export type { CoachPersonality, FitnessLevel, PrimaryGoal };
 
@@ -80,9 +81,17 @@ export interface HealthSnapshot {
 export interface WorkoutDay {
   day: string;
   key: string;
+  /** Local `YYYY-MM-DD` this cell represents — used to look up completion. */
+  date: string;
   status: 'today' | 'planned' | 'rest';
   title: string;
   duration: string;
+}
+
+/** Metadata stored per completed workout (keyed by `completionKey`). */
+export interface WorkoutCompletion {
+  completedAt: string;
+  xp: number;
 }
 
 interface ProfileSlice {
@@ -117,6 +126,12 @@ interface HealthSlice {
   setWeekPlan: (plan: WorkoutDay[]) => void;
 }
 
+interface WorkoutCompletionSlice {
+  /** completionKey(planId, dateISO) -> completion meta. Mirrored to localStorage. */
+  completedWorkouts: Record<string, WorkoutCompletion>;
+  markWorkoutCompleted: (planId: string | undefined, dateISO: string, xp: number) => void;
+}
+
 interface PlanDraftSlice {
   planDraft: PlanDraft | null;
   /** Seeds the draft from the server plan, unless unsaved edits for the same day already exist. */
@@ -135,7 +150,31 @@ interface PlanDraftSlice {
   clearPlanDraft: () => void;
 }
 
-type AppStore = ProfileSlice & ChatSlice & GamificationSlice & HealthSlice & PlanDraftSlice;
+type AppStore = ProfileSlice &
+  ChatSlice &
+  GamificationSlice &
+  HealthSlice &
+  WorkoutCompletionSlice &
+  PlanDraftSlice;
+
+const COMPLETIONS_KEY = 'forma:completed-workouts';
+
+function loadCompletions(): Record<string, WorkoutCompletion> {
+  try {
+    const raw = localStorage.getItem(COMPLETIONS_KEY);
+    return raw ? (JSON.parse(raw) as Record<string, WorkoutCompletion>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function persistCompletions(map: Record<string, WorkoutCompletion>) {
+  try {
+    localStorage.setItem(COMPLETIONS_KEY, JSON.stringify(map));
+  } catch {
+    // ignore quota/serialization errors
+  }
+}
 
 export const INITIAL_PROFILE: UserProfile = {
   display_name: '',
@@ -231,6 +270,18 @@ export const useAppStore = create<AppStore>((set) => ({
   setHealthSnapshot: (partial) =>
     set((state) => ({ healthSnapshot: { ...state.healthSnapshot, ...partial } })),
   setWeekPlan: (plan) => set({ weekPlan: plan }),
+
+  // Workout completion (client-side; see backend-gaps.md #6)
+  completedWorkouts: loadCompletions(),
+  markWorkoutCompleted: (planId, dateISO, xp) =>
+    set((state) => {
+      const next = {
+        ...state.completedWorkouts,
+        [completionKey(planId, dateISO)]: { completedAt: new Date().toISOString(), xp },
+      };
+      persistCompletions(next);
+      return { completedWorkouts: next };
+    }),
 
   // Plan draft (editable day plan)
   planDraft: null,

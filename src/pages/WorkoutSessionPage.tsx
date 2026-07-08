@@ -1,7 +1,8 @@
-import { Check, ChevronLeft, Clock, Dumbbell, Minus, Pause, Play, Plus, RotateCcw, Trophy } from 'lucide-react';
+import { Check, ChevronLeft, Clock, Dumbbell, Minus, Pause, Play, Plus, RotateCcw } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import Confetti from '@/components/Confetti';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import {
   getDashboard,
@@ -13,6 +14,7 @@ import {
   type WorkoutSection,
 } from '@/lib/api';
 import { isTimedExercise } from '@/lib/exercise';
+import { dateForDayKey } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -136,7 +138,7 @@ export default function WorkoutSessionPage() {
   const { day } = useParams<{ day: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
-  const { profile, addXp } = useAppStore();
+  const { profile, addXp, markWorkoutCompleted } = useAppStore();
   const unit: WeightUnit = profile.preferred_unit_system === 'imperial' ? 'lb' : 'kg';
   const dayKey = resolveDayKey(day);
 
@@ -274,6 +276,7 @@ export default function WorkoutSessionPage() {
       })),
     }));
     setSaving(true);
+    let earned = 0;
     try {
       const result = await logWorkout(session.access_token, {
         plan_id: planId,
@@ -283,14 +286,17 @@ export default function WorkoutSessionPage() {
         duration_seconds: elapsed,
         exercises: loggedExercises,
       });
+      earned = result.xp_earned;
       setXpEarned(result.xp_earned);
       addXp(result.xp_earned);
     } catch {
       // logWorkout falls back internally
     } finally {
       setSaving(false);
+      // Mark the day done locally regardless of network outcome — the user finished it.
+      markWorkoutCompleted(planId, dateForDayKey(dayKey), earned);
     }
-  }, [session, blocks, planId, dayKey, elapsed, startedAt, addXp]);
+  }, [session, blocks, planId, dayKey, elapsed, startedAt, addXp, markWorkoutCompleted]);
 
   if (loading) {
     return (
@@ -319,8 +325,9 @@ export default function WorkoutSessionPage() {
   if (finished) {
     return (
       <div className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-5 p-8 pt-16 text-center">
-        <div className="flex h-20 w-20 items-center justify-center rounded-full" style={{ background: 'var(--forma-mint)' }}>
-          <Trophy size={38} color="#F5C542" />
+        <Confetti />
+        <div className="flex h-20 w-20 items-center justify-center rounded-full text-[38px]" style={{ background: 'var(--forma-mint)' }}>
+          💪
         </div>
         <div className="text-[28px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
           Workout complete

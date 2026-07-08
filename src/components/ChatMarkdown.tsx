@@ -53,9 +53,17 @@ function renderMarkdown(md: string): string {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    // Horizontal rule: a line of only ---, ***, or ___ (3+).
+    if (/^\s*([-*_])\1{2,}\s*$/.test(line)) {
+      closeList();
+      html.push('<hr>');
+      continue;
+    }
+
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       closeList();
+      // Clamp to h6 (regex already caps at 6) so we never emit invalid tags.
       const level = heading[1].length;
       html.push(`<h${level}>${inlineFormat(heading[2])}</h${level}>`);
       continue;

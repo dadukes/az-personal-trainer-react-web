@@ -1,4 +1,4 @@
-import { Activity, Calendar, Flame, HeartPulse, MessageCircle, Moon, Play, ShieldCheck, Zap } from 'lucide-react';
+import { Activity, Calendar, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, ShieldCheck, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -6,6 +6,7 @@ import ScreenHeader from '@/components/ScreenHeader';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
 import { getDashboard, submitPulse } from '@/lib/api';
 import { isNativeHealthAvailable, readTodayHealthData } from '@/lib/health';
+import { completionKey, localISODate } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -41,9 +42,12 @@ function formatEmailName(email: string | null | undefined): string {
 export default function HomePage() {
   const navigate = useNavigate();
   const { session, user } = useAuth();
-  const { healthSnapshot, setHealthSnapshot, weekPlan, setWeekPlan, appendMessage, profile } = useAppStore();
+  const { healthSnapshot, setHealthSnapshot, weekPlan, setWeekPlan, appendMessage, profile, completedWorkouts } =
+    useAppStore();
   const [pulse, setPulse] = useState<StressLevel>(null);
   const [pulseSubmitting, setPulseSubmitting] = useState(false);
+  const [planId, setPlanId] = useState<string | undefined>();
+  const [redoConfirm, setRedoConfirm] = useState<string | null>(null);
   const isNative = isNativeHealthAvailable();
 
   const loadDashboard = useCallback(async () => {
@@ -51,6 +55,7 @@ export default function HomePage() {
     try {
       const result = await getDashboard(session.access_token);
       const plan = result.data.active_workout_plan;
+      setPlanId(plan?.id);
       if (!plan) {
         setWeekPlan([]);
         return;
@@ -61,14 +66,16 @@ export default function HomePage() {
         const d = new Date();
         d.setDate(d.getDate() + idx);
         const key = DAY_KEYS[d.getDay()];
+        const date = localISODate(d);
         const dayPlan = plan.plan[key];
         const status = (key === todayKey ? 'today' : 'planned') as 'today' | 'planned' | 'rest';
         if (!dayPlan || dayPlan.is_rest_day) {
-          return { day: label, key, status, title: 'Rest', duration: '-' };
+          return { day: label, key, date, status, title: 'Rest', duration: '-' };
         }
         return {
           day: label,
           key,
+          date,
           status,
           title: dayPlan.focus ?? 'Workout',
           duration: dayPlan.estimated_duration_minutes ? `${dayPlan.estimated_duration_minutes}m` : '-',
@@ -93,6 +100,21 @@ export default function HomePage() {
 
   const hasPlan = weekPlan.length > 0;
   const todayWorkout = weekPlan.find((d) => d.status === 'today');
+
+  const isDayCompleted = useCallback(
+    (dateISO: string) => Boolean(completedWorkouts[completionKey(planId, dateISO)]),
+    [completedWorkouts, planId],
+  );
+  const todayHasWorkout = Boolean(todayWorkout && todayWorkout.duration !== '-');
+  const todayCompleted = todayWorkout ? isDayCompleted(todayWorkout.date) : false;
+
+  const startTodayWorkout = () => {
+    if (todayCompleted) {
+      setRedoConfirm(todayWorkout?.key ?? 'today');
+      return;
+    }
+    navigate('/workout/today');
+  };
 
   const greeting = useMemo(() => {
     const storedName = profile.display_name?.trim();
@@ -216,17 +238,28 @@ export default function HomePage() {
             className="flex items-center justify-between rounded-[20px] px-6 py-6 sm:px-7"
             style={{ background: 'var(--forma-navy)' }}
           >
-            <div>
-              <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--forma-mint)' }}>
-                TODAY&rsquo;S PLAN
-              </div>
+            <div className="min-w-0">
+              {todayCompleted ? (
+                <div
+                  className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold tracking-[0.04em]"
+                  style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
+                >
+                  <span>COMPLETED</span>
+                  <span aria-hidden className="text-[13px] leading-none">💪</span>
+                </div>
+              ) : (
+                <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--forma-mint)' }}>
+                  TODAY&rsquo;S PLAN
+                </div>
+              )}
               <div className="my-1.5 text-[24px] font-extrabold text-white">
                 {todayWorkout?.title ?? 'Rest Day'}
               </div>
-              {todayWorkout && todayWorkout.duration !== '-' ? (
+              {todayHasWorkout ? (
                 <div className="flex items-center gap-1.5 text-[13.5px]" style={{ color: '#C9F0E6' }}>
                   <Calendar size={14} color="#C9F0E6" />
-                  <span>{todayWorkout.duration}</span>
+                  <span>{todayWorkout?.duration}</span>
+                  {todayCompleted ? <span style={{ color: 'var(--forma-mint)' }}>· Nice work today</span> : null}
                 </div>
               ) : null}
             </div>
@@ -241,14 +274,23 @@ export default function HomePage() {
                   View full plan
                 </Button>
               ) : null}
-              <button
-                onClick={() => navigate('/workout/today')}
-                aria-label="Start today's workout"
-                className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-                style={{ background: 'var(--bg-surface)' }}
-              >
-                <Play size={22} color="#06224D" fill="#06224D" />
-              </button>
+              {todayHasWorkout ? (
+                <button
+                  onClick={startTodayWorkout}
+                  aria-label={todayCompleted ? 'Do this workout again' : "Start today's workout"}
+                  className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
+                  style={{
+                    background: 'var(--forma-aqua)',
+                    boxShadow: '0 6px 18px rgba(52,210,193,0.35)',
+                  }}
+                >
+                  {todayCompleted ? (
+                    <RotateCcw size={22} color="#06224D" strokeWidth={2.6} />
+                  ) : (
+                    <Play size={22} color="#06224D" fill="#06224D" style={{ marginLeft: 2 }} />
+                  )}
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -290,16 +332,35 @@ export default function HomePage() {
           <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
             {weekPlan.map((day) => {
               const isToday = day.status === 'today';
+              const completed = isDayCompleted(day.date);
               return (
                 <button
                   key={day.key}
                   onClick={() => navigate(`/plan/${day.key}`)}
-                  className="rounded-[18px] p-4 text-left transition-transform active:scale-[0.98]"
+                  className="relative overflow-hidden rounded-[18px] p-4 text-left transition-transform active:scale-[0.98]"
                   style={{
                     background: isToday ? 'var(--bg-selected)' : 'var(--bg-surface)',
-                    border: `1px solid ${isToday ? 'var(--accent)' : 'var(--border-base)'}`,
+                    border: `1px solid ${completed ? 'var(--accent)' : isToday ? 'var(--accent)' : 'var(--border-base)'}`,
                   }}
                 >
+                  {completed ? (
+                    <>
+                      {/* Faint muscle watermark */}
+                      <span
+                        aria-hidden
+                        className="pointer-events-none absolute -bottom-2 -right-1 text-[52px] leading-none opacity-[0.12] select-none"
+                      >
+                        💪
+                      </span>
+                      {/* Corner "Done" ribbon */}
+                      <span
+                        className="absolute right-0 top-0 inline-flex items-center gap-1 rounded-bl-[12px] px-2 py-1 text-[9.5px] font-extrabold tracking-[0.04em]"
+                        style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
+                      >
+                        DONE 💪
+                      </span>
+                    </>
+                  ) : null}
                   <div
                     className="text-[12px] font-semibold"
                     style={{ color: isToday ? 'var(--text-on-mint)' : 'var(--text-muted)' }}
@@ -321,6 +382,48 @@ export default function HomePage() {
                 </button>
               );
             })}
+          </div>
+        </div>
+      ) : null}
+
+      {/* Redo confirmation — a completed workout asks before starting again. */}
+      {redoConfirm ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-5"
+          style={{ background: 'rgba(6,34,77,0.45)' }}
+          onClick={() => setRedoConfirm(null)}
+        >
+          <div
+            role="dialog"
+            aria-modal="true"
+            onClick={(e) => e.stopPropagation()}
+            className="w-full max-w-[380px] rounded-[24px] p-6 text-center"
+            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+          >
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-[28px]" style={{ background: 'var(--forma-mint)' }}>
+              💪
+            </div>
+            <div className="text-[18px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+              Already crushed it today
+            </div>
+            <p className="mx-auto mt-2 max-w-[300px] text-[14px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+              You&rsquo;ve already completed this workout. Want to run through it again?
+            </p>
+            <div className="mt-5 flex gap-3">
+              <Button variant="secondary" fullWidth onClick={() => setRedoConfirm(null)}>
+                Not now
+              </Button>
+              <Button
+                fullWidth
+                onClick={() => {
+                  const key = redoConfirm;
+                  setRedoConfirm(null);
+                  navigate(`/workout/${key}`);
+                }}
+              >
+                Do it again
+              </Button>
+            </div>
           </div>
         </div>
       ) : null}
