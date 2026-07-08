@@ -127,18 +127,46 @@ export interface PendingInsight {
   created_at: string;
 }
 
+/** Authoritative per-day workout completion for the current Monday-start week. */
+export interface CompletedDay {
+  session_id: string;
+  completed_at: string;
+}
+
 export interface DashboardResponse {
   success: boolean;
   data: {
     active_workout_plan: ActiveWorkoutPlan | null;
     pending_insights: PendingInsight[];
+    /** Keyed by weekday name (`monday`…`sunday`) for the current week; absent days aren't done. */
+    completed_days?: Record<string, CompletedDay>;
   };
 }
+
+/** Stable icon enum for health insights (see API_docs). Unknown values coerce to `general`. */
+export type HealthInsightIcon =
+  | 'heart_pulse'
+  | 'sleep'
+  | 'steps'
+  | 'stress'
+  | 'energy'
+  | 'calories'
+  | 'workout'
+  | 'trophy'
+  | 'trending_up'
+  | 'general';
 
 export interface HealthInsight {
   title: string;
   description: string;
-  icon: string;
+  icon: HealthInsightIcon | string;
+}
+
+/** Activity summary for the current week, all computed in the user's timezone. */
+export interface WeeklyActivityStats {
+  consistency_streak_days: number;
+  workouts_this_week: number;
+  minutes_trained_this_week: number;
 }
 
 export interface ProgressResponse {
@@ -147,6 +175,7 @@ export interface ProgressResponse {
     current_level: number;
     current_xp: number;
     xp_to_next_level: number;
+    this_week: WeeklyActivityStats;
     health_insights: HealthInsight[];
   };
 }
@@ -217,6 +246,26 @@ export interface NutritionLogResponse {
   fat_g: number | null;
   ai_feedback: string | null;
   logged_at: string;
+}
+
+/** A stored meal row from `GET /api/nutrition/logs` (superset of the POST response). */
+export interface NutritionLogEntry {
+  id: string;
+  user_id: string;
+  logged_at: string;
+  meal_description: string;
+  estimated_calories: number | null;
+  protein_g: number | null;
+  carbs_g: number | null;
+  fat_g: number | null;
+  ai_feedback: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NutritionLogsResponse {
+  success: boolean;
+  logs: NutritionLogEntry[];
 }
 
 // ─── Workout / exercise types ─────────────────────────────────────────────────
@@ -613,6 +662,18 @@ export async function logNutrition(
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** Recent meals (most-recent first) for the Fuel "Recent meals" history list. */
+export async function getNutritionLogs(
+  accessToken: string,
+  limit = 20,
+  offset = 0,
+): Promise<NutritionLogsResponse> {
+  return apiFetch<NutritionLogsResponse>(
+    `/nutrition/logs?limit=${limit}&offset=${offset}`,
+    accessToken,
+  );
 }
 
 // ─── SSE Chat Stream ──────────────────────────────────────────────────────────

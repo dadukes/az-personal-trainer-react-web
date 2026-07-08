@@ -1,97 +1,71 @@
 # Backend gaps & contract notes
 
-Places where the **web UI (and the design)** wants data or behavior the **Azure Functions
-backend** (`../az-ai-personal-trainer`, contract in `../ai-personal-trainer-expo-ui/API_docs.md`)
-does not currently provide. Captured so we don't lose the context; each item notes the current
-web-side workaround and what a backend fix would enable.
+Places where the **web UI (and the design)** wanted data or behavior the **Azure Functions
+backend** (`../az-ai-personal-trainer`, contract in `API_docs.md`) did not originally provide.
+Kept so we don't lose the context; each item notes the current web-side behavior.
 
-Status legend: 🟡 UI shows placeholder/illustrative data · 🔵 UI collects data that is dropped ·
-🟢 aligned, just an alignment note.
+Status legend: ✅ resolved (backend now provides it, frontend wired) · 🟡 UI shows
+placeholder/illustrative data · 🔵 UI collects data that is dropped · 🟢 aligned, alignment note.
+
+> **2026-07 update:** the backend shipped endpoints/fields covering gaps 1–4 and 6, and the
+> frontend has been aligned (see `git log` around this note). Gap 5 (day-picker) is also now done.
+> All responses were verified against the deployed backend and match this contract.
 
 ---
 
-## 1. 🔵 `primary_goal` is not writable on the profile
+## 1. ✅ `primary_goal` is now writable on the profile
 
 **Endpoint:** `PUT` / `PATCH /api/profile`
 
-The onboarding "What's your goal?" step (Lose weight / Build strength / Improve endurance /
-Reduce stress) maps to `primary_goal`. But `primary_goal` appears **only in responses**
-(`UserProfileData`) — it is **not** in the accepted update fields. The documented writable set is:
-`coach_personality`, `fitness_level`, `preferred_duration_minutes`, `fears`, `available_days`,
-`display_name`, `limitations`, `equipment_available`.
+`primary_goal` is accepted on profile update (enum `weight_loss | muscle_gain | general_fitness |
+endurance | flexibility | stress_relief`).
 
-- **Current web behavior:** the goal is collected for UX and shown in the review summary, but
-  **not sent** to the backend (to avoid an unknown-field request). It is effectively discarded.
-- **Fix:** accept `primary_goal` (enum `weight_loss | muscle_gain | general_fitness | endurance |
-  flexibility | stress_relief`) on profile update, then have `OnboardingPage` include it in the
-  `updateProfile` payload (the field already exists on `ProfilePayload` in `src/lib/api.ts`).
+- **Web behavior:** `OnboardingPage` sends the chosen goal as `primary_goal` in the `updateProfile`
+  payload; `getProfile` reads it back into the store (`AuthProvider`).
 
-## 2. 🟡 No "this week" / activity-stats endpoint
+## 2. ✅ Weekly activity stats on `GET /api/progress`
 
-**Endpoint:** `GET /api/progress` returns only `current_level`, `current_xp`,
-`xp_to_next_level`, and `health_insights[]`.
+`GET /api/progress` now returns a `this_week` block: `consistency_streak_days`,
+`workouts_this_week`, `minutes_trained_this_week` (all in the user's timezone, `0` for new users).
 
-The Progress screen's **"This week"** card (design) shows *Consistency streak*, *Workouts this
-week*, *Minutes trained* — none of which have a data source.
+- **Web behavior:** `ProgressPage`'s "This week" tiles read `data.this_week` (falling back to `--`
+  while loading), replacing the old static `12 days / 4 / 128m` placeholders.
 
-- **Current web behavior:** `ProgressPage` renders these three tiles with **static illustrative
-  values** (`12 days`, `4`, `128m`).
-- **Fix:** add a stats block to `GET /api/progress` (or a `GET /api/stats/weekly`) exposing
-  streak, workout count, and minutes trained, then wire the tiles to it.
+## 3. ✅ Meal-history endpoint `GET /api/nutrition/logs`
 
-## 3. 🟡 No meal-history (GET) endpoint
+`GET /api/nutrition/logs?limit&offset` lists recently logged meals (most-recent first).
 
-**Endpoint:** `POST /api/nutrition/log` logs a meal and returns the analysis, but there is **no
-GET** to list previously logged meals.
+- **Web behavior:** `FuelPage` loads history on mount via `getNutritionLogs` and prepends new logs,
+  so "Recent meals" survives refreshes and syncs across devices (no longer session-local).
 
-The Fuel screen's **"Recent meals"** list (design) needs a meal history.
+## 4. ✅ Health-insight `icon` is a stable enum
 
-- **Current web behavior:** `FuelPage` keeps a **session-local** list — only meals logged in the
-  current browser session appear; a refresh clears it.
-- **Fix:** add `GET /api/nutrition/logs?limit&offset` (recent meals with description / calories /
-  timestamp), then load it on mount and prepend new logs.
+`GET /api/progress` → `health_insights[].icon` is one of a documented, server-coerced set:
+`heart_pulse · sleep · steps · stress · energy · calories · workout · trophy · trending_up ·
+general`.
 
-## 4. 🟡 Health-insight `icon` values are open-ended / undocumented
+- **Web behavior:** `ProgressPage`'s `ICON_MAP` maps exactly this set and falls back to `general`
+  for any unexpected value.
 
-**Endpoint:** `GET /api/progress` → `health_insights[].icon`
+## 5. ✅ Onboarding sends the user's actual chosen days
 
-Observed from the **live local backend**, insights came back with `icon: "workout"` and
-`icon: "stress"`. Neither is in the icon set the UI (or the mobile app) maps
-(`heart_pulse`, `moon`, `trophy`, `zap`, `trending_up`).
+`available_days` is the documented source of truth for training rhythm (array of lowercase day
+names).
 
-- **Current web behavior:** unknown icon names fall back to the `Zap` glyph, so insights render
-  but with a generic icon.
-- **Fix:** either (a) constrain the backend to a **documented, stable icon enum**, or (b) expand
-  the frontend `ICON_MAP` in `src/pages/ProgressPage.tsx` (and the mobile app) to cover
-  `workout`, `stress`, etc. Preferably (a) so both clients stay in sync.
+- **Web behavior:** `OnboardingPage`'s Step 2 is now a **weekday picker** (Mon–Sun chips); the
+  selected days are sent in canonical order as `available_days`, replacing the old
+  count → fixed-spread synthesis.
 
-## 5. 🟢 Onboarding "days per week" is coerced to `available_days`
+## 6. ✅ Authoritative workout completion in the dashboard
 
-The design's Step 2 collects a training **rhythm** as *3 / 4 / 5 days*. The backend field is
-`available_days` (an array of day **names**, e.g. `["monday","wednesday","friday"]`).
+`GET /api/dashboard` → `data.completed_days` maps each completed weekday of the current
+(Monday-start) week to `{ session_id, completed_at }`, matched by the active `plan_id`.
 
-- **Current web behavior:** `OnboardingPage` maps the chosen count to a fixed weekday spread
-  (`3 → Mon/Wed/Fri`, `4 → Mon/Tue/Thu/Sat`, `5 → Mon–Fri`) and sends that as `available_days`.
-- **Note / optional fix:** if specific-day selection matters, add a day-picker to onboarding and
-  send the actual chosen days instead of a synthesized spread. Not blocking — just a fidelity gap.
-
-## 6. 🟡 No workout-completion status in the dashboard
-
-**Endpoint:** `GET /api/dashboard` → `active_workout_plan.plan[<day>]`
-
-`POST /api/workouts/log` records a completed session (and awards XP), but the dashboard's
-per-day plan (`DashboardDayPlan`) exposes **no flag** for "this day's workout was completed"
-(no `completed`, `last_completed_at`, `logged`, etc.). So after finishing a workout there is no
-server-side way to know the day is done, nor to show a completed badge on return visits /
-other devices.
-
-- **Current web behavior:** completion is tracked **client-side only** in `localStorage`
-  (see `src/lib/workout.ts` + the `completedWorkouts` slice in `src/store/useAppStore.ts`),
-  keyed by `plan_id + calendar date`. Drives the "Completed 💪" badge on Home's today card and
-  the week-view watermark. This does **not** sync across devices and is cleared with site data.
-- **Fix:** expose completion on the dashboard day plan — e.g. `completed_at` / `logged: boolean`
-  (ideally derived from the workout log for the plan + date), then the UI can read authoritative
-  status instead of the local mirror.
+- **Web behavior:** `HomePage` resolves each server weekday to its current-week date
+  (`currentWeekDateForDayKey`) and treats those as authoritative for the "Completed 💪" badge and
+  week-view watermark. The local `completedWorkouts` mirror (`localStorage`) is kept only as an
+  **optimistic overlay** so the badge appears instantly after finishing, before the next dashboard
+  refresh confirms it cross-device.
 
 ---
 
@@ -103,7 +77,7 @@ other devices.
 - `POST /api/workouts/log` **is** registered, so `logWorkout`'s primary path works;
   the `POST /api/activity/log` fallback in `logWorkout` is just belt-and-suspenders. ✅
 - CORS: the **local** backend's `local.settings.json` has `Host.CORS: "*"`, so the dev origin
-  (`http://localhost:5173`) is allowed with no changes. ✅ **Note:** the **deployed** Azure
-  Functions app does **not** allow `http://localhost:5173` — running the dev server against the
-  deployed API is blocked by CORS in the browser (server-to-server calls are unaffected). Add the
-  dev origin to the deployed app's CORS allow-list to test the dev build against prod data.
+  (`http://localhost:5173`) is allowed with no changes. ✅ The **deployed** Azure Functions app
+  now also allows `http://localhost:5173` (added 2026-07), so the dev server can be pointed at the
+  deployed API and driven in a real browser. Verified end-to-end against prod data — see the
+  browser-test note around this commit.

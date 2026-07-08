@@ -6,7 +6,7 @@ import ScreenHeader from '@/components/ScreenHeader';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
 import { getDashboard, submitPulse } from '@/lib/api';
 import { isNativeHealthAvailable, readTodayHealthData } from '@/lib/health';
-import { completionKey, localISODate } from '@/lib/workout';
+import { completionKey, currentWeekDateForDayKey, localISODate } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -47,6 +47,8 @@ export default function HomePage() {
   const [pulse, setPulse] = useState<StressLevel>(null);
   const [pulseSubmitting, setPulseSubmitting] = useState(false);
   const [planId, setPlanId] = useState<string | undefined>();
+  /** Authoritative completed dates (local `YYYY-MM-DD`) from the dashboard's `completed_days`. */
+  const [serverCompletedDates, setServerCompletedDates] = useState<Set<string>>(() => new Set());
   const [redoConfirm, setRedoConfirm] = useState<string | null>(null);
   const isNative = isNativeHealthAvailable();
 
@@ -56,6 +58,13 @@ export default function HomePage() {
       const result = await getDashboard(session.access_token);
       const plan = result.data.active_workout_plan;
       setPlanId(plan?.id);
+      setServerCompletedDates(
+        new Set(
+          Object.keys(result.data.completed_days ?? {}).map((dayKey) =>
+            currentWeekDateForDayKey(dayKey),
+          ),
+        ),
+      );
       if (!plan) {
         setWeekPlan([]);
         return;
@@ -101,9 +110,12 @@ export default function HomePage() {
   const hasPlan = weekPlan.length > 0;
   const todayWorkout = weekPlan.find((d) => d.status === 'today');
 
+  // Server `completed_days` is authoritative (cross-device); the local mirror keeps the badge
+  // instant right after finishing, before the next dashboard refresh confirms it.
   const isDayCompleted = useCallback(
-    (dateISO: string) => Boolean(completedWorkouts[completionKey(planId, dateISO)]),
-    [completedWorkouts, planId],
+    (dateISO: string) =>
+      serverCompletedDates.has(dateISO) || Boolean(completedWorkouts[completionKey(planId, dateISO)]),
+    [serverCompletedDates, completedWorkouts, planId],
   );
   const todayHasWorkout = Boolean(todayWorkout && todayWorkout.duration !== '-');
   const todayCompleted = todayWorkout ? isDayCompleted(todayWorkout.date) : false;

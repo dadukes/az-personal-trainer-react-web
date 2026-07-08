@@ -3,7 +3,12 @@ import { useEffect, useRef, useState } from 'react';
 
 import ScreenHeader from '@/components/ScreenHeader';
 import { Button, Card, Eyebrow } from '@/components/ui';
-import { getDashboard, logNutrition, type NutritionLogResponse } from '@/lib/api';
+import {
+  getDashboard,
+  getNutritionLogs,
+  logNutrition,
+  type NutritionLogResponse,
+} from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -26,6 +31,10 @@ interface RecentMeal {
   time: string;
 }
 
+function formatMealTime(iso: string): string {
+  return new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
 export default function FuelPage() {
   const { session } = useAuth();
   const { healthSnapshot } = useAppStore();
@@ -43,9 +52,12 @@ export default function FuelPage() {
 
   useEffect(() => {
     if (!session?.access_token) return;
+    const token = session.access_token;
+    let mounted = true;
     void (async () => {
       try {
-        const result = await getDashboard(session.access_token);
+        const result = await getDashboard(token);
+        if (!mounted) return;
         const insight = result.data.pending_insights.find(
           (i) => i.insight_type === 'nutrition_tip' || i.insight_type === 'poor_diet',
         );
@@ -54,6 +66,25 @@ export default function FuelPage() {
         // Non-blocking
       }
     })();
+    void (async () => {
+      try {
+        const { logs } = await getNutritionLogs(token);
+        if (!mounted) return;
+        setRecent(
+          logs.map((log) => ({
+            id: log.id,
+            description: log.meal_description,
+            calories: log.estimated_calories,
+            time: formatMealTime(log.logged_at),
+          })),
+        );
+      } catch {
+        // Non-blocking — fall back to an empty list until a meal is logged.
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
   }, [session]);
 
   const handleFile = async (file: File) => {
@@ -76,12 +107,9 @@ export default function FuelPage() {
           id: result.id,
           description: result.meal_description,
           calories: result.estimated_calories,
-          time: new Date(result.logged_at).toLocaleTimeString(undefined, {
-            hour: 'numeric',
-            minute: '2-digit',
-          }),
+          time: formatMealTime(result.logged_at),
         },
-        ...prev,
+        ...prev.filter((meal) => meal.id !== result.id),
       ]);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not analyse the photo. Please try again.');
@@ -258,7 +286,7 @@ export default function FuelPage() {
           {recent.length === 0 ? (
             <Card padding="16px">
               <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
-                Meals you log this session will appear here.
+                Snap a meal to start building your history — it&rsquo;ll show up here.
               </p>
             </Card>
           ) : (

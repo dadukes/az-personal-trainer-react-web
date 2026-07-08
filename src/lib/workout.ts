@@ -1,9 +1,10 @@
 /**
- * Client-side workout-completion helpers.
+ * Workout-completion helpers.
  *
- * The dashboard API does not report whether a given day's workout has been done
- * (see backend-gaps.md), so the web app tracks completion locally, keyed by the
- * active plan + the calendar date the workout belongs to.
+ * The dashboard's `completed_days` is the authoritative, cross-device source of truth
+ * (see backend-gaps.md #6). The web app keeps a small `localStorage` mirror keyed by the
+ * active plan + the calendar date the workout belongs to as an optimistic overlay, so the
+ * "done" badge shows instantly after finishing, before the next dashboard refresh.
  */
 
 export const DAY_KEYS = [
@@ -34,6 +35,24 @@ export function dateForDayKey(dayKey: string, base: Date = new Date()): string {
   const offset = (targetDow - base.getDay() + 7) % 7;
   const d = new Date(base);
   d.setDate(base.getDate() + offset);
+  return localISODate(d);
+}
+
+/**
+ * The calendar date a weekday key maps to within the **current Monday-start week**
+ * (in local time). Mirrors how the dashboard's `completed_days` map is scoped, so a
+ * server-reported weekday can be matched against the date-keyed week cells — and a
+ * next-week cell that shares a weekday name is not mistaken for a completed day.
+ */
+export function currentWeekDateForDayKey(dayKey: string, base: Date = new Date()): string {
+  const targetDow = DAY_KEYS.indexOf(dayKey);
+  if (targetDow < 0) return localISODate(base);
+  const daysSinceMonday = (base.getDay() + 6) % 7;
+  const monday = new Date(base);
+  monday.setDate(base.getDate() - daysSinceMonday);
+  const offsetFromMonday = (targetDow + 6) % 7;
+  const d = new Date(monday);
+  d.setDate(monday.getDate() + offsetFromMonday);
   return localISODate(d);
 }
 

@@ -24,8 +24,9 @@ for project-wide rules.
   the `AbortController` cleanup returned to the caller. Verified event order from the live
   backend: `status(started) → status(generating) → chunk… → done`.
 - `logWorkout` falls back to `POST /activity/log` when `/workouts/log` errors, so XP still awards.
-- Some request fields the UI collects are **not accepted by the backend** (e.g. `primary_goal`
-  on profile update). See [../../backend-gaps.md](../../backend-gaps.md) before wiring new fields.
+- The former contract gaps (writable `primary_goal`, `this_week` stats, `nutrition/logs` history,
+  stable insight-icon enum, dashboard `completed_days`) are now backed and wired — see the
+  resolved items in [../../backend-gaps.md](../../backend-gaps.md).
 
 ## env.ts
 

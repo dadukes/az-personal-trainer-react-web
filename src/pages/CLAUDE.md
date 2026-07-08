@@ -41,10 +41,10 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   placeholder/CTA). Empty `active_workout_plan` → the "Ready to plan your workout?" CTA.
 - **Coach**: consume the `streamChat` SSE helper; render incremental chunks; keep the
   stop/retry/new-session affordances and the "scroll to latest" button.
-- **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" is
-  session-local (no history endpoint — see [../../backend-gaps.md](../../backend-gaps.md)).
-- **Progress**: `getProgress` returns level/XP + insights only; the "This week" stat tiles are
-  **illustrative placeholders** pending a stats endpoint (see backend-gaps.md).
+- **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads
+  persisted history via `getNutritionLogs` on mount and prepends new logs (survives refresh).
+- **Progress**: `getProgress` returns level/XP, `this_week` activity stats (wired to the "This
+  week" tiles), and `health_insights` (icons map the stable enum, falling back to `general`).
 - **Plan / Exercise detail**: edits go to a shared `planDraft` slice in the Zustand store (both
   `/plan/:day` and the exercise route read/write it), not straight to the backend. `PlanDayPage`
   seeds the draft from `getWorkoutPlan` (without clobbering unsaved edits) and is the **only**

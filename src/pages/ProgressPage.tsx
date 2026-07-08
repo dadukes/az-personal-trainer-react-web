@@ -1,27 +1,49 @@
-import { HeartPulse, Moon, TrendingUp, Trophy, Zap } from 'lucide-react';
+import {
+  BatteryCharging,
+  Brain,
+  Dumbbell,
+  Flame,
+  Footprints,
+  HeartPulse,
+  Moon,
+  Sparkles,
+  TrendingUp,
+  Trophy,
+} from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useEffect, useState } from 'react';
 
 import ScreenHeader from '@/components/ScreenHeader';
 import { Card, Eyebrow, ProgressBar, StatTile } from '@/components/ui';
-import { getProgress, type HealthInsight } from '@/lib/api';
+import { getProgress, type HealthInsight, type WeeklyActivityStats } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
+// Mirrors the backend's stable `health_insights[].icon` enum; unknown values fall back to `general`.
 const ICON_MAP: Record<string, ComponentType<{ size?: number; color?: string }>> = {
   heart_pulse: HeartPulse,
-  moon: Moon,
+  sleep: Moon,
+  steps: Footprints,
+  stress: Brain,
+  energy: BatteryCharging,
+  calories: Flame,
+  workout: Dumbbell,
   trophy: Trophy,
-  zap: Zap,
   trending_up: TrendingUp,
+  general: Sparkles,
 };
 
 const ICON_COLOR: Record<string, string> = {
   heart_pulse: '#34D2C1',
-  moon: '#39B1F2',
+  sleep: '#39B1F2',
+  steps: '#34D2C1',
+  stress: '#F5C542',
+  energy: '#34D2C1',
+  calories: '#39B1F2',
+  workout: '#34D2C1',
   trophy: '#F5C542',
-  zap: '#34D2C1',
   trending_up: '#34D2C1',
+  general: '#34D2C1',
 };
 
 function getLevelName(level: number): string {
@@ -40,7 +62,7 @@ const FALLBACK_INSIGHTS: HealthInsight[] = [
   {
     title: 'Sleep is the limiting factor',
     description: 'Three sessions were skipped this week due to low sleep battery. Prioritize a tighter wind-down.',
-    icon: 'moon',
+    icon: 'sleep',
   },
 ];
 
@@ -48,6 +70,7 @@ export default function ProgressPage() {
   const { session } = useAuth();
   const { gamification, setGamification } = useAppStore();
   const [insights, setInsights] = useState<HealthInsight[]>([]);
+  const [weekStats, setWeekStats] = useState<WeeklyActivityStats | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -64,6 +87,7 @@ export default function ProgressPage() {
           xp_to_next_level: result.data.xp_to_next_level,
         });
         setInsights(result.data.health_insights);
+        setWeekStats(result.data.this_week ?? null);
       } catch {
         // Non-blocking
       } finally {
@@ -118,9 +142,18 @@ export default function ProgressPage() {
         <Card className="flex-1">
           <Eyebrow className="mb-3.5">This week</Eyebrow>
           <div className="flex gap-3">
-            <StatTile value="12 days" label="Consistency streak" />
-            <StatTile value="4" label="Workouts this week" />
-            <StatTile value="128m" label="Minutes trained" />
+            <StatTile
+              value={weekStats ? `${weekStats.consistency_streak_days} days` : '--'}
+              label="Consistency streak"
+            />
+            <StatTile
+              value={weekStats ? String(weekStats.workouts_this_week) : '--'}
+              label="Workouts this week"
+            />
+            <StatTile
+              value={weekStats ? `${weekStats.minutes_trained_this_week}m` : '--'}
+              label="Minutes trained"
+            />
           </div>
         </Card>
       </div>
@@ -128,8 +161,8 @@ export default function ProgressPage() {
       <Eyebrow>AI Health Insights</Eyebrow>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {displayInsights.map((insight, i) => {
-          const Icon = ICON_MAP[insight.icon] ?? Zap;
-          const color = ICON_COLOR[insight.icon] ?? '#34D2C1';
+          const Icon = ICON_MAP[insight.icon] ?? ICON_MAP.general;
+          const color = ICON_COLOR[insight.icon] ?? ICON_COLOR.general;
           return (
             <Card key={i} padding="18px">
               <div className="flex gap-3">

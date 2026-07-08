@@ -2,13 +2,13 @@ import { Check, ShieldCheck } from 'lucide-react';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Card, Chip, Eyebrow, Input, SegmentedToggle } from '@/components/ui';
-import { updateProfile, type CoachPersonality, type FitnessLevel } from '@/lib/api';
+import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
+import { updateProfile, type CoachPersonality, type FitnessLevel, type PrimaryGoal } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 
 type Step = 1 | 2 | 3;
 
-const GOAL_OPTIONS = [
+const GOAL_OPTIONS: { value: PrimaryGoal; label: string }[] = [
   { value: 'weight_loss', label: 'Lose weight' },
   { value: 'muscle_gain', label: 'Build strength' },
   { value: 'endurance', label: 'Improve endurance' },
@@ -24,11 +24,22 @@ const PERSONALITY_OPTIONS: { value: CoachPersonality; label: string; blurb: stri
 const FEAR_OPTIONS = ['Injury', 'Judgement', 'Burnout', 'Staying consistent', 'Not knowing what to do'];
 const DURATION_OPTIONS = [10, 20, 30, 45];
 
-const DAYS_TO_WEEKDAYS: Record<string, string[]> = {
-  '3': ['monday', 'wednesday', 'friday'],
-  '4': ['monday', 'tuesday', 'thursday', 'saturday'],
-  '5': ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'],
-};
+/** Weekday keys in the backend's expected order; `label` is the picker chip text. */
+const WEEKDAYS: { key: string; label: string }[] = [
+  { key: 'monday', label: 'Mon' },
+  { key: 'tuesday', label: 'Tue' },
+  { key: 'wednesday', label: 'Wed' },
+  { key: 'thursday', label: 'Thu' },
+  { key: 'friday', label: 'Fri' },
+  { key: 'saturday', label: 'Sat' },
+  { key: 'sunday', label: 'Sun' },
+];
+const DEFAULT_DAYS = ['monday', 'wednesday', 'friday'];
+
+/** Returns the selected day keys in canonical weekday order. */
+function orderDays(days: string[]): string[] {
+  return WEEKDAYS.filter((d) => days.includes(d.key)).map((d) => d.key);
+}
 
 function StepDots({ step }: { step: Step }) {
   return (
@@ -67,9 +78,9 @@ export default function OnboardingPage() {
 
   const [step, setStep] = useState<Step>(1);
   const [displayName, setDisplayName] = useState('');
-  const [goal, setGoal] = useState('weight_loss');
+  const [goal, setGoal] = useState<PrimaryGoal>('weight_loss');
   const [personality, setPersonality] = useState<CoachPersonality>('zen');
-  const [days, setDays] = useState('4');
+  const [selectedDays, setSelectedDays] = useState<string[]>(DEFAULT_DAYS);
   const [fitnessLevel, setFitnessLevel] = useState<FitnessLevel>('intermediate');
   const [fears, setFears] = useState<string[]>(['Burnout']);
   const [duration, setDuration] = useState(20);
@@ -78,6 +89,11 @@ export default function OnboardingPage() {
 
   const toggleFear = (fear: string) =>
     setFears((cur) => (cur.includes(fear) ? cur.filter((f) => f !== fear) : [...cur, fear]));
+
+  const toggleDay = (key: string) =>
+    setSelectedDays((cur) => (cur.includes(key) ? cur.filter((d) => d !== key) : [...cur, key]));
+
+  const orderedDays = orderDays(selectedDays);
 
   const handleFinish = async () => {
     if (!session?.access_token) {
@@ -90,9 +106,10 @@ export default function OnboardingPage() {
       await updateProfile(session.access_token, {
         coach_personality: personality,
         fitness_level: fitnessLevel,
+        primary_goal: goal,
         preferred_duration_minutes: duration,
         fears,
-        available_days: DAYS_TO_WEEKDAYS[days] ?? DAYS_TO_WEEKDAYS['4'],
+        available_days: orderedDays,
         display_name: displayName.trim() || undefined,
       });
       await markOnboardingComplete();
@@ -188,17 +205,25 @@ export default function OnboardingPage() {
               Your training rhythm
             </div>
             <p className="mb-5 mt-2 text-[14px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-              How many days a week can you realistically commit?
+              Which days can you realistically commit to? Tap the days that work for you.
             </p>
-            <SegmentedToggle
-              options={[
-                { value: '3', label: '3 days' },
-                { value: '4', label: '4 days' },
-                { value: '5', label: '5 days' },
-              ]}
-              value={days}
-              onChange={setDays}
-            />
+            <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-7">
+              {WEEKDAYS.map((d) => (
+                <Chip
+                  key={d.key}
+                  active={selectedDays.includes(d.key)}
+                  onClick={() => toggleDay(d.key)}
+                  className="justify-center !px-0 !py-3"
+                >
+                  {d.label}
+                </Chip>
+              ))}
+            </div>
+            <p className="mt-2.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+              {selectedDays.length > 0
+                ? `${selectedDays.length} ${selectedDays.length === 1 ? 'day' : 'days'} a week`
+                : 'Pick at least one day to continue.'}
+            </p>
 
             <div className="mt-6">
               <Eyebrow className="mb-2.5">Experience level</Eyebrow>
@@ -247,7 +272,11 @@ export default function OnboardingPage() {
               <Button variant="secondary" size="lg" onClick={() => setStep(1)}>
                 Back
               </Button>
-              <Button size="lg" onClick={() => setStep(3)} disabled={fears.length === 0}>
+              <Button
+                size="lg"
+                onClick={() => setStep(3)}
+                disabled={fears.length === 0 || selectedDays.length === 0}
+              >
                 Continue
               </Button>
             </div>
@@ -286,7 +315,12 @@ export default function OnboardingPage() {
               {[
                 ['Goal', GOAL_OPTIONS.find((g) => g.value === goal)?.label ?? goal],
                 ['Coach voice', personality],
-                ['Rhythm', `${days} days / week`],
+                [
+                  'Rhythm',
+                  `${selectedDays.length} days · ${orderedDays
+                    .map((k) => WEEKDAYS.find((d) => d.key === k)?.label)
+                    .join(', ')}`,
+                ],
                 ['Fitness level', fitnessLevel],
                 ['Session length', `${duration} minutes`],
               ].map(([label, value]) => (
