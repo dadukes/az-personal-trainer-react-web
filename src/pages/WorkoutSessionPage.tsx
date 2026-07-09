@@ -3,48 +3,30 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import Confetti from '@/components/Confetti';
-import { Badge, Button, Card, Eyebrow } from '@/components/ui';
-import {
-  getDashboard,
-  logWorkout,
-  type DashboardDayPlan,
-  type DashboardExercise,
-  type LoggedExercise,
-  type WeightUnit,
-  type WorkoutSection,
-} from '@/lib/api';
-import { isTimedExercise } from '@/lib/exercise';
+import WorkoutGuided from '@/components/WorkoutGuided';
+import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
+import { getDashboard, logWorkout, type LoggedExercise, type WeightUnit } from '@/lib/api';
 import { dateForDayKey } from '@/lib/workout';
+import {
+  buildBlocks,
+  formatClock,
+  sectionLabel,
+  signatureOf,
+  type Block,
+  type SetActual,
+} from '@/lib/workoutSession';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const SESSION_KEY = 'forma:workout-session';
+const VIEW_KEY = 'forma:workout-view';
+
+type WorkoutView = 'guided' | 'list';
 
 function resolveDayKey(param?: string): string {
   if (param && DAY_KEYS.includes(param)) return param;
   return DAY_KEYS[new Date().getDay()];
-}
-
-interface SetActual {
-  reps: number;
-  weight: number;
-  completed: boolean;
-}
-
-interface Block {
-  key: string;
-  name: string;
-  exercise_id?: string;
-  section: WorkoutSection;
-  timed: boolean;
-  durationSeconds?: number;
-  repText?: string;
-  repTarget: number;
-  weight: number;
-  weightUnit: WeightUnit;
-  notes?: string;
-  sets: SetActual[];
 }
 
 /** Only the mutable per-set progress is persisted; block structure is rebuilt from the plan. */
@@ -54,56 +36,6 @@ interface PersistedSession {
   startedAt: string;
   signature: string;
   sets: SetActual[][];
-}
-
-function parseRepTarget(reps?: string): number {
-  if (!reps) return 10;
-  const m = /\d+/.exec(reps);
-  return m ? Number(m[0]) : 10;
-}
-
-function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[] {
-  const sections: [WorkoutSection, DashboardExercise[] | undefined][] = [
-    ['warmup', dayPlan.warmup],
-    ['main', dayPlan.exercises],
-    ['cooldown', dayPlan.cooldown],
-  ];
-  const blocks: Block[] = [];
-  sections.forEach(([section, list]) => {
-    (list ?? []).forEach((ex, i) => {
-      const setCount = Math.max(1, ex.sets ?? 1);
-      // The backend fills `reps` with a descriptive string even for holds/carries
-      // (e.g. "30s hold", "45s walk", "3 minutes"), so `duration_seconds` is the
-      // reliable timed signal — pure rep-based exercises have no duration.
-      const timed = isTimedExercise(ex);
-      const repTarget = parseRepTarget(ex.reps);
-      const weight = ex.target_weight ?? ex.last_performance?.weight ?? 0;
-      blocks.push({
-        key: `${section}-${i}-${ex.name}`,
-        name: ex.name,
-        exercise_id: ex.exercise_id,
-        section,
-        timed,
-        durationSeconds: ex.duration_seconds,
-        repText: ex.reps,
-        repTarget,
-        weight,
-        weightUnit: (ex.weight_unit as WeightUnit) ?? unit,
-        notes: ex.notes,
-        sets: Array.from({ length: setCount }, () => ({
-          reps: repTarget,
-          weight,
-          completed: false,
-        })),
-      });
-    });
-  });
-  return blocks;
-}
-
-/** Structural fingerprint used to decide whether a persisted session still matches the plan. */
-function signatureOf(blocks: Block[]): string {
-  return blocks.map((b) => `${b.key}:${b.sets.length}`).join('|');
 }
 
 function readPersisted(): PersistedSession | null {
@@ -121,17 +53,6 @@ function clearPersisted() {
   } catch {
     // ignore
   }
-}
-
-function sectionLabel(section: WorkoutSection): string {
-  return section === 'warmup' ? 'Warm-up' : section === 'cooldown' ? 'Cool-down' : 'Main';
-}
-
-function formatClock(total: number): string {
-  const t = Math.max(0, Math.floor(total));
-  const m = Math.floor(t / 60);
-  const s = t % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 export default function WorkoutSessionPage() {
@@ -152,7 +73,20 @@ export default function WorkoutSessionPage() {
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
   const [xpEarned, setXpEarned] = useState<number | null>(null);
+  const [view, setView] = useState<WorkoutView>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(VIEW_KEY) : null;
+    return saved === 'list' ? 'list' : 'guided';
+  });
   const restoredRef = useRef(false);
+
+  const changeView = useCallback((next: WorkoutView) => {
+    setView(next);
+    try {
+      localStorage.setItem(VIEW_KEY, next);
+    } catch {
+      // ignore
+    }
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -257,6 +191,12 @@ export default function WorkoutSessionPage() {
     },
     [],
   );
+
+  // Guided-view callbacks operate on the same shared block state as the list view,
+  // so progress (and the single finish/log path) survives toggling between views.
+  const setReps = useCallback((bi: number, si: number, reps: number) => mutateSet(bi, si, { reps }), [mutateSet]);
+  const setWeight = useCallback((bi: number, si: number, weight: number) => mutateSet(bi, si, { weight }), [mutateSet]);
+  const completeSet = useCallback((bi: number, si: number) => mutateSet(bi, si, { completed: true }), [mutateSet]);
 
   const finish = useCallback(async () => {
     setFinished(true);
@@ -394,6 +334,29 @@ export default function WorkoutSessionPage() {
         <div className="h-full rounded-full transition-[width]" style={{ width: `${progressPct}%`, background: 'var(--accent)' }} />
       </div>
 
+      {/* View toggle — guided (one exercise at a time) vs. the full single-page list. */}
+      <SegmentedToggle
+        tone="mint"
+        value={view}
+        onChange={(v) => changeView(v as WorkoutView)}
+        options={[
+          { value: 'guided', label: 'Guided' },
+          { value: 'list', label: 'All exercises' },
+        ]}
+      />
+
+      {view === 'guided' ? (
+        <WorkoutGuided
+          blocks={blocks}
+          accessToken={session?.access_token}
+          dayNotes={dayNotes}
+          onSetReps={setReps}
+          onSetWeight={setWeight}
+          onCompleteSet={completeSet}
+          onFinish={finish}
+        />
+      ) : (
+        <>
       {dayNotes ? (
         <Card variant="subtle" padding="14px 16px">
           <Eyebrow className="mb-1">Session note</Eyebrow>
@@ -498,6 +461,8 @@ export default function WorkoutSessionPage() {
           </Button>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 }
