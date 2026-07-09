@@ -6,6 +6,12 @@
  * realistic mock data — mirroring the mobile app's Expo-Go fallback path so the
  * Home health snapshot and Fuel calorie estimates still render.
  *
+ * The user can also **manually capture** today's metrics from Home
+ * (`POST /health/sync`). The latest capture is persisted per-user in
+ * `localStorage` so reopening the dialog the same day prefills the previous
+ * entry for editing (the backend has no read endpoint for health logs — see
+ * backend-gaps.md #7). A same-day manual capture takes precedence over mock.
+ *
  * If a wearable/web health integration is added later, implement it here and
  * make `isNativeHealthAvailable()` report accurately.
  */
@@ -15,6 +21,48 @@ export interface HealthData {
   resting_heart_rate: number | null;
   step_count: number | null;
   active_calories_burned: number | null;
+}
+
+/** A user-entered health log for a single day (mirrors `HealthSyncPayload` fields). */
+export interface ManualHealthCapture {
+  /** Local `YYYY-MM-DD` the values belong to. */
+  logged_date: string;
+  sleep_hours?: number;
+  sleep_quality?: number;
+  energy_level?: number;
+  resting_heart_rate?: number;
+  step_count?: number;
+  active_calories_burned?: number;
+  notes?: string;
+  /** ISO timestamp of the latest edit (captures can be updated through the day). */
+  captured_at: string;
+}
+
+const MANUAL_CAPTURE_KEY_PREFIX = 'forma:manual-health:';
+
+/**
+ * Loads the stored manual capture for a user, but only if it belongs to
+ * `dateISO` (stale captures from previous days are ignored — sleep/steps are
+ * per-day values, so each day starts fresh).
+ */
+export function loadManualCapture(userId: string, dateISO: string): ManualHealthCapture | null {
+  try {
+    const raw = localStorage.getItem(`${MANUAL_CAPTURE_KEY_PREFIX}${userId}`);
+    if (!raw) return null;
+    const capture = JSON.parse(raw) as ManualHealthCapture;
+    return capture.logged_date === dateISO ? capture : null;
+  } catch {
+    return null;
+  }
+}
+
+/** Persists the latest manual capture for a user (one capture kept — the current day's). */
+export function saveManualCapture(userId: string, capture: ManualHealthCapture): void {
+  try {
+    localStorage.setItem(`${MANUAL_CAPTURE_KEY_PREFIX}${userId}`, JSON.stringify(capture));
+  } catch {
+    // ignore quota/serialization errors — the backend copy is the durable one
+  }
 }
 
 export type HealthPermissionStatus = 'granted' | 'denied' | 'unavailable';

@@ -107,7 +107,9 @@ gates surface a clear error instead of crashing).
 - Env vars are `VITE_*` (not `EXPO_PUBLIC_*`).
 - Session/onboarding/profile-cache use `localStorage` (not `expo-secure-store`).
 - `lib/api.ts` drops the Android `10.0.2.2` emulator remap.
-- Health data is **always the mock** — browsers have no Health Connect / Apple Health API.
+- Health data is the mock **or a manual capture** — browsers have no Health Connect / Apple
+  Health API, so Home has a "Log" dialog posting to `/health/sync`; a same-day capture replaces
+  the mock in the snapshot (see `src/lib/health.ts` + backend-gaps.md #7).
 - Navigation is responsive **sidebar (≥1024) → icon rail (768–1023) → bottom tabs (<768)**,
   not a fixed bottom tab bar.
 - `expo-haptics` / `expo-clipboard` are dropped or degraded (no-ops).

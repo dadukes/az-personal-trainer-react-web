@@ -1,11 +1,18 @@
-import { Activity, Calendar, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, ShieldCheck, Zap } from 'lucide-react';
+import { Activity, Calendar, Flame, HeartPulse, MessageCircle, Moon, Play, Plus, RotateCcw, ShieldCheck, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import HealthCaptureDialog, { type HealthCaptureValues } from '@/components/HealthCaptureDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, submitPulse } from '@/lib/api';
-import { isNativeHealthAvailable, readTodayHealthData } from '@/lib/health';
+import { getDashboard, submitPulse, syncHealth } from '@/lib/api';
+import {
+  isNativeHealthAvailable,
+  loadManualCapture,
+  readTodayHealthData,
+  saveManualCapture,
+  type ManualHealthCapture,
+} from '@/lib/health';
 import { completionKey, currentWeekDateForDayKey, localISODate } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
@@ -39,6 +46,16 @@ function formatEmailName(email: string | null | undefined): string {
   return firstToken ? firstToken.charAt(0).toUpperCase() + firstToken.slice(1) : '';
 }
 
+/** The snapshot tiles show only the metrics a manual capture actually filled in. */
+function snapshotFromCapture(capture: ManualHealthCapture) {
+  return {
+    sleep_hours: capture.sleep_hours ?? null,
+    resting_heart_rate: capture.resting_heart_rate ?? null,
+    step_count: capture.step_count ?? null,
+    active_calories_burned: capture.active_calories_burned ?? null,
+  };
+}
+
 export default function HomePage() {
   const navigate = useNavigate();
   const { session, user } = useAuth();
@@ -50,6 +67,10 @@ export default function HomePage() {
   /** Authoritative completed dates (local `YYYY-MM-DD`) from the dashboard's `completed_days`. */
   const [serverCompletedDates, setServerCompletedDates] = useState<Set<string>>(() => new Set());
   const [redoConfirm, setRedoConfirm] = useState<string | null>(null);
+  const [manualCapture, setManualCapture] = useState<ManualHealthCapture | null>(null);
+  const [captureOpen, setCaptureOpen] = useState(false);
+  const [captureSaving, setCaptureSaving] = useState(false);
+  const [captureError, setCaptureError] = useState<string | null>(null);
   const isNative = isNativeHealthAvailable();
 
   const loadDashboard = useCallback(async () => {
@@ -98,14 +119,21 @@ export default function HomePage() {
 
   useEffect(() => {
     let mounted = true;
-    void readTodayHealthData().then((data) => {
-      if (mounted) setHealthSnapshot(data);
-    });
+    // Today's manual capture (if any) beats the mock — the user's own numbers are real.
+    const existing = user?.id ? loadManualCapture(user.id, localISODate()) : null;
+    if (existing) {
+      setManualCapture(existing);
+      setHealthSnapshot(snapshotFromCapture(existing));
+    } else {
+      void readTodayHealthData().then((data) => {
+        if (mounted) setHealthSnapshot(data);
+      });
+    }
     void loadDashboard();
     return () => {
       mounted = false;
     };
-  }, [loadDashboard, setHealthSnapshot]);
+  }, [loadDashboard, setHealthSnapshot, user?.id]);
 
   const hasPlan = weekPlan.length > 0;
   const todayWorkout = weekPlan.find((d) => d.status === 'today');
@@ -154,6 +182,33 @@ export default function HomePage() {
     }
   };
 
+  const handleCaptureSave = async (values: HealthCaptureValues) => {
+    if (captureSaving) return;
+    if (!session?.access_token) {
+      setCaptureError('You need to be signed in to save a health log.');
+      return;
+    }
+    const todayISO = localISODate();
+    setCaptureSaving(true);
+    setCaptureError(null);
+    try {
+      await syncHealth(session.access_token, { logged_date: todayISO, ...values });
+      const capture: ManualHealthCapture = {
+        logged_date: todayISO,
+        ...values,
+        captured_at: new Date().toISOString(),
+      };
+      if (user?.id) saveManualCapture(user.id, capture);
+      setManualCapture(capture);
+      setHealthSnapshot(snapshotFromCapture(capture));
+      setCaptureOpen(false);
+    } catch {
+      setCaptureError('Couldn’t save your health log. Check your connection and try again.');
+    } finally {
+      setCaptureSaving(false);
+    }
+  };
+
   const handlePlanCTA = () => {
     appendMessage({
       id: `msg-${Date.now()}`,
@@ -194,11 +249,33 @@ export default function HomePage() {
       {/* Snapshot + pulse */}
       <div className="flex flex-col gap-5 lg:flex-row">
         <Card className="lg:flex-[1.3]">
-          <div className="mb-4 flex items-center gap-1.5">
-            <ShieldCheck size={15} color="#34D2C1" />
-            <span className="text-[11.5px] font-bold tracking-[0.08em]" style={{ color: 'var(--accent-text)' }}>
-              {isNative ? 'HEALTH CONNECT SYNCED' : 'HEALTH SNAPSHOT (MOCK)'}
-            </span>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-1.5">
+              <ShieldCheck size={15} color="#34D2C1" />
+              <span
+                className="truncate text-[11.5px] font-bold tracking-[0.08em]"
+                style={{ color: 'var(--accent-text)' }}
+              >
+                {manualCapture
+                  ? 'LOGGED TODAY'
+                  : isNative
+                    ? 'HEALTH CONNECT SYNCED'
+                    : 'HEALTH SNAPSHOT (MOCK)'}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setCaptureError(null);
+                setCaptureOpen(true);
+              }}
+              aria-label={manualCapture ? "Update today's health log" : "Log today's health data"}
+              className="inline-flex flex-shrink-0 items-center gap-1 rounded-full py-1.5 pl-2.5 pr-3.5 text-[12px] font-extrabold transition-transform active:scale-[0.95]"
+              style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
+            >
+              <Plus size={14} color="#06224D" strokeWidth={2.5} />
+              {manualCapture ? 'Update' : 'Log'}
+            </button>
           </div>
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {metrics.map((m) => (
@@ -396,6 +473,19 @@ export default function HomePage() {
             })}
           </div>
         </div>
+      ) : null}
+
+      {/* Manual health capture — prefilled with today's previous entry for quick edits. */}
+      {captureOpen ? (
+        <HealthCaptureDialog
+          initial={manualCapture}
+          saving={captureSaving}
+          error={captureError}
+          onSave={(values) => void handleCaptureSave(values)}
+          onClose={() => {
+            if (!captureSaving) setCaptureOpen(false);
+          }}
+        />
       ) : null}
 
       {/* Redo confirmation — a completed workout asks before starting again. */}

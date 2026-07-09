@@ -67,6 +67,19 @@ names).
   **optimistic overlay** so the badge appears instantly after finishing, before the next dashboard
   refresh confirms it cross-device.
 
+## 7. 🟡 No read endpoint for health logs
+
+**Endpoint (missing):** something like `GET /api/health/today` (or `/health/logs?date=`).
+
+`POST /api/health/sync` accepts a manual capture (sleep, HR, steps, calories, quality/energy,
+notes — upserted by `logged_date`), but there is no endpoint to read a day's log back.
+
+- **Web behavior:** the Home "Log / Update" health-capture dialog persists the latest capture
+  per-user in `localStorage` (`forma:manual-health:<userId>`, see `src/lib/health.ts`) so
+  reopening it the same day prefills the previous entry for editing, and the snapshot tiles show
+  the captured values instead of mock. This prefill/display is therefore **device-local** — a
+  capture made on another browser won't show up until a read endpoint exists.
+
 ---
 
 ## Not gaps (verified working against the local backend)

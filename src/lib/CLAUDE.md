@@ -46,5 +46,10 @@ for project-wide rules.
 - Browsers have **no** Health Connect / Apple Health API, so `readTodayHealthData()` **always**
   returns realistic mock data (mirroring the mobile app's Expo-Go fallback) and
   `isNativeHealthAvailable()` returns `false` (drives the "(MOCK)" badge on Home).
+- The user can **manually capture** today's metrics from Home (`HealthCaptureDialog` →
+  `syncHealth`). `load`/`saveManualCapture` keep the latest capture per-user in `localStorage`
+  so reopening the dialog the same day prefills the previous entry, and a same-day capture
+  beats the mock in the Home snapshot. The backend has no read endpoint for health logs
+  (backend-gaps.md #7), so this prefill is device-local.
 - If a real web/wearable health integration is added later, implement it here and make
   `isNativeHealthAvailable()` report accurately — keep the mock as the fallback.
