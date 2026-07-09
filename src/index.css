@@ -225,3 +225,47 @@ body {
   color: var(--accent-secondary);
   text-decoration: underline;
 }
+
+/* Manual health capture sliders (HealthCaptureDialog) */
+.forma-range {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 8px;
+  border-radius: 999px;
+  border: 1px solid var(--border-base);
+  background: linear-gradient(
+    to right,
+    var(--accent) var(--range-fill, 0%),
+    var(--bg-subtle) var(--range-fill, 0%)
+  );
+  outline: none;
+  cursor: pointer;
+}
+.forma-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.forma-range::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: var(--bg-surface);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+/* Untouched slider: value not set yet — thumb stays neutral until first interaction */
+.forma-range[data-unset='true']::-webkit-slider-thumb {
+  border-color: var(--border-strong);
+}
+.forma-range[data-unset='true']::-moz-range-thumb {
+  border-color: var(--border-strong);
+}
+.forma-range:focus-visible {
+  box-shadow: 0 0 0 3px rgba(52, 210, 193, 0.35);
+}

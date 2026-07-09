@@ -1,5 +1,5 @@
 import { HeartPulse, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 
 import { Button, Input } from '@/components/ui';
 import type { ManualHealthCapture } from '@/lib/health';
@@ -28,43 +28,85 @@ function parseMetric(raw: string, opts?: { float?: boolean; max?: number }): num
   return opts?.max != null ? Math.min(n, opts.max) : n;
 }
 
-function RatingRow({
+interface SliderEnd {
+  emoji: string;
+  label: string;
+}
+
+/**
+ * 1–5 slider with emoji-labelled extremes. Optional like every capture field:
+ * it starts "unset" (neutral thumb at the midpoint, nothing sent) and becomes
+ * set on first touch; "Clear" reverts it to unset.
+ */
+function SliderRow({
   label,
   value,
   onChange,
+  low,
+  high,
 }: {
   label: string;
   value: number | undefined;
   onChange: (value: number | undefined) => void;
+  low: SliderEnd;
+  high: SliderEnd;
 }) {
+  const current = value ?? 3;
+  const fillPct = value !== undefined ? `${((current - 1) / 4) * 100}%` : '0%';
   return (
     <div>
-      <span
-        className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.08em]"
-        style={{ color: 'var(--text-label)' }}
+      <div className="mb-1.5 flex items-baseline justify-between">
+        <span
+          className="block text-[11px] font-bold uppercase tracking-[0.08em]"
+          style={{ color: 'var(--text-label)' }}
+        >
+          {label}
+        </span>
+        {value !== undefined ? (
+          <button
+            type="button"
+            onClick={() => onChange(undefined)}
+            className="text-[11px] font-semibold underline-offset-2 hover:underline"
+            style={{ color: 'var(--text-muted)' }}
+          >
+            Clear
+          </button>
+        ) : (
+          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+            Slide to set
+          </span>
+        )}
+      </div>
+      <div className="flex items-center gap-3">
+        <span aria-hidden className="text-[22px] leading-none">
+          {low.emoji}
+        </span>
+        <input
+          type="range"
+          min={1}
+          max={5}
+          step={1}
+          value={current}
+          aria-label={label}
+          aria-valuetext={value !== undefined ? `${value} of 5` : 'not set'}
+          data-unset={value === undefined ? 'true' : 'false'}
+          onChange={(e) => onChange(Number(e.target.value))}
+          // A plain click at the thumb's current position fires no change event,
+          // so pointer-up also commits the value — touching the slider sets it.
+          onPointerUp={(e) => onChange(Number(e.currentTarget.value))}
+          className="forma-range min-w-0 flex-1"
+          style={{ '--range-fill': fillPct } as CSSProperties}
+        />
+        <span aria-hidden className="text-[22px] leading-none">
+          {high.emoji}
+        </span>
+      </div>
+      <div
+        className="mt-1 flex items-center justify-between text-[11px]"
+        style={{ color: 'var(--text-muted)' }}
       >
-        {label}
-      </span>
-      <div className="flex gap-2">
-        {[1, 2, 3, 4, 5].map((n) => {
-          const active = value === n;
-          return (
-            <button
-              key={n}
-              type="button"
-              aria-pressed={active}
-              onClick={() => onChange(active ? undefined : n)}
-              className="flex h-10 flex-1 items-center justify-center rounded-xl text-[14px] font-bold transition-transform active:scale-[0.94]"
-              style={{
-                background: active ? 'var(--bg-selected)' : 'var(--bg-subtle)',
-                border: `1px solid ${active ? 'var(--accent)' : 'var(--border-base)'}`,
-                color: active ? 'var(--text-on-mint)' : 'var(--text-secondary)',
-              }}
-            >
-              {n}
-            </button>
-          );
-        })}
+        <span>{low.label}</span>
+        <span>{high.label}</span>
       </div>
     </div>
   );
@@ -198,8 +240,20 @@ export default function HealthCaptureDialog({
         </div>
 
         <div className="mt-4 flex flex-col gap-4">
-          <RatingRow label="Sleep quality" value={sleepQuality} onChange={setSleepQuality} />
-          <RatingRow label="Energy level" value={energy} onChange={setEnergy} />
+          <SliderRow
+            label="Sleep quality"
+            value={sleepQuality}
+            onChange={setSleepQuality}
+            low={{ emoji: '😴', label: 'Bad sleep' }}
+            high={{ emoji: '😁', label: 'Good sleep' }}
+          />
+          <SliderRow
+            label="Energy level"
+            value={energy}
+            onChange={setEnergy}
+            low={{ emoji: '🫩', label: 'Low energy' }}
+            high={{ emoji: '😎', label: 'High energy' }}
+          />
           <Input
             label="Notes (optional)"
             type="text"

@@ -230,9 +230,11 @@ export default function HomePage() {
       icon: <Moon size={18} color="var(--forma-sleep)" />,
       value: sleepLabel,
       label:
-        healthSnapshot.sleep_hours != null && healthSnapshot.sleep_hours < 6
-          ? 'Sleep · Needs focus'
-          : 'Sleep looks solid',
+        healthSnapshot.sleep_hours == null
+          ? 'Sleep last night'
+          : healthSnapshot.sleep_hours < 6
+            ? 'Sleep · Needs focus'
+            : 'Sleep looks solid',
     },
     { icon: <HeartPulse size={18} color="#39B1F2" />, value: hrLabel, label: 'Resting heart rate' },
     { icon: <Activity size={18} color="#34D2C1" />, value: stepsLabel, label: 'Steps today' },
