@@ -203,6 +203,33 @@ export interface WeeklyActivityStats {
   minutes_trained_this_week: number;
 }
 
+/** Per-field trend direction over the last 7 days vs. the 7 before; `null` when data is missing. */
+export type HealthTrendDirection = 'up' | 'down' | 'flat';
+
+/** The metric keys that carry an `avg_*` value and a `trends.*` direction. */
+export type HealthSummaryMetric =
+  | 'sleep_hours'
+  | 'sleep_quality'
+  | 'stress_level'
+  | 'energy_level'
+  | 'resting_heart_rate'
+  | 'steps'
+  | 'active_calories';
+
+/** Deterministic health-metric aggregates over the last `window_days` (see API_docs). */
+export interface HealthSummary {
+  window_days: number;
+  days_logged: number;
+  avg_sleep_hours: number | null;
+  avg_sleep_quality: number | null;
+  avg_stress_level: number | null;
+  avg_energy_level: number | null;
+  avg_resting_heart_rate: number | null;
+  avg_steps: number | null;
+  avg_active_calories: number | null;
+  trends: Record<HealthSummaryMetric, HealthTrendDirection | null>;
+}
+
 export interface ProgressResponse {
   success: boolean;
   data: {
@@ -210,7 +237,20 @@ export interface ProgressResponse {
     current_xp: number;
     xp_to_next_level: number;
     this_week: WeeklyActivityStats;
+    health_summary: HealthSummary;
+    /** Always `[]` on this endpoint — insight cards now come from `getProgressInsights`. */
     health_insights: HealthInsight[];
+  };
+}
+
+/** AI-generated insight cards, served separately + cached so the main screen never blocks. */
+export interface ProgressInsightsResponse {
+  success: boolean;
+  data: {
+    health_insights: HealthInsight[];
+    generated_at: string | null;
+    /** `true` only when regeneration failed and an expired cached set was returned. */
+    stale: boolean;
   };
 }
 
@@ -572,6 +612,14 @@ export async function getDashboard(accessToken: string): Promise<DashboardRespon
 
 export async function getProgress(accessToken: string): Promise<ProgressResponse> {
   return apiFetch<ProgressResponse>('/progress', accessToken);
+}
+
+/**
+ * AI-generated health-trend insight cards (cached server-side, may take a few seconds on a
+ * cache miss). Call this asynchronously — never block the Progress screen on it.
+ */
+export async function getProgressInsights(accessToken: string): Promise<ProgressInsightsResponse> {
+  return apiFetch<ProgressInsightsResponse>('/progress/insights', accessToken);
 }
 
 export async function getChatHistory(

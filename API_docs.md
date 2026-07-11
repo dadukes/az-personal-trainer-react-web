@@ -19,6 +19,7 @@ This document describes every HTTP endpoint exposed by the Azure Functions backe
    - [POST /api/chat/sessions](#post-apichatsessions)
    - [GET /api/dashboard](#get-apidashboard)
    - [GET /api/progress](#get-apiprogress)
+   - [GET /api/progress/insights](#get-apiprogressinsights)
     - [GET /api/profile](#get-apiprofile)
     - [PATCH /api/profile](#patch-apiprofile)
    - [PUT /api/profile](#put-apiprofile)
@@ -580,7 +581,9 @@ Keyed by weekday name (`"monday"` … `"sunday"`), it contains one entry per day
 
 ### GET /api/progress
 
-Returns the authenticated user's gamification state (level and XP) and AI-generated health trend insights based on the last 30 days of health metrics.
+Returns the authenticated user's gamification state (level and XP), the "this week" activity summary, and deterministic health-metric aggregates over the last 30 days.
+
+**This endpoint does NO LLM work, so it returns fast.** AI-generated health-trend insights are served separately (and cached) by [`GET /api/progress/insights`](#get-apiprogressinsights). Fetch that endpoint asynchronously and render the cards when they arrive.
 
 #### Request
 
@@ -605,6 +608,74 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
       "workouts_this_week": 3,
       "minutes_trained_this_week": 95
     },
+    "health_summary": {
+      "window_days": 30,
+      "days_logged": 22,
+      "avg_sleep_hours": 6.8,
+      "avg_sleep_quality": 3.4,
+      "avg_stress_level": 2.7,
+      "avg_energy_level": 3.5,
+      "avg_resting_heart_rate": 61,
+      "avg_steps": 7421,
+      "avg_active_calories": 430,
+      "trends": {
+        "sleep_hours": "up",
+        "sleep_quality": "flat",
+        "stress_level": "down",
+        "energy_level": "up",
+        "resting_heart_rate": "down",
+        "steps": "up",
+        "active_calories": "flat"
+      }
+    },
+    "health_insights": []
+  }
+}
+```
+
+**Gamification notes:**
+- `current_level` = `floor(current_xp / 500) + 1` (1-based, 500 XP per level).
+- `xp_to_next_level` = `current_level × 500`.
+
+**`this_week` (activity summary, all computed in the user's timezone):**
+- `consistency_streak_days` — consecutive local calendar days, ending today (or yesterday if nothing is logged yet today), with at least one logged activity (workouts + micro-wins). `0` when the streak is broken.
+- `workouts_this_week` — completed guided workouts logged via `POST /api/workouts/log` in the current Monday-start week.
+- `minutes_trained_this_week` — total minutes across those workouts (rounded).
+- All three are `0` for a user with no logs.
+
+**`health_summary` (deterministic aggregates over the last 30 days of `health_metrics`):**
+- `window_days` — the lookback window (currently `30`).
+- `days_logged` — distinct calendar days in the window with at least one logged metric.
+- `avg_*` — mean over the **non-null** values for each field only, so a user who logs sleep but never syncs a wearable still gets a real `avg_sleep_hours` while `avg_steps` stays `null`. Any `avg_*` is `null` when no day logged that field.
+  - `avg_sleep_quality`, `avg_stress_level`, `avg_energy_level` are on the subjective 1–5 scale (rounded to 1 decimal).
+  - `avg_sleep_hours` is rounded to 1 decimal; `avg_resting_heart_rate`, `avg_steps`, `avg_active_calories` are integers.
+- `trends` — per-field direction (`"up"` / `"down"` / `"flat"`) comparing the most-recent 7 days against the 7 days before them. `null` when either window lacks data for that field. Trends are purely directional (did the number rise or fall) — the client decides whether a direction is "good" for a given metric.
+
+**`health_insights`** — always an empty array `[]` on this endpoint. Retained only so existing clients that read the field keep working; **use [`GET /api/progress/insights`](#get-apiprogressinsights) for insight cards.**
+
+---
+
+### GET /api/progress/insights
+
+Returns AI-generated health-trend insight cards for the Progress screen, based on the last 30 days of health metrics. Split out from `GET /api/progress` so the main screen never blocks on the LLM.
+
+**Caching:** results are cached per user for up to **6 hours**. A cache hit returns instantly with no LLM call; a miss or stale entry regenerates via Gemini and refreshes the cache. If regeneration fails, the last cached set is returned with `stale: true` (HTTP 200) rather than an error.
+
+#### Request
+
+```http
+GET /api/progress/insights?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+```
+
+#### Response
+
+**`200 OK`**
+
+```json
+{
+  "success": true,
+  "data": {
     "health_insights": [
       {
         "title": "Resting Heart Rate Improving",
@@ -616,21 +687,17 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
         "description": "You've averaged 7.2 hours of sleep this week, up from 6.0 hours last week. Great work!",
         "icon": "sleep"
       }
-    ]
+    ],
+    "generated_at": "2026-07-11T08:15:00.000Z",
+    "stale": false
   }
 }
 ```
 
-**Gamification notes:**
-- `current_level` = `floor(current_xp / 500) + 1` (1-based, 500 XP per level).
-- `xp_to_next_level` = `current_level × 500`.
-- `health_insights` is an empty array `[]` when the user has no health metrics recorded or has not completed onboarding.
-
-**`this_week` (activity summary, all computed in the user's timezone):**
-- `consistency_streak_days` — consecutive local calendar days, ending today (or yesterday if nothing is logged yet today), with at least one logged activity (workouts + micro-wins). `0` when the streak is broken.
-- `workouts_this_week` — completed guided workouts logged via `POST /api/workouts/log` in the current Monday-start week.
-- `minutes_trained_this_week` — total minutes across those workouts (rounded).
-- All three are `0` for a user with no logs.
+**Notes:**
+- `health_insights` is an empty array `[]` (and `generated_at` is `null`) when the user has no health metrics recorded or has not completed onboarding. An empty result is **not** cached, so insights appear as soon as the user has a profile and logs their first metric.
+- `generated_at` — ISO timestamp the returned insights were generated, or `null` when never generated.
+- `stale` — `true` only when regeneration failed and the endpoint fell back to an expired cached set; clients may show an "updating…" hint. `false` for fresh or still-within-TTL insights.
 
 **`health_insights[].icon` — stable enum.** The value is always one of:
 `heart_pulse` · `sleep` · `steps` · `stress` · `energy` · `calories` · `workout` · `trophy` · `trending_up` · `general`.

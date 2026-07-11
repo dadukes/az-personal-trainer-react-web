@@ -1,10 +1,14 @@
 import {
+  ArrowDownRight,
+  ArrowUpRight,
   BatteryCharging,
   Brain,
   Dumbbell,
   Flame,
   Footprints,
+  Gauge,
   HeartPulse,
+  Minus,
   Moon,
   Sparkles,
   TrendingUp,
@@ -19,8 +23,12 @@ import { Card, Eyebrow, ProgressBar, StatTile } from '@/components/ui';
 import {
   getHealthLogs,
   getProgress,
+  getProgressInsights,
   type HealthInsight,
   type HealthLog,
+  type HealthSummary,
+  type HealthSummaryMetric,
+  type HealthTrendDirection,
   type WeeklyActivityStats,
 } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
@@ -56,6 +64,50 @@ const ICON_COLOR: Record<string, string> = {
   general: '#34D2C1',
 };
 
+// The deterministic 30-day averages, in display order. `avgKey` reads the value off
+// `health_summary`; `good` marks which trend direction is a *positive* change for the metric
+// (e.g. resting HR falling is good, energy rising is good) so the arrow can be colored honestly.
+interface SummaryMetricConfig {
+  metric: HealthSummaryMetric;
+  avgKey: keyof HealthSummary;
+  label: string;
+  icon: ComponentType<{ size?: number; color?: string }>;
+  format: (value: number) => string;
+  good: 'up' | 'down';
+}
+
+const SUMMARY_METRICS: SummaryMetricConfig[] = [
+  { metric: 'sleep_hours', avgKey: 'avg_sleep_hours', label: 'Avg sleep', icon: Moon, format: (v) => `${v}h`, good: 'up' },
+  { metric: 'sleep_quality', avgKey: 'avg_sleep_quality', label: 'Sleep quality', icon: Gauge, format: (v) => `${v}`, good: 'up' },
+  { metric: 'energy_level', avgKey: 'avg_energy_level', label: 'Energy', icon: BatteryCharging, format: (v) => `${v}`, good: 'up' },
+  { metric: 'stress_level', avgKey: 'avg_stress_level', label: 'Stress', icon: Brain, format: (v) => `${v}`, good: 'down' },
+  { metric: 'resting_heart_rate', avgKey: 'avg_resting_heart_rate', label: 'Resting HR', icon: HeartPulse, format: (v) => `${v} bpm`, good: 'down' },
+  { metric: 'steps', avgKey: 'avg_steps', label: 'Daily steps', icon: Footprints, format: (v) => v.toLocaleString(), good: 'up' },
+  { metric: 'active_calories', avgKey: 'avg_active_calories', label: 'Active cal', icon: Flame, format: (v) => v.toLocaleString(), good: 'up' },
+];
+
+// 1–5 subjective scales read better with the denominator shown.
+const SCALE_METRICS = new Set<HealthSummaryMetric>(['sleep_quality', 'energy_level', 'stress_level']);
+
+function TrendPill({ direction, good }: { direction: HealthTrendDirection | null; good: 'up' | 'down' }) {
+  if (!direction) return null;
+  if (direction === 'flat') {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
+        <Minus size={13} /> flat
+      </span>
+    );
+  }
+  const isGood = direction === good;
+  const color = isGood ? 'var(--accent-text)' : 'var(--forma-gold)';
+  const Arrow = direction === 'up' ? ArrowUpRight : ArrowDownRight;
+  return (
+    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold" style={{ color }}>
+      <Arrow size={13} /> {direction}
+    </span>
+  );
+}
+
 function getLevelName(level: number): string {
   if (level <= 2) return 'Foundation';
   if (level <= 4) return 'Momentum';
@@ -81,10 +133,13 @@ export default function ProgressPage() {
   const { session } = useAuth();
   const { gamification, setGamification } = useAppStore();
   const [insights, setInsights] = useState<HealthInsight[]>([]);
+  const [insightsLoading, setInsightsLoading] = useState(false);
   const [weekStats, setWeekStats] = useState<WeeklyActivityStats | null>(null);
+  const [healthSummary, setHealthSummary] = useState<HealthSummary | null>(null);
   const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // Fast path: level/XP, weekly activity, and the deterministic health-summary stats. No LLM.
   useEffect(() => {
     if (!session?.access_token) return;
     const token = session.access_token;
@@ -99,8 +154,8 @@ export default function ProgressPage() {
           current_xp: result.data.current_xp,
           xp_to_next_level: result.data.xp_to_next_level,
         });
-        setInsights(result.data.health_insights);
         setWeekStats(result.data.this_week ?? null);
+        setHealthSummary(result.data.health_summary ?? null);
       } catch {
         // Non-blocking
       } finally {
@@ -111,6 +166,28 @@ export default function ProgressPage() {
       mounted = false;
     };
   }, [session, setGamification]);
+
+  // AI insight cards load separately and non-blocking — the endpoint may take a few seconds on a
+  // cache miss, so it must never gate the stats above.
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const token = session.access_token;
+    let mounted = true;
+    setInsightsLoading(true);
+    void (async () => {
+      try {
+        const result = await getProgressInsights(token);
+        if (mounted) setInsights(result.data.health_insights);
+      } catch {
+        // Non-blocking — the section falls back to placeholder cards.
+      } finally {
+        if (mounted) setInsightsLoading(false);
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [session]);
 
   // Health trends load independently so a slow/empty logs read never blocks the
   // level + insights UI (max window = 90 days; the chart filters to 7/14/30).
@@ -136,7 +213,18 @@ export default function ProgressPage() {
       ? Math.min((gamification.current_xp / gamification.xp_to_next_level) * 100, 100)
       : 0;
 
-  const displayInsights = insights.length > 0 ? insights : FALLBACK_INSIGHTS;
+  // While the background call is in flight show nothing (the eyebrow carries a spinner); only
+  // fall back to placeholder cards once it resolves empty, to avoid flashing fake insights.
+  const displayInsights = insights.length > 0 ? insights : insightsLoading ? [] : FALLBACK_INSIGHTS;
+
+  // Only render summary tiles for metrics the user has actually logged (avg is non-null).
+  const summaryTiles = healthSummary
+    ? SUMMARY_METRICS.flatMap((cfg) => {
+        const value = healthSummary[cfg.avgKey];
+        if (typeof value !== 'number') return [];
+        return [{ cfg, value }];
+      })
+    : [];
 
   return (
     <div className="mx-auto flex w-full max-w-[1120px] animate-fade-slide-up flex-col gap-6 p-6 sm:p-10">
@@ -200,6 +288,43 @@ export default function ProgressPage() {
         </Card>
       </div>
 
+      {summaryTiles.length > 0 && healthSummary && (
+        <>
+          <div className="flex items-center justify-between">
+            <Eyebrow>
+              {healthSummary.window_days}-day averages
+            </Eyebrow>
+            <span className="text-[11.5px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+              {healthSummary.days_logged} {healthSummary.days_logged === 1 ? 'day' : 'days'} logged
+            </span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {summaryTiles.map(({ cfg, value }) => {
+              const Icon = cfg.icon;
+              const display = SCALE_METRICS.has(cfg.metric) ? `${cfg.format(value)}/5` : cfg.format(value);
+              return (
+                <div
+                  key={cfg.metric}
+                  className="rounded-2xl p-4"
+                  style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
+                >
+                  <div className="flex items-center justify-between">
+                    <Icon size={17} color="var(--accent)" />
+                    <TrendPill direction={healthSummary.trends[cfg.metric]} good={cfg.good} />
+                  </div>
+                  <div className="tabular mt-2.5 text-[22px] font-extrabold leading-tight" style={{ color: 'var(--text-primary)' }}>
+                    {display}
+                  </div>
+                  <div className="mt-1 text-[11.5px] leading-tight" style={{ color: 'var(--text-muted)' }}>
+                    {cfg.label}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
       <Eyebrow>Health trends</Eyebrow>
       <Card>
         <Suspense
@@ -216,7 +341,15 @@ export default function ProgressPage() {
         </Suspense>
       </Card>
 
-      <Eyebrow>AI Health Insights</Eyebrow>
+      <div className="flex items-center gap-2">
+        <Eyebrow>AI Health Insights</Eyebrow>
+        {insightsLoading && insights.length === 0 && (
+          <div
+            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent"
+            style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
+          />
+        )}
+      </div>
       <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
         {displayInsights.map((insight, i) => {
           const Icon = ICON_MAP[insight.icon] ?? ICON_MAP.general;
