@@ -73,6 +73,40 @@ export interface ProfileResponse {
   profile: UserProfileData;
 }
 
+/**
+ * A stored manual health capture row from `GET /api/health/logs` (mirrors the
+ * backend `health_metrics` row / `HealthSyncPayload`). This is the read-back
+ * counterpart to `POST /api/health/sync`, so a capture made on any device is
+ * visible everywhere (closes backend-gaps.md #7).
+ */
+export interface HealthLog {
+  id: string;
+  user_id: string;
+  logged_date: string;
+  sleep_hours: number | null;
+  sleep_quality: number | null;
+  stress_level: number | null;
+  energy_level: number | null;
+  resting_heart_rate: number | null;
+  step_count: number | null;
+  active_calories_burned: number | null;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** `GET /api/health/logs?date=` — a single day's capture (or `null`). */
+export interface HealthLogResponse {
+  success: boolean;
+  log: HealthLog | null;
+}
+
+/** `GET /api/health/logs` — recent captures, most-recent first. */
+export interface HealthLogsResponse {
+  success: boolean;
+  logs: HealthLog[];
+}
+
 export interface ExerciseLastPerformance {
   reps?: number | null;
   weight?: number | null;
@@ -337,6 +371,59 @@ export interface WorkoutLogResponse {
   };
 }
 
+// ─── Workout history (Progress) ───────────────────────────────────────────────
+
+/**
+ * A completed workout session header from `GET /api/workouts/sessions`
+ * (mirrors the backend `workout_sessions` row). The per-set detail lives in a
+ * separate `GET /api/workouts/sessions/{id}` call.
+ */
+export interface WorkoutSessionSummary {
+  id: string;
+  user_id: string;
+  plan_id: string | null;
+  /** Backend weekday key the session came from (`monday`…`sunday`), or null. */
+  day: string | null;
+  started_at: string;
+  completed_at: string;
+  duration_seconds: number;
+  total_sets: number;
+  xp_earned: number;
+  created_at: string;
+}
+
+/** A single logged set from a session (mirrors the backend `workout_set_logs` row). */
+export interface WorkoutSetLogEntry {
+  id: string;
+  session_id: string;
+  user_id: string;
+  exercise_id: string | null;
+  name: string;
+  section: WorkoutSection;
+  swapped_from: string | null;
+  skipped: boolean;
+  set_number: number;
+  reps: number | null;
+  weight: number | null;
+  weight_unit: WeightUnit | null;
+  duration_seconds: number | null;
+  completed: boolean;
+  created_at: string;
+}
+
+/** `GET /api/workouts/sessions` — recent completed sessions, most-recent first. */
+export interface WorkoutSessionsResponse {
+  success: boolean;
+  sessions: WorkoutSessionSummary[];
+}
+
+/** `GET /api/workouts/sessions/{id}` — one session header plus its per-set logs. */
+export interface WorkoutSessionDetailResponse {
+  success: boolean;
+  session: WorkoutSessionSummary;
+  sets: WorkoutSetLogEntry[];
+}
+
 // ─── Plan viewing / editing (Day Detail) ──────────────────────────────────────
 
 export interface WorkoutPlan {
@@ -469,8 +556,11 @@ export async function getProfile(accessToken: string): Promise<ProfileResponse> 
   return apiFetch<ProfileResponse>('/profile', accessToken);
 }
 
-export async function updateProfile(accessToken: string, payload: ProfilePayload) {
-  return apiFetch<{ success: boolean }>('/profile', accessToken, {
+export async function updateProfile(
+  accessToken: string,
+  payload: ProfilePayload,
+): Promise<ProfileResponse> {
+  return apiFetch<ProfileResponse>('/profile', accessToken, {
     method: 'PUT',
     body: JSON.stringify(payload),
   });
@@ -633,6 +723,25 @@ export async function logWorkout(
   }
 }
 
+/** Recent completed workout sessions (most-recent first) for the Progress history list. */
+export async function getWorkoutSessions(
+  accessToken: string,
+  limit = 50,
+): Promise<WorkoutSessionsResponse> {
+  return apiFetch<WorkoutSessionsResponse>(`/workouts/sessions?limit=${limit}`, accessToken);
+}
+
+/** A single workout session plus every per-set log recorded for it. */
+export async function getWorkoutSession(
+  accessToken: string,
+  sessionId: string,
+): Promise<WorkoutSessionDetailResponse> {
+  return apiFetch<WorkoutSessionDetailResponse>(
+    `/workouts/sessions/${encodeURIComponent(sessionId)}`,
+    accessToken,
+  );
+}
+
 export async function submitPulse(
   accessToken: string,
   stress_level: number,
@@ -652,6 +761,26 @@ export async function syncHealth(
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/**
+ * Reads back a single day's manual health capture (or `null`). The Home snapshot
+ * and capture dialog use this as the authoritative, cross-device source so a log
+ * made on another device shows up here too.
+ */
+export async function getHealthLog(
+  accessToken: string,
+  date: string,
+): Promise<HealthLogResponse> {
+  return apiFetch<HealthLogResponse>(`/health/logs?date=${encodeURIComponent(date)}`, accessToken);
+}
+
+/** Recent manual health captures (most-recent first). */
+export async function getHealthLogs(
+  accessToken: string,
+  limit = 30,
+): Promise<HealthLogsResponse> {
+  return apiFetch<HealthLogsResponse>(`/health/logs?limit=${limit}`, accessToken);
 }
 
 export async function logNutrition(

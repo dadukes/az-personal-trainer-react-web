@@ -9,7 +9,7 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-import { getProfile } from '@/lib/api';
+import { getProfile, type UserProfileData } from '@/lib/api';
 import { env } from '@/lib/env';
 import { getOnboardingStorageKey, supabase } from '@/lib/supabase';
 import { INITIAL_PROFILE, useAppStore, type UserProfile } from '@/store/useAppStore';
@@ -45,30 +45,38 @@ function clearPersistedProfile(userId: string): void {
   }
 }
 
+/** Maps the backend profile shape onto the store's `UserProfile` slice. */
+function mapApiProfileToStore(apiProfile: UserProfileData): Partial<UserProfile> {
+  return {
+    display_name: apiProfile.display_name ?? '',
+    coach_personality: apiProfile.coach_personality,
+    fitness_level: apiProfile.fitness_level,
+    primary_goal: apiProfile.primary_goal ?? null,
+    fears: apiProfile.fears ?? null,
+    limitations: apiProfile.limitations ?? null,
+    preferred_duration_minutes: apiProfile.preferred_duration_minutes,
+    available_days: apiProfile.available_days ?? null,
+    equipment_available: apiProfile.equipment_available ?? null,
+    preferred_unit_system: apiProfile.preferred_unit_system,
+    timezone: apiProfile.timezone,
+  };
+}
+
+/** Pushes a fresh backend profile into the store and re-persists the cache. */
+function commitProfile(userId: string, apiProfile: UserProfileData): void {
+  const profileData = mapApiProfileToStore(apiProfile);
+  useAppStore.getState().setProfile(profileData);
+  persistProfile(userId, profileData);
+}
+
 /** Show cached profile immediately, then refresh from the API in the background. */
 async function hydrateProfile(userId: string, accessToken: string): Promise<void> {
-  const setProfile = useAppStore.getState().setProfile;
-
   const cached = loadCachedProfile(userId);
-  if (cached) setProfile(cached);
+  if (cached) useAppStore.getState().setProfile(cached);
 
   try {
     const { profile: apiProfile } = await getProfile(accessToken);
-    const profileData: Partial<UserProfile> = {
-      display_name: apiProfile.display_name ?? '',
-      coach_personality: apiProfile.coach_personality,
-      fitness_level: apiProfile.fitness_level,
-      primary_goal: apiProfile.primary_goal ?? null,
-      fears: apiProfile.fears ?? null,
-      limitations: apiProfile.limitations ?? null,
-      preferred_duration_minutes: apiProfile.preferred_duration_minutes,
-      available_days: apiProfile.available_days ?? null,
-      equipment_available: apiProfile.equipment_available ?? null,
-      preferred_unit_system: apiProfile.preferred_unit_system,
-      timezone: apiProfile.timezone,
-    };
-    setProfile(profileData);
-    persistProfile(userId, profileData);
+    commitProfile(userId, apiProfile);
   } catch {
     // Background refresh failed — cached data (if any) remains
   }
@@ -89,6 +97,8 @@ interface AuthContextValue {
   signUp: (credentials: Credentials) => Promise<void>;
   signOut: () => Promise<void>;
   markOnboardingComplete: () => Promise<void>;
+  /** Applies a freshly-saved backend profile to the store + cache (used by the profile editor). */
+  applyProfileUpdate: (profile: UserProfileData) => void;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -187,6 +197,14 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setHasCompletedOnboarding(false);
   }, [session?.user.id]);
 
+  const applyProfileUpdate = useCallback(
+    (apiProfile: UserProfileData) => {
+      if (!session?.user) return;
+      commitProfile(session.user.id, apiProfile);
+    },
+    [session?.user],
+  );
+
   const markOnboardingComplete = useCallback(async () => {
     if (!session?.user) {
       throw new Error('You need an active session before completing onboarding.');
@@ -212,8 +230,18 @@ export function AuthProvider({ children }: PropsWithChildren) {
       signUp,
       signOut,
       markOnboardingComplete,
+      applyProfileUpdate,
     }),
-    [hasCompletedOnboarding, initialized, markOnboardingComplete, session, signIn, signOut, signUp],
+    [
+      applyProfileUpdate,
+      hasCompletedOnboarding,
+      initialized,
+      markOnboardingComplete,
+      session,
+      signIn,
+      signOut,
+      signUp,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

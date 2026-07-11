@@ -11,6 +11,7 @@ import HomePage from '@/pages/HomePage';
 import LoginPage from '@/pages/LoginPage';
 import OnboardingPage from '@/pages/OnboardingPage';
 import PlanDayPage from '@/pages/PlanDayPage';
+import ProfilePage from '@/pages/ProfilePage';
 import ProgressPage from '@/pages/ProgressPage';
 import WorkoutSessionPage from '@/pages/WorkoutSessionPage';
 
@@ -73,6 +74,7 @@ export default function App() {
       <Route path="/coach" element={<RequireAuth><CoachPage /></RequireAuth>} />
       <Route path="/fuel" element={<RequireAuth><FuelPage /></RequireAuth>} />
       <Route path="/progress" element={<RequireAuth><ProgressPage /></RequireAuth>} />
+      <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       <Route path="/workout/:day" element={<RequireAuth><WorkoutSessionPage /></RequireAuth>} />
       <Route path="/plan/:day" element={<RequireAuth><PlanDayPage /></RequireAuth>} />
       <Route path="/plan/:day/exercise/:section/:index" element={<RequireAuth><ExerciseDetailPage /></RequireAuth>} />

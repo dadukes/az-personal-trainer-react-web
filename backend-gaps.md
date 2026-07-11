@@ -7,9 +7,10 @@ Kept so we don't lose the context; each item notes the current web-side behavior
 Status legend: ✅ resolved (backend now provides it, frontend wired) · 🟡 UI shows
 placeholder/illustrative data · 🔵 UI collects data that is dropped · 🟢 aligned, alignment note.
 
-> **2026-07 update:** the backend shipped endpoints/fields covering gaps 1–4 and 6, and the
-> frontend has been aligned (see `git log` around this note). Gap 5 (day-picker) is also now done.
-> All responses were verified against the deployed backend and match this contract.
+> **2026-07 update:** the backend shipped endpoints/fields covering gaps 1–7, and the
+> frontend has been aligned (see `git log` around this note). Gap 5 (day-picker) and gap 7
+> (health-log read via `GET /health/logs`) are also now done. All responses were verified
+> against the deployed backend and match this contract.
 
 ---
 
@@ -67,18 +68,22 @@ names).
   **optimistic overlay** so the badge appears instantly after finishing, before the next dashboard
   refresh confirms it cross-device.
 
-## 7. 🟡 No read endpoint for health logs
+## 7. ✅ Read endpoint for health logs
 
-**Endpoint (missing):** something like `GET /api/health/today` (or `/health/logs?date=`).
+**Endpoint:** `GET /api/health/logs` — `?date=YYYY-MM-DD` returns that day's capture
+(`{ success, log: HealthMetric | null }`); with no `date` it returns the recent list
+(`{ success, logs: HealthMetric[] }`, most-recent first, `limit` default 30 / max 90).
+(Shipped 2026-07; not yet in `API_docs.md`, but verified against the deployed backend — the
+contract mirrors `src/functions/getHealthLogs.ts`.)
 
-`POST /api/health/sync` accepts a manual capture (sleep, HR, steps, calories, quality/energy,
-notes — upserted by `logged_date`), but there is no endpoint to read a day's log back.
+`POST /api/health/sync` upserts a manual capture per `logged_date`; this is its read-back
+counterpart.
 
-- **Web behavior:** the Home "Log / Update" health-capture dialog persists the latest capture
-  per-user in `localStorage` (`forma:manual-health:<userId>`, see `src/lib/health.ts`) so
-  reopening it the same day prefills the previous entry for editing, and the snapshot tiles show
-  the captured values instead of mock. This prefill/display is therefore **device-local** — a
-  capture made on another browser won't show up until a read endpoint exists.
+- **Web behavior:** on Home mount, `getHealthLog(token, today)` fetches the authoritative
+  server capture. It wins over the `localStorage` mirror (`forma:manual-health:<userId>`,
+  `src/lib/health.ts`) and the mock, so a capture made on **any** device now shows up in the
+  snapshot tiles and prefills the "Log / Update" dialog. The local mirror is kept only as an
+  instant/offline optimistic overlay (rendered first, then reconciled by the server read).
 
 ---
 

@@ -10,6 +10,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **`AppShell.tsx`** — the responsive app frame: **sidebar (≥1024) → icon rail (768–1023) →
   bottom tab bar (<768)**, plus the footer user block, theme toggle, and sign-out.
 - **`ScreenHeader.tsx`** — title + subtitle + optional right actions.
+- **`UserMenu.tsx`** — avatar button + dropdown (edit profile, theme toggle, sign out). Primarily
+  the mobile account entry point (`md:hidden` in Home's `ScreenHeader`), since the sidebar/rail
+  are hidden `<768`. Desktop keeps the sidebar footer + rail (Settings icon → `/profile`).
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.

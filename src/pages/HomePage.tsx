@@ -4,11 +4,13 @@ import { useNavigate } from 'react-router-dom';
 
 import HealthCaptureDialog, { type HealthCaptureValues } from '@/components/HealthCaptureDialog';
 import ScreenHeader from '@/components/ScreenHeader';
+import UserMenu from '@/components/UserMenu';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, submitPulse, syncHealth } from '@/lib/api';
+import { getDashboard, getHealthLog, submitPulse, syncHealth } from '@/lib/api';
 import {
   isNativeHealthAvailable,
   loadManualCapture,
+  manualCaptureFromLog,
   readTodayHealthData,
   saveManualCapture,
   type ManualHealthCapture,
@@ -119,21 +121,40 @@ export default function HomePage() {
 
   useEffect(() => {
     let mounted = true;
-    // Today's manual capture (if any) beats the mock — the user's own numbers are real.
-    const existing = user?.id ? loadManualCapture(user.id, localISODate()) : null;
-    if (existing) {
-      setManualCapture(existing);
-      setHealthSnapshot(snapshotFromCapture(existing));
+    const todayISO = localISODate();
+    // Today's local capture (if any) shows instantly and works offline — the user's
+    // own numbers beat the mock.
+    const local = user?.id ? loadManualCapture(user.id, todayISO) : null;
+    if (local) {
+      setManualCapture(local);
+      setHealthSnapshot(snapshotFromCapture(local));
     } else {
       void readTodayHealthData().then((data) => {
         if (mounted) setHealthSnapshot(data);
       });
     }
+
+    // Authoritative, cross-device read (backend-gaps.md #7 is now closed): a capture
+    // made on any device wins over the local mirror / mock once it arrives.
+    if (session?.access_token) {
+      void getHealthLog(session.access_token, todayISO)
+        .then((res) => {
+          if (!mounted || !res.log) return;
+          const capture = manualCaptureFromLog(res.log);
+          if (user?.id) saveManualCapture(user.id, capture);
+          setManualCapture(capture);
+          setHealthSnapshot(snapshotFromCapture(capture));
+        })
+        .catch(() => {
+          // Non-blocking — the local capture / mock already renders.
+        });
+    }
+
     void loadDashboard();
     return () => {
       mounted = false;
     };
-  }, [loadDashboard, setHealthSnapshot, user?.id]);
+  }, [loadDashboard, setHealthSnapshot, user?.id, session?.access_token]);
 
   const hasPlan = weekPlan.length > 0;
   const todayWorkout = weekPlan.find((d) => d.status === 'today');
@@ -246,6 +267,7 @@ export default function HomePage() {
       <ScreenHeader
         title={greeting}
         subtitle="Fitness that fits you. Let's check your baseline before we move."
+        rightActions={<UserMenu className="md:hidden" />}
       />
 
       {/* Snapshot + pulse */}

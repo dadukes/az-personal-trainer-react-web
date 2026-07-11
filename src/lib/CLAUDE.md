@@ -48,8 +48,9 @@ for project-wide rules.
   `isNativeHealthAvailable()` returns `false` (drives the "(MOCK)" badge on Home).
 - The user can **manually capture** today's metrics from Home (`HealthCaptureDialog` →
   `syncHealth`). `load`/`saveManualCapture` keep the latest capture per-user in `localStorage`
-  so reopening the dialog the same day prefills the previous entry, and a same-day capture
-  beats the mock in the Home snapshot. The backend has no read endpoint for health logs
-  (backend-gaps.md #7), so this prefill is device-local.
+  as an instant/offline mirror. On Home mount, `getHealthLog(token, today)` reads the
+  **authoritative** server capture (`GET /health/logs?date=`, backend-gaps.md #7 now resolved);
+  `manualCaptureFromLog` maps it into the local shape, and it wins over the mirror + mock, so a
+  capture from any device shows in the snapshot and prefills the dialog cross-device.
 - If a real web/wearable health integration is added later, implement it here and make
   `isNativeHealthAvailable()` report accurately — keep the mock as the fallback.

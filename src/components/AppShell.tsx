@@ -109,7 +109,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
             <button onClick={toggleTheme} aria-label="Toggle theme" className="p-1">
               {isDark ? <Sun size={17} color="var(--tab-inactive)" /> : <Moon size={17} color="var(--tab-inactive)" />}
             </button>
-            <Settings size={17} color="var(--tab-inactive)" />
+            <button onClick={() => navigate('/profile')} aria-label="Edit profile" className="p-1">
+              <Settings size={17} color="var(--tab-inactive)" />
+            </button>
           </div>
           <button
             onClick={handleSignOut}
@@ -148,6 +150,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </div>
         <div className="flex flex-col items-center gap-4">
+          <button onClick={() => navigate('/profile')} aria-label="Edit profile">
+            <Settings size={18} color="var(--tab-inactive)" />
+          </button>
           <button onClick={toggleTheme} aria-label="Toggle theme">
             {isDark ? <Sun size={18} color="var(--tab-inactive)" /> : <Moon size={18} color="var(--tab-inactive)" />}
           </button>

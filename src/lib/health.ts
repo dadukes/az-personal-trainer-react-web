@@ -16,6 +16,8 @@
  * make `isNativeHealthAvailable()` report accurately.
  */
 
+import type { HealthLog } from '@/lib/api';
+
 export interface HealthData {
   sleep_hours: number | null;
   resting_heart_rate: number | null;
@@ -36,6 +38,26 @@ export interface ManualHealthCapture {
   notes?: string;
   /** ISO timestamp of the latest edit (captures can be updated through the day). */
   captured_at: string;
+}
+
+/**
+ * Converts a server health log (`GET /health/logs`) into the local capture
+ * shape used by the Home snapshot and the capture dialog. `null` DB columns
+ * become `undefined` (a not-captured field), and the row's `updated_at` is the
+ * capture time.
+ */
+export function manualCaptureFromLog(log: HealthLog): ManualHealthCapture {
+  return {
+    logged_date: log.logged_date,
+    sleep_hours: log.sleep_hours ?? undefined,
+    sleep_quality: log.sleep_quality ?? undefined,
+    energy_level: log.energy_level ?? undefined,
+    resting_heart_rate: log.resting_heart_rate ?? undefined,
+    step_count: log.step_count ?? undefined,
+    active_calories_burned: log.active_calories_burned ?? undefined,
+    notes: log.notes ?? undefined,
+    captured_at: log.updated_at,
+  };
 }
 
 const MANUAL_CAPTURE_KEY_PREFIX = 'forma:manual-health:';
