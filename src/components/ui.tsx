@@ -219,14 +219,13 @@ interface StatTileProps {
   label: string;
   icon?: ReactNode;
   className?: string;
+  /** When provided the tile becomes a button (springy press + pointer cursor). */
+  onClick?: () => void;
 }
 
-export function StatTile({ value, label, icon, className = '' }: StatTileProps) {
-  return (
-    <div
-      className={`flex-1 rounded-2xl p-4 ${className}`}
-      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
-    >
+export function StatTile({ value, label, icon, className = '', onClick }: StatTileProps) {
+  const inner = (
+    <>
       {icon ? <div className="mb-2">{icon}</div> : null}
       <div className="tabular text-[22px] font-extrabold leading-tight" style={{ color: 'var(--text-primary)' }}>
         {value}
@@ -234,6 +233,26 @@ export function StatTile({ value, label, icon, className = '' }: StatTileProps) 
       <div className="mt-1 text-[11.5px] leading-tight" style={{ color: 'var(--text-muted)' }}>
         {label}
       </div>
+    </>
+  );
+  const tileStyle = { background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' } as const;
+
+  if (onClick) {
+    return (
+      <button
+        type="button"
+        onClick={onClick}
+        className={`flex-1 rounded-2xl p-4 text-left transition-transform active:scale-[0.97] ${className}`}
+        style={tileStyle}
+      >
+        {inner}
+      </button>
+    );
+  }
+
+  return (
+    <div className={`flex-1 rounded-2xl p-4 ${className}`} style={tileStyle}>
+      {inner}
     </div>
   );
 }

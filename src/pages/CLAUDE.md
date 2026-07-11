@@ -25,7 +25,9 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/` | `HomePage` | Health snapshot (+ manual "Log" capture dialog) + pulse + today's plan / CTA + week |
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
-| `/progress` | `ProgressPage` | XP/level + AI health insights |
+| `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **health trends chart** + AI health insights |
+| `/progress/workouts` | `WorkoutHistoryPage` | List of past completed sessions (`getWorkoutSessions`) |
+| `/progress/workouts/:id` | `WorkoutHistoryDetailPage` | One session's logged sets, grouped by section (`getWorkoutSession`) |
 | `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) |
 | `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
 | `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link/alternatives, remove |
@@ -46,6 +48,12 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   persisted history via `getNutritionLogs` on mount and prepends new logs (survives refresh).
 - **Progress**: `getProgress` returns level/XP, `this_week` activity stats (wired to the "This
   week" tiles), and `health_insights` (icons map the stable enum, falling back to `general`).
+  The "Workouts this week" tile (and a "Workout history →" link) navigate to `/progress/workouts`.
+  The **Health trends** section is a `HealthTrendChart` (lazy-loaded so `recharts` is a separate
+  chunk) fed by `getHealthLogs(token, 90)`; it plots two user-chosen dimensions over 7/14/30 days.
+  It is **not** a dual-axis chart — both series are min–max normalized to a shared 0–100 scale
+  (the tooltip shows the real captured values), avoiding the spurious-correlation trap of two
+  independent y-scales.
 - **Plan / Exercise detail**: edits go to a shared `planDraft` slice in the Zustand store (both
   `/plan/:day` and the exercise route read/write it), not straight to the backend. `PlanDayPage`
   seeds the draft from `getWorkoutPlan` (without clobbering unsaved edits) and is the **only**

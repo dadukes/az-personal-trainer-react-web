@@ -85,6 +85,25 @@ counterpart.
   snapshot tiles and prefills the "Log / Update" dialog. The local mirror is kept only as an
   instant/offline optimistic overlay (rendered first, then reconciled by the server read).
 
+## 8. ✅ Read endpoints for workout history
+
+**Endpoints (new):**
+- `GET /api/workouts/sessions?limit=` → `{ success, sessions: WorkoutSession[] }` — the user's
+  completed sessions, most-recent first (limit default 50 / max 100).
+- `GET /api/workouts/sessions/{id}` → `{ success, session, sets: WorkoutSetLog[] }` — one session
+  header plus every logged set (display order: section → exercise → set); `404` when not owned.
+
+Added 2026-07 in `../az-ai-personal-trainer` (`getWorkoutSessions.ts`, `getWorkoutSession.ts`,
+plus `WorkoutSessionModel.findByIdForUser` / `findSetLogsBySessionId`). Both reads go through the
+caller's RLS-scoped client. **Not yet in `API_docs.md`; deploy the backend before the web
+`/progress/workouts` view can load real data.**
+
+- **Web behavior:** `ProgressPage`'s "Workouts this week" tile → `/progress/workouts`
+  (`WorkoutHistoryPage`, `getWorkoutSessions`); tapping a row opens `/progress/workouts/:id`
+  (`WorkoutHistoryDetailPage`, `getWorkoutSession`) which groups the logged sets by section.
+  Previously only `dashboard.completed_days` exposed session ids, and only for the current week
+  with no per-set detail.
+
 ---
 
 ## Not gaps (verified working against the local backend)

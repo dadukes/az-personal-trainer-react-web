@@ -13,6 +13,8 @@ import OnboardingPage from '@/pages/OnboardingPage';
 import PlanDayPage from '@/pages/PlanDayPage';
 import ProfilePage from '@/pages/ProfilePage';
 import ProgressPage from '@/pages/ProgressPage';
+import WorkoutHistoryDetailPage from '@/pages/WorkoutHistoryDetailPage';
+import WorkoutHistoryPage from '@/pages/WorkoutHistoryPage';
 import WorkoutSessionPage from '@/pages/WorkoutSessionPage';
 
 function Splash() {
@@ -74,6 +76,8 @@ export default function App() {
       <Route path="/coach" element={<RequireAuth><CoachPage /></RequireAuth>} />
       <Route path="/fuel" element={<RequireAuth><FuelPage /></RequireAuth>} />
       <Route path="/progress" element={<RequireAuth><ProgressPage /></RequireAuth>} />
+      <Route path="/progress/workouts" element={<RequireAuth><WorkoutHistoryPage /></RequireAuth>} />
+      <Route path="/progress/workouts/:id" element={<RequireAuth><WorkoutHistoryDetailPage /></RequireAuth>} />
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
       <Route path="/workout/:day" element={<RequireAuth><WorkoutSessionPage /></RequireAuth>} />
       <Route path="/plan/:day" element={<RequireAuth><PlanDayPage /></RequireAuth>} />
