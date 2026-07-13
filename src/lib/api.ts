@@ -500,7 +500,10 @@ export interface CatalogExerciseSummary {
 export interface ExerciseSearchResponse {
   success: boolean;
   exercises: CatalogExerciseSummary[];
+  /** Best-effort count: provider-reported when browsing, else result count. */
   total: number;
+  /** Cursor for the next browse page, or `null` on the last page / any name search. */
+  next_cursor: string | null;
 }
 
 export interface ExerciseAlternative extends CatalogExerciseSummary {
@@ -691,7 +694,10 @@ export interface ExerciseSearchParams {
   body_part?: string;
   equipment?: string;
   limit?: number;
+  /** Name-search mode only — slice offset within the bounded result set. */
   offset?: number;
+  /** Browse mode only (blank `search`) — the `next_cursor` from a prior page. */
+  cursor?: string;
 }
 
 export async function searchExercises(
@@ -703,6 +709,7 @@ export async function searchExercises(
   if (params.equipment) query.set('equipment', params.equipment);
   if (params.limit != null) query.set('limit', String(params.limit));
   if (params.offset != null) query.set('offset', String(params.offset));
+  if (params.cursor) query.set('cursor', params.cursor);
   return apiFetch<ExerciseSearchResponse>(`/exercises?${query.toString()}`, accessToken);
 }
 

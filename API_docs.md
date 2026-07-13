@@ -1511,11 +1511,19 @@ Content-Type: application/json
 
 ### GET /api/exercises
 
-Search the ExerciseDB catalog to add a new exercise to a day (manual planning). `search` is the
-primary input (provider search is name-based); `body_part` / `equipment` are applied as
-server-side filters. List items are the full exercise shape, but heavy fields
-(`instructions` / `tips` / `variations`) may be empty for search-sourced rows — hydrate them
-lazily via [`GET /api/exercises/{exerciseId}`](#get-apiexercisesexerciseid).
+Find exercises for the "add exercise" / library flow. Two modes:
+
+- **Name search** (`search` provided): the provider search is name-based, so it returns a single
+  bounded result set — there is **no cursor** (`next_cursor` is `null`) and `offset` slices within
+  that window. `body_part` / `equipment` are applied as post-filters.
+- **Browse** (`search` blank): pages through the whole catalog with **real cursor pagination**.
+  Pass the previous response's `next_cursor` back as `cursor` to get the next page; `body_part` /
+  `equipment` are pushed down as provider-side filters (use the provider's enum values, e.g.
+  `WAIST`, `DUMBBELL`). `next_cursor` is `null` on the last page.
+
+List items are the full exercise shape, but heavy fields (`instructions` / `tips` / `video_url`)
+may be empty for list/search-sourced rows — hydrate them lazily via
+[`GET /api/exercises/{exerciseId}`](#get-apiexercisesexerciseid).
 
 #### Request
 
@@ -1524,17 +1532,27 @@ GET /api/exercises?search=row&body_part=back&equipment=dumbbell&limit=20&offset=
 Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 ```
 
+Browse the next page (no `search`):
+
+```http
+GET /api/exercises?body_part=WAIST&limit=20&cursor=exr_41n2hadPLLFRGvFk&code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+```
+
 | Query | Type | Description |
 |-------|------|-------------|
-| `search` | `string` | Name query (primary). Blank ⇒ empty result. |
-| `body_part` | `string` | Optional exact body-part filter (case-insensitive) |
-| `equipment` | `string` | Optional exact equipment filter (case-insensitive) |
+| `search` | `string` | Name query. Blank ⇒ browse mode (cursor-paginated). |
+| `body_part` | `string` | Optional body-part filter. Post-filter in search mode; provider-side in browse mode. |
+| `equipment` | `string` | Optional equipment filter. Post-filter in search mode; provider-side in browse mode. |
 | `limit` | `number` | Page size (default 20, max 50) |
-| `offset` | `number` | Page offset (default 0) |
+| `offset` | `number` | Slice offset, **search mode only** (browse mode uses `cursor`) |
+| `cursor` | `string` | **Browse mode only** — the `next_cursor` from a prior page |
 
 #### Response
 
-**`200 OK`** — `total` is a best-effort count (provider-reported if available, else result count).
+**`200 OK`** — `total` is a best-effort count (provider-reported when browsing, else result count).
+`next_cursor` is the cursor for the next page, or `null` when there are no more pages (always
+`null` for a name search).
 
 ```json
 {
@@ -1542,7 +1560,8 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
   "exercises": [
     { "id": "exr_0292", "name": "Dumbbell Row", "image_url": "https://cdn.exercisedb.dev/Dumbbell-Row-Back.png", "target": "upper back", "body_part": "back", "equipment": "DUMBBELL" }
   ],
-  "total": 1
+  "total": 1,
+  "next_cursor": null
 }
 ```
 

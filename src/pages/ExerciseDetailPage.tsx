@@ -383,33 +383,84 @@ export default function ExerciseDetailPage() {
     [ex, replaceDraftExercise, section, index],
   );
 
-  // ── Search state ──
+  // ── Search state (name-search mode: offset-paginated within a bounded set) ──
+  // The provider's name search returns a small bounded window (~10 max), so keep the page
+  // size below it — otherwise page one grabs everything and "Load more" never shows.
+  const SEARCH_PAGE_SIZE = 8;
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CatalogExerciseSummary[]>([]);
+  const [total, setTotal] = useState(0);
   const [searching, setSearching] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const reqIdRef = useRef(0);
 
+  const clearSearch = useCallback(() => {
+    setQuery('');
+    setResults([]);
+    setTotal(0);
+    setLoadingMore(false);
+  }, []);
+
+  // First page: (re)runs whenever the debounced term changes.
   useEffect(() => {
     const term = query.trim();
     if (term.length < 2 || !session?.access_token) {
       setResults([]);
+      setTotal(0);
       setSearching(false);
+      setLoadingMore(false);
       return;
     }
     setSearching(true);
     const reqId = ++reqIdRef.current;
     const handle = setTimeout(async () => {
       try {
-        const res = await searchExercises(session.access_token, { search: term, limit: 15 });
-        if (reqId === reqIdRef.current) setResults(res.exercises);
+        const res = await searchExercises(session.access_token, {
+          search: term,
+          limit: SEARCH_PAGE_SIZE,
+          offset: 0,
+        });
+        if (reqId === reqIdRef.current) {
+          setResults(res.exercises);
+          setTotal(res.total);
+        }
       } catch {
-        if (reqId === reqIdRef.current) setResults([]);
+        if (reqId === reqIdRef.current) {
+          setResults([]);
+          setTotal(0);
+        }
       } finally {
         if (reqId === reqIdRef.current) setSearching(false);
       }
     }, 350);
     return () => clearTimeout(handle);
   }, [query, session]);
+
+  // Next page: append the following offset slice, keyed to the live search request
+  // so a fresh query started meanwhile discards this stale page.
+  const loadMore = useCallback(async () => {
+    const term = query.trim();
+    if (!session?.access_token || term.length < 2) return;
+    const reqId = reqIdRef.current;
+    setLoadingMore(true);
+    try {
+      const res = await searchExercises(session.access_token, {
+        search: term,
+        limit: SEARCH_PAGE_SIZE,
+        offset: results.length,
+      });
+      if (reqId === reqIdRef.current) {
+        setResults((prev) => [...prev, ...res.exercises]);
+        setTotal(res.total);
+      }
+    } catch {
+      /* keep the pages we already have */
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [query, session, results.length]);
+
+  const hasMoreResults = results.length < total;
 
   // ── Alternatives state ──
   const [alts, setAlts] = useState<ExerciseAlternative[] | null>(null);
@@ -652,19 +703,38 @@ export default function ExerciseDetailPage() {
             Searching…
           </p>
         ) : results.length > 0 ? (
-          <div className="mt-3 flex flex-col gap-2">
-            {results.map((r) => (
-              <CatalogRow
-                key={r.id}
-                item={r}
-                onPick={() => {
-                  pick(r);
-                  setQuery('');
-                  setResults([]);
-                }}
-              />
-            ))}
-          </div>
+          <>
+            <div className="mb-2 mt-3 text-[11.5px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+              Showing {results.length}
+              {total > results.length ? ` of ${total}` : ''} — matches are loose, scroll for more
+            </div>
+            <div
+              className="flex max-h-[340px] flex-col gap-2 overflow-y-auto pr-1"
+              style={{ overscrollBehavior: 'contain' }}
+            >
+              {results.map((r) => (
+                <CatalogRow
+                  key={r.id}
+                  item={r}
+                  onPick={() => {
+                    pick(r);
+                    clearSearch();
+                  }}
+                />
+              ))}
+              {hasMoreResults ? (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  fullWidth
+                  onClick={loadMore}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? 'Loading…' : 'Load more results'}
+                </Button>
+              ) : null}
+            </div>
+          </>
         ) : query.trim().length >= 2 ? (
           <p className="mt-2 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
             No matches — you can also keep the typed name and we&rsquo;ll match it on save.
