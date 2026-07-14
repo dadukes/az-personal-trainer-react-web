@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button, Card, Eyebrow } from '@/components/ui';
@@ -53,6 +53,9 @@ export default function WorkoutGuided({
   const [pendingNext, setPendingNext] = useState<Position | null>(null);
   const [programOpen, setProgramOpen] = useState(false);
   const [detailCues, setDetailCues] = useState<string[]>([]);
+  // Form-tip text is long — collapsed by default so the demo media keeps the screen.
+  // Deliberately not reset per exercise: opting in means "show tips for this session".
+  const [showCues, setShowCues] = useState(false);
 
   const totalSets = useMemo(() => blocks.reduce((n, b) => n + b.sets.length, 0), [blocks]);
   const completedSets = useMemo(
@@ -153,7 +156,18 @@ export default function WorkoutGuided({
         />
 
         {block.notes ? <CoachNote text={block.notes} /> : null}
-        {cues.length > 0 ? <FormCues cues={cues} /> : null}
+
+        {cues.length > 0 ? (
+          <div className="flex flex-col gap-2">
+            <button onClick={() => setShowCues((v) => !v)} className="flex items-center justify-between">
+              <Eyebrow>Form tips</Eyebrow>
+              <span className="flex items-center gap-1 text-[11px] font-bold" style={{ color: 'var(--accent-text)' }}>
+                {showCues ? 'HIDE' : 'SHOW'} {showCues ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+              </span>
+            </button>
+            {showCues ? <FormCues cues={cues} /> : null}
+          </div>
+        ) : null}
 
         {block.timed ? (
           <TimedRing

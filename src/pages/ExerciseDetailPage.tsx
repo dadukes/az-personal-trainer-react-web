@@ -1,4 +1,4 @@
-import { ChevronLeft, Dumbbell, History, Link2, Minus, Plus, Search, Shuffle, Sparkles, Trash2, Unlink } from 'lucide-react';
+import { ChevronDown, ChevronLeft, ChevronUp, Dumbbell, History, Info, Link2, Minus, Plus, Search, Shuffle, Sparkles, Trash2, Unlink } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -102,6 +102,9 @@ function ExerciseInfo({ exerciseId }: { exerciseId: string }) {
   const [detail, setDetail] = useState<ExerciseDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Catalog text (overview / how-to / tips) is long — keep it collapsed by default
+  // so the media demo stays the only thing on screen.
+  const [showInfo, setShowInfo] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -142,6 +145,12 @@ function ExerciseInfo({ exerciseId }: { exerciseId: string }) {
   }
 
   const muscles = detail.target_muscles.length > 0 ? detail.target_muscles : detail.target ? [detail.target] : [];
+  const hasInfo =
+    muscles.length > 0 ||
+    Boolean(detail.equipment) ||
+    Boolean(detail.overview) ||
+    detail.instructions.length > 0 ||
+    detail.tips.length > 0;
 
   return (
     <Card padding="0" className="overflow-hidden">
@@ -155,54 +164,73 @@ function ExerciseInfo({ exerciseId }: { exerciseId: string }) {
         </div>
       ) : null}
 
-      <div className="flex flex-col gap-3.5 p-5">
-        {muscles.length > 0 || detail.equipment ? (
-          <div className="flex flex-wrap gap-1.5">
-            {muscles.map((m) => (
-              <Badge key={m} tone="mint">
-                {m}
-              </Badge>
-            ))}
-            {detail.equipment ? <Badge tone="neutral">{detail.equipment}</Badge> : null}
-          </div>
-        ) : null}
+      {hasInfo ? (
+        <button
+          onClick={() => setShowInfo((v) => !v)}
+          className="flex w-full items-center justify-between px-5 py-3.5"
+          style={{ borderTop: '1px solid var(--border-base)' }}
+        >
+          <span className="flex items-center gap-2 text-[13px] font-bold" style={{ color: 'var(--accent-text)' }}>
+            <Info size={15} /> Exercise info
+          </span>
+          {showInfo ? (
+            <ChevronUp size={16} color="var(--text-muted)" />
+          ) : (
+            <ChevronDown size={16} color="var(--text-muted)" />
+          )}
+        </button>
+      ) : null}
 
-        {detail.overview ? (
-          <p className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
-            {detail.overview}
-          </p>
-        ) : null}
-
-        {detail.instructions.length > 0 ? (
-          <div>
-            <Eyebrow className="mb-2">How to</Eyebrow>
-            <ol className="flex flex-col gap-1.5">
-              {detail.instructions.map((step, i) => (
-                <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                  <span className="tabular flex-shrink-0 font-bold" style={{ color: 'var(--accent-text)' }}>
-                    {i + 1}.
-                  </span>
-                  <span>{step}</span>
-                </li>
+      {hasInfo && showInfo ? (
+        <div className="flex flex-col gap-3.5 px-5 pb-5">
+          {muscles.length > 0 || detail.equipment ? (
+            <div className="flex flex-wrap gap-1.5">
+              {muscles.map((m) => (
+                <Badge key={m} tone="mint">
+                  {m}
+                </Badge>
               ))}
-            </ol>
-          </div>
-        ) : null}
+              {detail.equipment ? <Badge tone="neutral">{detail.equipment}</Badge> : null}
+            </div>
+          ) : null}
 
-        {detail.tips.length > 0 ? (
-          <div>
-            <Eyebrow className="mb-2">Tips</Eyebrow>
-            <ul className="flex flex-col gap-1.5">
-              {detail.tips.map((tip, i) => (
-                <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                  <Sparkles size={13} className="mt-0.5 flex-shrink-0" color="#34D2C1" />
-                  <span>{tip}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : null}
-      </div>
+          {detail.overview ? (
+            <p className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
+              {detail.overview}
+            </p>
+          ) : null}
+
+          {detail.instructions.length > 0 ? (
+            <div>
+              <Eyebrow className="mb-2">How to</Eyebrow>
+              <ol className="flex flex-col gap-1.5">
+                {detail.instructions.map((step, i) => (
+                  <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                    <span className="tabular flex-shrink-0 font-bold" style={{ color: 'var(--accent-text)' }}>
+                      {i + 1}.
+                    </span>
+                    <span>{step}</span>
+                  </li>
+                ))}
+              </ol>
+            </div>
+          ) : null}
+
+          {detail.tips.length > 0 ? (
+            <div>
+              <Eyebrow className="mb-2">Tips</Eyebrow>
+              <ul className="flex flex-col gap-1.5">
+                {detail.tips.map((tip, i) => (
+                  <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                    <Sparkles size={13} className="mt-0.5 flex-shrink-0" color="#34D2C1" />
+                    <span>{tip}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
     </Card>
   );
 }
