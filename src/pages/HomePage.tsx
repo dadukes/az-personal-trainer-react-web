@@ -3,10 +3,18 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import HealthCaptureDialog, { type HealthCaptureValues } from '@/components/HealthCaptureDialog';
+import QuickLogDialog from '@/components/QuickLogDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import UserMenu from '@/components/UserMenu';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, getHealthLog, submitPulse, syncHealth } from '@/lib/api';
+import {
+  getDashboard,
+  getHealthLog,
+  logActivity,
+  submitPulse,
+  syncHealth,
+  type ActivityLogPayload,
+} from '@/lib/api';
 import {
   isNativeHealthAvailable,
   loadManualCapture,
@@ -61,8 +69,16 @@ function snapshotFromCapture(capture: ManualHealthCapture) {
 export default function HomePage() {
   const navigate = useNavigate();
   const { session, user } = useAuth();
-  const { healthSnapshot, setHealthSnapshot, weekPlan, setWeekPlan, appendMessage, profile, completedWorkouts } =
-    useAppStore();
+  const {
+    healthSnapshot,
+    setHealthSnapshot,
+    weekPlan,
+    setWeekPlan,
+    appendMessage,
+    profile,
+    completedWorkouts,
+    addXp,
+  } = useAppStore();
   const [pulse, setPulse] = useState<StressLevel>(null);
   const [pulseSubmitting, setPulseSubmitting] = useState(false);
   const [planId, setPlanId] = useState<string | undefined>();
@@ -73,6 +89,9 @@ export default function HomePage() {
   const [captureOpen, setCaptureOpen] = useState(false);
   const [captureSaving, setCaptureSaving] = useState(false);
   const [captureError, setCaptureError] = useState<string | null>(null);
+  const [quickLogOpen, setQuickLogOpen] = useState(false);
+  const [quickLogSaving, setQuickLogSaving] = useState(false);
+  const [quickLogError, setQuickLogError] = useState<string | null>(null);
   const isNative = isNativeHealthAvailable();
 
   const loadDashboard = useCallback(async () => {
@@ -230,6 +249,29 @@ export default function HomePage() {
     }
   };
 
+  /**
+   * Quick-log: something the user did outside the plan. XP is awarded server-side from
+   * the type (+ distance for cardio), so the response value is the only source of truth.
+   */
+  const handleQuickLog = async (payload: ActivityLogPayload) => {
+    if (quickLogSaving) return;
+    if (!session?.access_token) {
+      setQuickLogError('You need to be signed in to log an activity.');
+      return;
+    }
+    setQuickLogSaving(true);
+    setQuickLogError(null);
+    try {
+      const result = await logActivity(session.access_token, payload);
+      addXp(result.xp_earned);
+      setQuickLogOpen(false);
+    } catch {
+      setQuickLogError('Couldn’t log that. Check your connection and try again.');
+    } finally {
+      setQuickLogSaving(false);
+    }
+  };
+
   const handlePlanCTA = () => {
     appendMessage({
       id: `msg-${Date.now()}`,
@@ -267,7 +309,19 @@ export default function HomePage() {
       <ScreenHeader
         title={greeting}
         subtitle="Fitness that fits you. Let's check your baseline before we move."
-        rightActions={<UserMenu className="md:hidden" />}
+        rightActions={
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => setQuickLogOpen(true)}
+              leftIcon={<Plus size={14} color="var(--accent-text)" />}
+            >
+              Log something
+            </Button>
+            <UserMenu className="md:hidden" />
+          </div>
+        }
       />
 
       {/* Snapshot + pulse */}
@@ -508,6 +562,18 @@ export default function HomePage() {
           onSave={(values) => void handleCaptureSave(values)}
           onClose={() => {
             if (!captureSaving) setCaptureOpen(false);
+          }}
+        />
+      ) : null}
+
+      {/* Quick log — anything done outside the plan still counts towards the week. */}
+      {quickLogOpen ? (
+        <QuickLogDialog
+          saving={quickLogSaving}
+          error={quickLogError}
+          onSave={(payload) => void handleQuickLog(payload)}
+          onClose={() => {
+            if (!quickLogSaving) setQuickLogOpen(false);
           }}
         />
       ) : null}

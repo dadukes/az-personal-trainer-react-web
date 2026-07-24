@@ -1,4 +1,4 @@
-import { ChevronLeft, ChevronRight, Dumbbell, Zap } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Dumbbell, MessageCircle, Zap } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -98,7 +98,12 @@ export default function WorkoutHistoryPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-2.5">
-          {sessions.map((s) => (
+          {sessions.map((s) => {
+            // The coach can log a session the user reported in chat ("did my spin class").
+            // Those rows carry no per-set detail, so they render as a logged activity
+            // rather than an empty set table.
+            const coachLogged = s.total_sets === 0;
+            return (
             <button
               key={s.id}
               onClick={() => navigate(`/progress/workouts/${s.id}`)}
@@ -109,23 +114,28 @@ export default function WorkoutHistoryPage() {
                 className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl"
                 style={{ background: 'var(--bg-subtle)' }}
               >
-                <Dumbbell size={20} color="#34D2C1" />
+                {coachLogged ? (
+                  <MessageCircle size={20} color="#34D2C1" />
+                ) : (
+                  <Dumbbell size={20} color="#34D2C1" />
+                )}
               </div>
               <div className="min-w-0 flex-1">
                 <div className="text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
                   {s.day ? capitalize(s.day) : 'Workout'}
                 </div>
                 <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+                  {coachLogged ? 'Coach-logged · ' : ''}
                   {formatSessionDate(s.completed_at)}
                 </div>
               </div>
               <div className="flex flex-shrink-0 items-center gap-4">
                 <div className="text-right">
                   <div className="tabular text-[14px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                    {formatDuration(s.duration_seconds)}
+                    {s.duration_seconds > 0 ? formatDuration(s.duration_seconds) : '—'}
                   </div>
                   <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    {s.total_sets} {s.total_sets === 1 ? 'set' : 'sets'}
+                    {coachLogged ? 'logged' : `${s.total_sets} ${s.total_sets === 1 ? 'set' : 'sets'}`}
                   </div>
                 </div>
                 {s.xp_earned > 0 ? (
@@ -137,7 +147,8 @@ export default function WorkoutHistoryPage() {
                 <ChevronRight size={18} color="var(--text-muted)" />
               </div>
             </button>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

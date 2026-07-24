@@ -1,9 +1,20 @@
 import { Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
-import { Button, Card, Eyebrow } from '@/components/ui';
+import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
+import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail } from '@/lib/api';
-import { formatClock, sectionLabel, type Block } from '@/lib/workoutSession';
+import { cardioKindVerb, isCatalogExercise } from '@/lib/exercise';
+import {
+  blockTargetText,
+  formatClock,
+  intervalTotalSeconds,
+  isCountdownBlock,
+  isIntervalBlock,
+  isSingleCaptureBlock,
+  sectionLabel,
+  type Block,
+} from '@/lib/workoutSession';
 
 interface GuidedWorkoutProps {
   blocks: Block[];
@@ -11,8 +22,19 @@ interface GuidedWorkoutProps {
   dayNotes?: string;
   onSetReps: (blockIndex: number, setIndex: number, reps: number) => void;
   onSetWeight: (blockIndex: number, setIndex: number, weight: number) => void;
+  onSetCapture: (
+    blockIndex: number,
+    setIndex: number,
+    patch: { durationSeconds?: number; distanceKm?: number },
+  ) => void;
   onCompleteSet: (blockIndex: number, setIndex: number) => void;
-  onFinish: () => void;
+  /**
+   * `finalCompletion` is the set the user just finished. It is handed over rather than
+   * written through `onCompleteSet` because the parent serializes the session in the
+   * same tick — a `setState` here would not have flushed, and the last set of the
+   * workout would log as skipped.
+   */
+  onFinish: (finalCompletion?: Position) => void;
 }
 
 interface Position {
@@ -34,6 +56,7 @@ export default function WorkoutGuided({
   dayNotes,
   onSetReps,
   onSetWeight,
+  onSetCapture,
   onCompleteSet,
   onFinish,
 }: GuidedWorkoutProps) {
@@ -52,6 +75,9 @@ export default function WorkoutGuided({
   const [phase, setPhase] = useState<'exercise' | 'rest'>('exercise');
   const [pendingNext, setPendingNext] = useState<Position | null>(null);
   const [programOpen, setProgramOpen] = useState(false);
+  // Interval blocks the user opted out of coaching live (outdoor run, phone pocketed) —
+  // they collapse to the plain capture card for the rest of the session.
+  const [loggedInstead, setLoggedInstead] = useState<string[]>([]);
   const [detailCues, setDetailCues] = useState<string[]>([]);
   // Form-tip text is long — collapsed by default so the demo media keeps the screen.
   // Deliberately not reset per exercise: opting in means "show tips for this session".
@@ -87,12 +113,12 @@ export default function WorkoutGuided({
 
   const advance = useCallback(() => {
     if (!block) return;
-    onCompleteSet(blockIndex, setIndex);
     const next = computeNext(blockIndex, setIndex);
     if (!next) {
-      onFinish();
+      onFinish({ blockIndex, setIndex });
       return;
     }
+    onCompleteSet(blockIndex, setIndex);
     if (block.restSeconds > 0) {
       setPendingNext(next);
       setPhase('rest');
@@ -101,6 +127,34 @@ export default function WorkoutGuided({
     setBlockIndex(next.blockIndex);
     setSetIndex(next.setIndex);
   }, [block, blockIndex, setIndex, computeNext, onCompleteSet, onFinish]);
+
+  /**
+   * Leaves the current block entirely, without the between-sets rest. Used by the single
+   * "did it" capture blocks (cardio, class) and when bailing out of an interval block.
+   */
+  const goToNextBlock = useCallback(
+    (finalCompletion?: Position) => {
+      setPhase('exercise');
+      setPendingNext(null);
+      if (blockIndex + 1 >= blocks.length) {
+        onFinish(finalCompletion);
+        return;
+      }
+      setBlockIndex(blockIndex + 1);
+      setSetIndex(0);
+    },
+    [blockIndex, blocks.length, onFinish],
+  );
+
+  /** Completes a single-capture block (one set) and moves straight on. */
+  const completeCapture = useCallback(() => {
+    if (blockIndex + 1 >= blocks.length) {
+      onFinish({ blockIndex, setIndex: 0 });
+      return;
+    }
+    onCompleteSet(blockIndex, 0);
+    goToNextBlock();
+  }, [blockIndex, blocks.length, onCompleteSet, onFinish, goToNextBlock]);
 
   const endRest = useCallback(() => {
     setPhase('exercise');
@@ -126,13 +180,43 @@ export default function WorkoutGuided({
   if (!block || !set) return null;
 
   const cues = (block.cues && block.cues.length > 0 ? block.cues : detailCues).slice(0, 4);
-  const setLabel = block.timed
-    ? block.sets.length > 1
-      ? `Round ${setIndex + 1} of ${block.sets.length}`
-      : 'Hold'
+  const setLabel = isCountdownBlock(block)
+    ? block.type === 'mobility'
+      ? block.sets.length > 1
+        ? `Hold ${setIndex + 1} of ${block.sets.length}`
+        : 'Hold and breathe'
+      : block.sets.length > 1
+        ? `Round ${setIndex + 1} of ${block.sets.length}`
+        : 'Hold'
     : `Set ${setIndex + 1} of ${block.sets.length}`;
   const upNext = blocks.slice(blockIndex + 1, blockIndex + 3);
   const restNextLabel = pendingNext ? blocks[pendingNext.blockIndex].name : undefined;
+
+  // Cardio and class are never catalog-matched, so there is no demo media to show —
+  // rendering the placeholder hero for them would just be a dead grey box.
+  const showDemo = isCatalogExercise(block.type);
+  const collapsedInterval = loggedInstead.includes(block.key);
+  const intervalLive = isIntervalBlock(block) && !collapsedInterval;
+  const singleCapture = isSingleCaptureBlock(block) || collapsedInterval;
+  const isLastBlock = blockIndex + 1 >= blocks.length;
+
+  const primaryLabel = singleCapture
+    ? block.type === 'class'
+      ? 'Mark class complete'
+      : `Log this ${cardioKindVerb(block.activityKind)}`
+    : intervalLive
+      ? isLastBlock
+        ? 'Finish workout'
+        : 'Next exercise'
+      : isLastPosition
+        ? 'Finish workout'
+        : 'Complete set';
+
+  const onPrimary = singleCapture
+    ? completeCapture
+    : intervalLive
+      ? () => goToNextBlock()
+      : advance;
 
   return (
     <>
@@ -147,13 +231,17 @@ export default function WorkoutGuided({
 
         {dayNotes ? <CoachNote text={dayNotes} label="SESSION NOTE" subtle /> : null}
 
-        <ExerciseDemo
-          key={block.key}
-          exerciseId={block.exercise_id}
-          name={block.name}
-          accessToken={accessToken}
-          onCues={setDetailCues}
-        />
+        {showDemo ? (
+          <ExerciseDemo
+            key={block.key}
+            exerciseId={block.exercise_id}
+            name={block.name}
+            accessToken={accessToken}
+            onCues={setDetailCues}
+          />
+        ) : null}
+
+        {block.isPerSide ? <Badge tone="neutral">Each side</Badge> : null}
 
         {block.notes ? <CoachNote text={block.notes} /> : null}
 
@@ -169,7 +257,30 @@ export default function WorkoutGuided({
           </div>
         ) : null}
 
-        {block.timed ? (
+        {intervalLive ? (
+          <IntervalPlayer
+            key={block.key}
+            block={block}
+            completed={completedFlags}
+            onCompleteRound={(round) => onCompleteSet(blockIndex, round)}
+            onEndEarly={() => goToNextBlock()}
+            onLogInstead={() => {
+              setLoggedInstead((prev) => [...prev, block.key]);
+              // Seed the capture with the whole session, not one work interval.
+              onSetCapture(blockIndex, 0, { durationSeconds: intervalTotalSeconds(block) });
+            }}
+          />
+        ) : block.type === 'class' ? (
+          <ClassCaptureCard
+            block={block}
+            onCapture={(patch) => onSetCapture(blockIndex, 0, patch)}
+          />
+        ) : singleCapture ? (
+          <CardioCaptureCard
+            block={block}
+            onCapture={(patch) => onSetCapture(blockIndex, 0, patch)}
+          />
+        ) : isCountdownBlock(block) ? (
           <TimedRing
             key={`${block.key}-${setIndex}`}
             durationSeconds={block.durationSeconds ?? 30}
@@ -239,10 +350,12 @@ export default function WorkoutGuided({
           </div>
           <Button
             size="lg"
-            onClick={advance}
-            leftIcon={isLastPosition ? <Dumbbell size={16} color="#06224D" /> : undefined}
+            onClick={onPrimary}
+            leftIcon={
+              primaryLabel === 'Finish workout' ? <Dumbbell size={16} color="#06224D" /> : undefined
+            }
           >
-            {isLastPosition ? 'Finish workout' : 'Complete set'}
+            {primaryLabel}
           </Button>
         </div>
       </div>
@@ -671,12 +784,6 @@ function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabe
 
 // ─── Program sheet (jump anywhere) ────────────────────────────────────────────
 
-function blockTarget(block: Block): string {
-  if (block.timed) return block.durationSeconds ? `${block.durationSeconds}s` : 'Timed';
-  const sets = block.sets.length > 1 ? `${block.sets.length} × ` : '';
-  return `${sets}${block.repText ?? 'reps'}`;
-}
-
 function ProgramSheet({
   blocks,
   currentIndex,
@@ -754,7 +861,7 @@ function ProgramSheet({
                             {block.name}
                           </div>
                           <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                            {blockTarget(block)}
+                            {blockTargetText(block)}
                           </div>
                         </div>
                         <ChevronRight size={18} color="var(--text-muted)" />

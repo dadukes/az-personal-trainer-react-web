@@ -4,7 +4,7 @@ import { env } from '@/lib/env';
 
 export type CoachPersonality = 'cheerleader' | 'zen' | 'analyst';
 export type FitnessLevel = 'beginner' | 'intermediate' | 'advanced';
-export type ActivityType = 'full_workout' | 'micro_win' | 'walk' | 'other';
+export type ActivityType = 'full_workout' | 'micro_win' | 'walk' | 'cardio' | 'class' | 'other';
 export type PrimaryGoal =
   | 'weight_loss'
   | 'muscle_gain'
@@ -41,6 +41,8 @@ export interface ActivityLogPayload {
   activity_type: ActivityType;
   duration_minutes?: number;
   notes?: string;
+  /** Cardio only — drives the proportional cardio XP tier. Must be positive when sent. */
+  distance_km?: number;
 }
 
 export interface NutritionLogPayload {
@@ -114,10 +116,41 @@ export interface ExerciseLastPerformance {
   performed_at?: string;
 }
 
+/**
+ * The discriminator the backend stamps on **every** exercise it returns (pre-migration
+ * rows get a derived one), so reads can rely on it unconditionally. Only plans cached
+ * on-device before the typed-exercise rollout need the legacy heuristic fallback in
+ * `lib/exercise.ts`.
+ */
+export type ExerciseType = 'reps' | 'timed' | 'cardio' | 'class' | 'mobility';
+
+/** The movement behind a `cardio` exercise. Never catalog-matched (no `exercise_id`). */
+export type CardioActivityKind = 'run' | 'cycle' | 'swim' | 'row' | 'walk' | 'hike' | 'other';
+
+/** Steady-state effort vs. a structured work/recover round loop. */
+export type CardioFormat = 'steady' | 'intervals';
+
+/** The 5-zone heart-rate model (1 = very light … 5 = max). Labels are FE-owned. */
+export type HeartRateZone = 1 | 2 | 3 | 4 | 5;
+
+/** Present on `cardio` exercises when `cardio_format === 'intervals'`. */
+export interface ExerciseIntervals {
+  rounds: number;
+  work_seconds: number;
+  recover_seconds: number;
+  work_hr_zone?: HeartRateZone;
+  recover_hr_zone?: HeartRateZone;
+}
+
 export interface DashboardExercise {
   name: string;
+  /** Always present on server reads; optional only for on-device plans cached pre-rollout. */
+  type?: ExerciseType;
   sets?: number;
   reps?: string;
+  /** Structured rep range — prefer over parsing the free-text `reps`. */
+  reps_min?: number;
+  reps_max?: number;
   rest_seconds?: number;
   duration_seconds?: number;
   exercise_id?: string;
@@ -125,8 +158,20 @@ export interface DashboardExercise {
   body_part?: string;
   cues?: string[];
   notes?: string;
+  equipment?: string;
+  /** Unilateral movement — show an "each side" indicator. Valid on any type. */
+  is_per_side?: boolean;
   target_weight?: number;
   weight_unit?: WeightUnit;
+  // ── cardio ──
+  activity_kind?: CardioActivityKind;
+  distance_km?: number;
+  target_duration_minutes?: number;
+  target_hr_zone?: HeartRateZone;
+  cardio_format?: CardioFormat;
+  intervals?: ExerciseIntervals;
+  // ── class ──
+  class_name?: string;
   swapped_from?: string;
   last_performance?: ExerciseLastPerformance;
 }
@@ -386,6 +431,13 @@ export interface LoggedExercise {
   exercise_id?: string;
   name: string;
   section: WorkoutSection;
+  /**
+   * Send the plan exercise's type through — it selects the effort-XP tier. Without it the
+   * server can only derive timed-vs-reps from set durations, never cardio/class/mobility.
+   */
+  type?: ExerciseType;
+  /** Cardio only — the distance the user reported. Feeds the proportional cardio XP. */
+  distance_km?: number;
   swapped_from?: string | null;
   skipped?: boolean;
   sets: LoggedSet[];
@@ -400,11 +452,26 @@ export interface WorkoutLogPayload {
   exercises: LoggedExercise[];
 }
 
+/** One row of the per-exercise XP tally returned by `POST /workouts/log`. */
+export interface XpBreakdownEntry {
+  name: string;
+  type: ExerciseType;
+  xp: number;
+  /** `true` when the +5 beat-your-previous-best bonus applied — worth celebrating. */
+  improved?: boolean;
+}
+
 export interface WorkoutLogResponse {
   success: boolean;
+  /**
+   * ⚠ Variable — XP is effort-based (mobility 5, reps/timed 10, class 75, cardio
+   * proportional to distance/time), so never assume a flat value.
+   */
   xp_earned: number;
   new_total_xp: number;
   leveled_up: boolean;
+  /** Absent on the `/activity/log` fallback path and on pre-rollout backends. */
+  xp_breakdown?: XpBreakdownEntry[];
   summary: {
     total_sets: number;
     duration_seconds: number;

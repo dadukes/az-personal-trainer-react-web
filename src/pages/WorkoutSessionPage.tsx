@@ -1,17 +1,22 @@
-import { Check, ChevronLeft, Clock, Dumbbell, Minus, Pause, Play, Plus, RotateCcw } from 'lucide-react';
+import { Check, ChevronLeft, Clock, Dumbbell, Minus, Pause, Play, Plus, RotateCcw, TrendingUp } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import Confetti from '@/components/Confetti';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, logWorkout, type LoggedExercise, type WeightUnit } from '@/lib/api';
+import { getDashboard, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
 import { dateForDayKey } from '@/lib/workout';
 import {
+  blockTargetText,
   buildBlocks,
   formatClock,
+  isCountdownBlock,
+  isIntervalBlock,
+  isSingleCaptureBlock,
   sectionLabel,
   signatureOf,
+  toLoggedExercises,
   type Block,
   type SetActual,
 } from '@/lib/workoutSession';
@@ -73,6 +78,9 @@ export default function WorkoutSessionPage() {
   const [finished, setFinished] = useState(false);
   const [saving, setSaving] = useState(false);
   const [xpEarned, setXpEarned] = useState<number | null>(null);
+  // Per-exercise XP tally. XP is effort-based and variable, so showing where it came
+  // from is the difference between a number and a reason to come back.
+  const [xpBreakdown, setXpBreakdown] = useState<XpBreakdownEntry[] | null>(null);
   const [view, setView] = useState<WorkoutView>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(VIEW_KEY) : null;
     return saved === 'list' ? 'list' : 'guided';
@@ -197,24 +205,38 @@ export default function WorkoutSessionPage() {
   const setReps = useCallback((bi: number, si: number, reps: number) => mutateSet(bi, si, { reps }), [mutateSet]);
   const setWeight = useCallback((bi: number, si: number, weight: number) => mutateSet(bi, si, { weight }), [mutateSet]);
   const completeSet = useCallback((bi: number, si: number) => mutateSet(bi, si, { completed: true }), [mutateSet]);
+  /** Cardio/class report what actually happened rather than being tracked live. */
+  const setCapture = useCallback(
+    (bi: number, si: number, patch: { durationSeconds?: number; distanceKm?: number }) =>
+      mutateSet(bi, si, patch),
+    [mutateSet],
+  );
 
-  const finish = useCallback(async () => {
+  /**
+   * `finalCompletion` is the set the user finished to trigger this. The guided player
+   * hands it over instead of writing it through `mutateSet`, because that state update
+   * would not have flushed by the time we serialize here — without this, the last set
+   * of every workout logs as skipped.
+   */
+  const finish = useCallback(async (finalCompletion?: { blockIndex: number; setIndex: number }) => {
+    const finalBlocks = finalCompletion
+      ? blocks.map((b, bi) =>
+          bi === finalCompletion.blockIndex
+            ? {
+                ...b,
+                sets: b.sets.map((s, si) =>
+                  si === finalCompletion.setIndex ? { ...s, completed: true } : s,
+                ),
+              }
+            : b,
+        )
+      : blocks;
+    // Keep the summary tiles consistent with what we're about to log.
+    if (finalCompletion) setBlocks(finalBlocks);
     setFinished(true);
     clearPersisted();
     if (!session?.access_token) return;
-    const loggedExercises: LoggedExercise[] = blocks.map((b) => ({
-      exercise_id: b.exercise_id,
-      name: b.name,
-      section: b.section,
-      sets: b.sets.map((s, i) => ({
-        set_number: i + 1,
-        reps: b.timed ? null : s.reps,
-        weight: b.timed ? null : s.weight,
-        weight_unit: b.timed ? null : b.weightUnit,
-        duration_seconds: b.timed ? (b.durationSeconds ?? null) : null,
-        completed: s.completed,
-      })),
-    }));
+    const loggedExercises = toLoggedExercises(finalBlocks);
     setSaving(true);
     let earned = 0;
     try {
@@ -228,6 +250,7 @@ export default function WorkoutSessionPage() {
       });
       earned = result.xp_earned;
       setXpEarned(result.xp_earned);
+      setXpBreakdown(result.xp_breakdown ?? null);
       addXp(result.xp_earned);
     } catch {
       // logWorkout falls back internally
@@ -301,6 +324,35 @@ export default function WorkoutSessionPage() {
             </div>
           </Card>
         </div>
+
+        {xpBreakdown && xpBreakdown.length > 0 ? (
+          <Card className="w-full" padding="16px 18px">
+            <Eyebrow className="mb-2.5">Where that XP came from</Eyebrow>
+            <div className="flex flex-col gap-2">
+              {xpBreakdown.map((entry, i) => (
+                <div key={`${entry.name}-${i}`} className="flex items-center gap-2.5 text-left">
+                  <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold" style={{ color: 'var(--text-primary)' }}>
+                    {entry.name}
+                  </span>
+                  {entry.improved ? (
+                    <Badge tone="mint">
+                      <TrendingUp size={11} /> Best yet
+                    </Badge>
+                  ) : null}
+                  <span className="tabular flex-shrink-0 text-[13.5px] font-extrabold" style={{ color: 'var(--accent-text)' }}>
+                    +{entry.xp}
+                  </span>
+                </div>
+              ))}
+            </div>
+            {xpBreakdown.some((e) => e.improved) ? (
+              <p className="mt-2.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
+                You beat a previous best today. That&rsquo;s progress you can measure.
+              </p>
+            ) : null}
+          </Card>
+        ) : null}
+
         <Button size="lg" fullWidth onClick={() => navigate('/')}>
           Done
         </Button>
@@ -352,6 +404,7 @@ export default function WorkoutSessionPage() {
           dayNotes={dayNotes}
           onSetReps={setReps}
           onSetWeight={setWeight}
+          onSetCapture={setCapture}
           onCompleteSet={completeSet}
           onFinish={finish}
         />
@@ -373,11 +426,10 @@ export default function WorkoutSessionPage() {
               <div className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>
                 {block.name}
               </div>
-              {block.timed && block.repText ? (
-                <div className="mt-0.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
-                  {block.repText}
-                </div>
-              ) : null}
+              <div className="mt-0.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
+                {blockTargetText(block)}
+                {block.isPerSide ? ' · each side' : ''}
+              </div>
               {block.notes ? (
                 <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
                   {block.notes}
@@ -388,11 +440,20 @@ export default function WorkoutSessionPage() {
           </div>
 
           <div className="flex flex-col gap-2">
-            {block.sets.map((set, si) =>
-              block.timed ? (
+            {/* Cardio and class are reported, not tracked — one row, actuals inline. */}
+            {isSingleCaptureBlock(block) ? (
+              <CaptureRow
+                block={block}
+                onCapture={(patch) => mutateSet(bi, 0, patch)}
+                onToggle={() => mutateSet(bi, 0, { completed: !block.sets[0]?.completed })}
+              />
+            ) : (
+            block.sets.map((set, si) =>
+              isCountdownBlock(block) || isIntervalBlock(block) ? (
                 <TimedSetRow
                   key={si}
                   index={si}
+                  label={isIntervalBlock(block) ? `R${si + 1}` : 'Hold'}
                   durationSeconds={block.durationSeconds ?? 30}
                   completed={set.completed}
                   onToggle={() => mutateSet(bi, si, { completed: !set.completed })}
@@ -442,6 +503,7 @@ export default function WorkoutSessionPage() {
                   </button>
                 </div>
               ),
+            )
             )}
           </div>
         </Card>
@@ -456,7 +518,7 @@ export default function WorkoutSessionPage() {
           <div className="tabular flex-1 text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
             {completedSets}/{totalSets} sets · {formatClock(elapsed)}
           </div>
-          <Button size="lg" onClick={finish} leftIcon={<Dumbbell size={16} color="#06224D" />}>
+          <Button size="lg" onClick={() => void finish()} leftIcon={<Dumbbell size={16} color="#06224D" />}>
             Finish workout
           </Button>
         </div>
@@ -474,12 +536,14 @@ export default function WorkoutSessionPage() {
  */
 function TimedSetRow({
   index,
+  label = 'Hold',
   durationSeconds,
   completed,
   onToggle,
   onComplete,
 }: {
   index: number;
+  label?: string;
   durationSeconds: number;
   completed: boolean;
   onToggle: () => void;
@@ -558,7 +622,7 @@ function TimedSetRow({
         className="tabular w-12 text-[12px] font-bold"
         style={{ color: completed ? 'var(--text-on-mint)' : 'var(--text-muted)' }}
       >
-        Hold
+        {label}
       </span>
 
       <div className="flex flex-1 items-center gap-3">
@@ -616,6 +680,64 @@ function TimedSetRow({
       </button>
 
       <span className="sr-only">Set {index + 1}</span>
+    </div>
+  );
+}
+
+/**
+ * The list-view row for a reported (not tracked) block: cardio and class. Captures the
+ * actuals inline so the single-page view stays a single page.
+ */
+function CaptureRow({
+  block,
+  onCapture,
+  onToggle,
+}: {
+  block: Block;
+  onCapture: (patch: { durationSeconds?: number; distanceKm?: number }) => void;
+  onToggle: () => void;
+}) {
+  const set = block.sets[0];
+  const completed = set?.completed ?? false;
+  const minutes = Math.round((set?.durationSeconds ?? 0) / 60);
+  const distanceKm = set?.distanceKm ?? 0;
+
+  return (
+    <div
+      className="flex flex-wrap items-center gap-3 rounded-xl px-3 py-2.5"
+      style={{
+        background: completed ? 'var(--bg-selected)' : 'var(--bg-subtle)',
+        border: `1px solid ${completed ? 'var(--accent)' : 'var(--border-base)'}`,
+      }}
+    >
+      <div className="flex flex-1 flex-wrap items-center gap-4">
+        {block.type === 'cardio' ? (
+          <Stepper
+            label="km"
+            value={distanceKm}
+            step={0.5}
+            onDelta={(d) => onCapture({ distanceKm: Math.max(0, Math.round((distanceKm + d) * 10) / 10) })}
+          />
+        ) : null}
+        <Stepper
+          label="min"
+          value={minutes}
+          step={5}
+          onDelta={(d) => onCapture({ durationSeconds: Math.max(0, minutes + d) * 60 })}
+        />
+      </div>
+
+      <button
+        onClick={onToggle}
+        aria-label={completed ? 'Mark not done' : 'Mark done'}
+        className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+        style={{
+          background: completed ? 'var(--accent)' : 'transparent',
+          border: completed ? 'none' : '1.5px solid var(--border-strong)',
+        }}
+      >
+        {completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
+      </button>
     </div>
   );
 }

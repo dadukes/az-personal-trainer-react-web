@@ -55,6 +55,13 @@
   --tab-bg: #ffffff;
   --tab-border: #d6e2db;
 
+  /* Interval effort phases — the work/recover state is carried by colour so it
+     reads at arm's length mid-effort, not by text. */
+  --effort-work: #e08a1e;
+  --effort-work-bg: #fdf3e2;
+  --effort-recover: var(--forma-aqua);
+  --effort-recover-bg: var(--bg-subtle);
+
   --shadow-sm: 0 1px 2px rgba(6, 34, 77, 0.06);
   --shadow-md: 0 4px 14px rgba(6, 34, 77, 0.08);
   --shadow-lg: 0 18px 48px rgba(6, 34, 77, 0.14);
@@ -90,6 +97,11 @@
   --tab-inactive: #91a99e;
   --tab-bg: #18251f;
   --tab-border: #2d4137;
+
+  --effort-work: var(--forma-gold);
+  --effort-work-bg: #2b2416;
+  --effort-recover: var(--forma-aqua);
+  --effort-recover-bg: var(--bg-subtle);
 }
 
 * {

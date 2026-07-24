@@ -1,16 +1,38 @@
 import {
+  type CardioActivityKind,
+  type CardioFormat,
   type DashboardDayPlan,
   type DashboardExercise,
+  type ExerciseIntervals,
+  type ExerciseType,
+  type HeartRateZone,
+  type LoggedExercise,
   type WeightUnit,
   type WorkoutSection,
 } from '@/lib/api';
-import { isTimedExercise } from '@/lib/exercise';
+import {
+  cardioKindLabel,
+  formatDistanceKm,
+  formatIntervalPair,
+  formatSeconds,
+  repRangeText,
+  repTargetFor,
+  resolveExerciseType,
+  usesCountdown,
+} from '@/lib/exercise';
 
 /** Mutable per-set capture, persisted across a backgrounded session. */
 export interface SetActual {
   reps: number;
   weight: number;
   completed: boolean;
+  /**
+   * Captured seconds. Holds use the planned duration; cardio/class capture what the user
+   * actually did, so the value can differ from the block's target.
+   */
+  durationSeconds?: number;
+  /** Captured distance — steady cardio only, on the single set. */
+  distanceKm?: number;
 }
 
 /** A single exercise in the session, shared by the list view and the guided player. */
@@ -19,25 +41,188 @@ export interface Block {
   name: string;
   exercise_id?: string;
   section: WorkoutSection;
-  timed: boolean;
-  durationSeconds?: number;
+  type: ExerciseType;
   restSeconds: number;
+  /** Per-set countdown seconds: the hold length, or an interval's work phase. */
+  durationSeconds?: number;
   repText?: string;
   repTarget: number;
   weight: number;
   weightUnit: WeightUnit;
+  isPerSide: boolean;
   notes?: string;
   cues?: string[];
   targetMuscle?: string;
   bodyPart?: string;
+  // ── cardio ──
+  activityKind?: CardioActivityKind;
+  cardioFormat?: CardioFormat;
+  targetDistanceKm?: number;
+  targetDurationMinutes?: number;
+  hrZone?: HeartRateZone;
+  intervals?: ExerciseIntervals;
+  // ── class ──
+  className?: string;
   sets: SetActual[];
 }
 
-/** Pulls the first integer out of a rep target like "8-10" or "to failure". */
-export function parseRepTarget(reps?: string): number {
-  if (!reps) return 10;
-  const m = /\d+/.exec(reps);
-  return m ? Number(m[0]) : 10;
+/** True when the block is driven by a countdown per set rather than rep dials. */
+export function isCountdownBlock(block: Block): boolean {
+  return usesCountdown(block.type);
+}
+
+/** True when the block is an auto-advancing work/recover round loop. */
+export function isIntervalBlock(block: Block): boolean {
+  return block.type === 'cardio' && block.cardioFormat === 'intervals' && !!block.intervals;
+}
+
+/** True when the block is a single "did it" capture rather than a set tracker. */
+export function isSingleCaptureBlock(block: Block): boolean {
+  return block.type === 'class' || (block.type === 'cardio' && !isIntervalBlock(block));
+}
+
+/**
+ * Wall-clock length of a whole interval block (every work + recovery phase).
+ *
+ * Used when the user abandons the live player for plain logging: the capture card must
+ * prefill the length of the *session*, not of a single work interval.
+ */
+export function intervalTotalSeconds(block: Block): number {
+  if (!block.intervals) return 0;
+  const { rounds, work_seconds, recover_seconds } = block.intervals;
+  return Math.max(0, rounds) * (work_seconds + recover_seconds);
+}
+
+export { parseRepTarget } from '@/lib/exercise';
+
+/** The at-a-glance target for a block — the session-side twin of `exerciseMeta`. */
+export function blockTargetText(block: Block): string {
+  if (isIntervalBlock(block) && block.intervals) {
+    const { rounds, work_seconds, recover_seconds } = block.intervals;
+    return `${rounds} × ${formatIntervalPair(work_seconds, recover_seconds)}`;
+  }
+  if (block.type === 'cardio') {
+    const parts: string[] = [];
+    if (block.targetDistanceKm) parts.push(formatDistanceKm(block.targetDistanceKm));
+    if (block.targetDurationMinutes) parts.push(`${block.targetDurationMinutes} min`);
+    if (block.hrZone) parts.push(`Zone ${block.hrZone}`);
+    return parts.length > 0 ? parts.join(' · ') : cardioKindLabel(block.activityKind);
+  }
+  if (block.type === 'class') {
+    return block.targetDurationMinutes ? `${block.targetDurationMinutes} min class` : 'Class';
+  }
+  if (usesCountdown(block.type)) {
+    // A hold with no stated duration says "hold", not an invented number.
+    const hold = block.durationSeconds
+      ? `${formatSeconds(block.durationSeconds)}${block.type === 'mobility' ? ' hold' : ''}`
+      : 'hold';
+    const sets = block.sets.length > 1 ? `${block.sets.length} × ` : '';
+    return `${sets}${hold}`;
+  }
+  const sets = block.sets.length > 1 ? `${block.sets.length} × ` : '';
+  return `${sets}${block.repText ?? 'reps'}`;
+}
+
+function buildBlock(
+  ex: DashboardExercise,
+  section: WorkoutSection,
+  index: number,
+  unit: WeightUnit,
+): Block {
+  const type = resolveExerciseType(ex);
+  const repTarget = repTargetFor(ex);
+  const weight = ex.target_weight ?? ex.last_performance?.weight ?? 0;
+
+  const base = {
+    key: `${section}-${index}-${ex.name}`,
+    name: ex.name,
+    // Cardio and class are never catalog-matched, so they carry no demo media.
+    exercise_id: type === 'cardio' || type === 'class' ? undefined : ex.exercise_id,
+    section,
+    type,
+    repText: repRangeText(ex),
+    repTarget,
+    weight,
+    weightUnit: (ex.weight_unit as WeightUnit) ?? unit,
+    isPerSide: ex.is_per_side === true,
+    notes: ex.notes,
+    cues: ex.cues,
+    targetMuscle: ex.target_muscle,
+    bodyPart: ex.body_part,
+  };
+
+  if (type === 'cardio') {
+    const cardioFormat: CardioFormat = ex.cardio_format === 'intervals' ? 'intervals' : 'steady';
+    const cardio = {
+      ...base,
+      activityKind: ex.activity_kind,
+      cardioFormat,
+      targetDistanceKm: ex.distance_km,
+      targetDurationMinutes: ex.target_duration_minutes,
+      hrZone: ex.target_hr_zone,
+      intervals: ex.intervals,
+    };
+
+    // Intervals map 1:1 onto the existing set/rest loop: one "set" per work round, with
+    // the recovery as the rest between rounds. Bailing at round 6 of 8 is then captured
+    // as incomplete sets with no special handling anywhere downstream.
+    if (cardioFormat === 'intervals' && ex.intervals) {
+      const rounds = Math.max(1, ex.intervals.rounds);
+      return {
+        ...cardio,
+        durationSeconds: ex.intervals.work_seconds,
+        restSeconds: ex.intervals.recover_seconds,
+        sets: Array.from({ length: rounds }, () => ({
+          reps: 0,
+          weight: 0,
+          completed: false,
+          durationSeconds: ex.intervals?.work_seconds,
+        })),
+      };
+    }
+
+    // Steady cardio is a single capture prefilled with the targets.
+    return {
+      ...cardio,
+      durationSeconds: ex.target_duration_minutes ? ex.target_duration_minutes * 60 : undefined,
+      restSeconds: 0,
+      sets: [
+        {
+          reps: 0,
+          weight: 0,
+          completed: false,
+          durationSeconds: ex.target_duration_minutes ? ex.target_duration_minutes * 60 : undefined,
+          distanceKm: ex.distance_km,
+        },
+      ],
+    };
+  }
+
+  if (type === 'class') {
+    const seconds = ex.target_duration_minutes ? ex.target_duration_minutes * 60 : undefined;
+    return {
+      ...base,
+      className: ex.class_name ?? ex.name,
+      targetDurationMinutes: ex.target_duration_minutes,
+      durationSeconds: seconds,
+      restSeconds: 0,
+      sets: [{ reps: 0, weight: 0, completed: false, durationSeconds: seconds }],
+    };
+  }
+
+  // reps / timed / mobility — the existing set tracker.
+  const setCount = Math.max(1, ex.sets ?? 1);
+  return {
+    ...base,
+    durationSeconds: ex.duration_seconds,
+    restSeconds: ex.rest_seconds ?? 0,
+    sets: Array.from({ length: setCount }, () => ({
+      reps: repTarget,
+      weight,
+      completed: false,
+      durationSeconds: usesCountdown(type) ? ex.duration_seconds : undefined,
+    })),
+  };
 }
 
 export function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[] {
@@ -48,44 +233,45 @@ export function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[
   ];
   const blocks: Block[] = [];
   sections.forEach(([section, list]) => {
-    (list ?? []).forEach((ex, i) => {
-      const setCount = Math.max(1, ex.sets ?? 1);
-      // The backend fills `reps` with a descriptive string even for holds/carries
-      // (e.g. "30s hold", "45s walk", "3 minutes"), so `duration_seconds` is the
-      // reliable timed signal — pure rep-based exercises have no duration.
-      const timed = isTimedExercise(ex);
-      const repTarget = parseRepTarget(ex.reps);
-      const weight = ex.target_weight ?? ex.last_performance?.weight ?? 0;
-      blocks.push({
-        key: `${section}-${i}-${ex.name}`,
-        name: ex.name,
-        exercise_id: ex.exercise_id,
-        section,
-        timed,
-        durationSeconds: ex.duration_seconds,
-        restSeconds: ex.rest_seconds ?? 0,
-        repText: ex.reps,
-        repTarget,
-        weight,
-        weightUnit: (ex.weight_unit as WeightUnit) ?? unit,
-        notes: ex.notes,
-        cues: ex.cues,
-        targetMuscle: ex.target_muscle,
-        bodyPart: ex.body_part,
-        sets: Array.from({ length: setCount }, () => ({
-          reps: repTarget,
-          weight,
-          completed: false,
-        })),
-      });
-    });
+    (list ?? []).forEach((ex, i) => blocks.push(buildBlock(ex, section, i, unit)));
   });
   return blocks;
 }
 
+/**
+ * Serializes the session for `POST /workouts/log`. `type` is sent per exercise so the
+ * server can pick the right effort-XP tier (it can only derive timed-vs-reps on its own),
+ * and steady cardio reports the distance the user captured.
+ */
+export function toLoggedExercises(blocks: Block[]): LoggedExercise[] {
+  return blocks.map((b) => {
+    const countdown = isCountdownBlock(b);
+    const cardioOrClass = b.type === 'cardio' || b.type === 'class';
+    const distanceKm = b.type === 'cardio' ? b.sets[0]?.distanceKm : undefined;
+
+    return {
+      exercise_id: b.exercise_id,
+      name: b.name,
+      section: b.section,
+      type: b.type,
+      ...(distanceKm && distanceKm > 0 ? { distance_km: distanceKm } : {}),
+      skipped: !b.sets.some((s) => s.completed),
+      sets: b.sets.map((s, i) => ({
+        set_number: i + 1,
+        reps: countdown || cardioOrClass ? null : s.reps,
+        weight: countdown || cardioOrClass ? null : s.weight,
+        weight_unit: countdown || cardioOrClass ? null : b.weightUnit,
+        duration_seconds:
+          countdown || cardioOrClass ? (s.durationSeconds ?? b.durationSeconds ?? null) : null,
+        completed: s.completed,
+      })),
+    };
+  });
+}
+
 /** Structural fingerprint used to decide whether a persisted session still matches the plan. */
 export function signatureOf(blocks: Block[]): string {
-  return blocks.map((b) => `${b.key}:${b.sets.length}`).join('|');
+  return blocks.map((b) => `${b.key}:${b.type}:${b.sets.length}`).join('|');
 }
 
 export function sectionLabel(section: WorkoutSection): string {

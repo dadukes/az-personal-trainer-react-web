@@ -1,4 +1,4 @@
-import { ChevronLeft, Clock, Dumbbell, Layers, Zap } from 'lucide-react';
+import { ChevronLeft, Clock, Dumbbell, Layers, MessageCircle, Zap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -130,6 +130,8 @@ export default function WorkoutHistoryDetailPage() {
 
   const grouped = data ? groupBySection(data.sets) : null;
   const completedSets = data ? data.sets.filter((s) => s.completed).length : 0;
+  // The coach can log a session the user reported in chat; those rows have no set logs.
+  const coachLogged = !!data && data.session.total_sets === 0 && data.sets.length === 0;
 
   return (
     <div className="mx-auto flex w-full max-w-[760px] animate-fade-slide-up flex-col gap-5 p-5 sm:p-8">
@@ -172,21 +174,50 @@ export default function WorkoutHistoryDetailPage() {
           {/* Session summary tiles */}
           <div className="flex gap-3">
             <StatTile
-              value={formatDuration(data.session.duration_seconds)}
+              value={data.session.duration_seconds > 0 ? formatDuration(data.session.duration_seconds) : '—'}
               label="Duration"
               icon={<Clock size={16} color="#34D2C1" />}
             />
-            <StatTile
-              value={String(completedSets)}
-              label="Sets completed"
-              icon={<Layers size={16} color="#34D2C1" />}
-            />
+            {!coachLogged ? (
+              <StatTile
+                value={String(completedSets)}
+                label="Sets completed"
+                icon={<Layers size={16} color="#34D2C1" />}
+              />
+            ) : null}
             <StatTile
               value={data.session.xp_earned > 0 ? `+${data.session.xp_earned}` : '—'}
               label="XP earned"
               icon={<Zap size={16} color="#34D2C1" />}
             />
           </div>
+
+          {/* A coach-logged session carries no per-set detail — an empty set table would
+              read as "nothing happened", so state plainly what it is instead. */}
+          {coachLogged ? (
+            <Card padding="16px 18px">
+              <div className="flex items-start gap-3">
+                <div
+                  className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
+                  style={{ background: 'var(--bg-subtle)' }}
+                >
+                  <MessageCircle size={18} color="#34D2C1" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
+                      Logged with your coach
+                    </span>
+                    <Badge tone="mint">Coach-logged</Badge>
+                  </div>
+                  <p className="mt-1 text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                    You told your coach about this one in chat, so there&rsquo;s no set-by-set
+                    breakdown — it still counts towards your week.
+                  </p>
+                </div>
+              </div>
+            </Card>
+          ) : null}
 
           {/* Logged exercises grouped by section */}
           {SECTION_ORDER.map((section) => {

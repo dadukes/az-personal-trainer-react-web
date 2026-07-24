@@ -2,25 +2,82 @@ import { ChevronDown, ChevronLeft, ChevronUp, Dumbbell, History, Info, Link2, Mi
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-import { Badge, Button, Card, Eyebrow, Input, SegmentedToggle } from '@/components/ui';
+import { Badge, Button, Card, Chip, Eyebrow, Input, SegmentedToggle } from '@/components/ui';
 import {
   getExerciseAlternatives,
   getExerciseDetail,
   getLastPerformance,
   getWorkoutPlan,
   searchExercises,
+  type CardioActivityKind,
   type CatalogExerciseSummary,
   type DashboardExercise,
   type ExerciseAlternative,
   type ExerciseDetail,
+  type ExerciseIntervals,
+  type ExerciseType,
+  type HeartRateZone,
   type LastPerformance,
   type WeightUnit,
 } from '@/lib/api';
-import { isTimedExercise } from '@/lib/exercise';
+import {
+  cardioKindLabel,
+  hrZoneLabel,
+  isCatalogExercise,
+  resolveExerciseType,
+  usesCountdown,
+} from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type PlanSection } from '@/store/useAppStore';
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+const TYPE_LABELS: Record<ExerciseType, string> = {
+  reps: 'Reps & weight',
+  timed: 'Timed hold',
+  mobility: 'Mobility',
+  cardio: 'Cardio',
+  class: 'Class',
+};
+
+const TYPE_OPTIONS: { value: ExerciseType; label: string }[] = (
+  ['reps', 'timed', 'mobility', 'cardio', 'class'] as ExerciseType[]
+).map((value) => ({ value, label: TYPE_LABELS[value] }));
+
+const CARDIO_KINDS: CardioActivityKind[] = ['run', 'cycle', 'swim', 'row', 'walk', 'hike', 'other'];
+
+const HR_ZONES: HeartRateZone[] = [1, 2, 3, 4, 5];
+
+/**
+ * Heart-rate zone selector. The zone number is the contract with the backend; the
+ * easy/moderate/hard wording is ours, and is shown so the number means something to a
+ * beginner who has never worn a strap.
+ */
+function ZonePicker({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value?: HeartRateZone;
+  onChange: (zone: HeartRateZone) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-1.5">
+      <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text-label)' }}>
+        {label}
+        {value ? ` — ${hrZoneLabel(value)}` : ''}
+      </span>
+      <div className="flex gap-2">
+        {HR_ZONES.map((z) => (
+          <Chip key={z} active={value === z} onClick={() => onChange(z)}>
+            Z{z}
+          </Chip>
+        ))}
+      </div>
+    </div>
+  );
+}
 const SECTION_FIELD: Record<PlanSection, 'warmup' | 'exercises' | 'cooldown'> = {
   warmup: 'warmup',
   main: 'exercises',
@@ -386,12 +443,82 @@ export default function ExerciseDetailPage() {
   const dayPlan = planDraft?.day === dayKey ? planDraft.dayPlan : null;
   const ex: DashboardExercise | undefined = dayPlan?.[SECTION_FIELD[section]]?.[index];
 
-  const timed = ex ? isTimedExercise(ex) : false;
+  const type: ExerciseType = ex ? resolveExerciseType(ex) : 'reps';
+  const countdown = usesCountdown(type);
+  const catalogged = isCatalogExercise(type);
   const unit: WeightUnit = (ex?.weight_unit as WeightUnit) ?? (profile.preferred_unit_system === 'imperial' ? 'lb' : 'kg');
 
   const patch = useCallback(
     (p: Partial<DashboardExercise>) => patchDraftExercise(section, index, p),
     [patchDraftExercise, section, index],
+  );
+
+  const patchIntervals = useCallback(
+    (p: Partial<ExerciseIntervals>) => {
+      if (!ex?.intervals) return;
+      patch({ intervals: { ...ex.intervals, ...p } });
+    },
+    [patch, ex?.intervals],
+  );
+
+  /**
+   * Switching type clears the fields the new type cannot carry — leaving a stale
+   * `duration_seconds` on a reps exercise (or an `exercise_id` on a run) would make the
+   * plan lie about itself, and the backend strips cross-type fields on write anyway.
+   */
+  const changeType = useCallback(
+    (next: ExerciseType) => {
+      const cleared: Partial<DashboardExercise> = {
+        type: next,
+        duration_seconds: undefined,
+        reps: undefined,
+        reps_min: undefined,
+        reps_max: undefined,
+        target_weight: undefined,
+        activity_kind: undefined,
+        distance_km: undefined,
+        target_duration_minutes: undefined,
+        target_hr_zone: undefined,
+        cardio_format: undefined,
+        intervals: undefined,
+        class_name: undefined,
+      };
+      if (next === 'reps') {
+        patch({ ...cleared, reps: ex?.reps || '10', sets: ex?.sets ?? 3 });
+        return;
+      }
+      if (next === 'timed' || next === 'mobility') {
+        patch({ ...cleared, duration_seconds: ex?.duration_seconds ?? 30, sets: ex?.sets ?? 1 });
+        return;
+      }
+      if (next === 'cardio') {
+        // Cardio and class are never catalog-matched — drop the ExerciseDB link too.
+        patch({
+          ...cleared,
+          exercise_id: undefined,
+          target_muscle: undefined,
+          body_part: undefined,
+          cues: undefined,
+          activity_kind: ex?.activity_kind ?? 'run',
+          cardio_format: 'steady',
+          target_duration_minutes: ex?.target_duration_minutes ?? 30,
+          target_hr_zone: ex?.target_hr_zone ?? 2,
+          sets: 1,
+        });
+        return;
+      }
+      patch({
+        ...cleared,
+        exercise_id: undefined,
+        target_muscle: undefined,
+        body_part: undefined,
+        cues: undefined,
+        class_name: ex?.class_name ?? ex?.name,
+        target_duration_minutes: ex?.target_duration_minutes ?? 45,
+        sets: 1,
+      });
+    },
+    [patch, ex],
   );
 
   const pick = useCallback(
@@ -543,7 +670,9 @@ export default function ExerciseDetailPage() {
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
             <Badge tone="neutral">{SECTION_LABEL[section]}</Badge>
-            {ex.exercise_id ? (
+            {!catalogged ? (
+              <Badge tone="mint">{TYPE_LABELS[type]}</Badge>
+            ) : ex.exercise_id ? (
               <Badge tone="mint">
                 <Link2 size={11} /> Linked
               </Badge>
@@ -552,7 +681,7 @@ export default function ExerciseDetailPage() {
             )}
           </div>
           <div className="mt-1 truncate text-[22px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-            {ex.name}
+            {type === 'class' ? (ex.class_name ?? ex.name) : ex.name}
           </div>
           {ex.swapped_from ? (
             <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
@@ -562,8 +691,9 @@ export default function ExerciseDetailPage() {
         </div>
       </div>
 
-      {/* Info / demo */}
-      {ex.exercise_id ? (
+      {/* Info / demo — cardio and class are never catalog-matched, so neither the demo
+          nor the "link it" nudge applies to them. */}
+      {!catalogged ? null : ex.exercise_id ? (
         <ExerciseInfo exerciseId={ex.exercise_id} />
       ) : (
         <Card variant="subtle">
@@ -578,11 +708,11 @@ export default function ExerciseDetailPage() {
       )}
 
       {/* Last performance */}
-      {ex.exercise_id ? (
+      {catalogged && ex.exercise_id ? (
         <LastPerformanceCard
           exerciseId={ex.exercise_id}
           fallback={ex.last_performance}
-          canApply={!timed}
+          canApply={!countdown}
           onApply={(last) =>
             patch({
               ...(last.reps != null ? { reps: String(last.reps) } : {}),
@@ -604,71 +734,208 @@ export default function ExerciseDetailPage() {
             onChange={(e) => patch({ name: e.target.value })}
           />
 
-          <SegmentedToggle
-            tone="mint"
-            value={timed ? 'time' : 'reps'}
-            onChange={(v) =>
-              v === 'time'
-                ? patch({ duration_seconds: ex.duration_seconds ?? 30, reps: '' })
-                : patch({ reps: ex.reps || '10', duration_seconds: undefined })
-            }
-            options={[
-              { value: 'reps', label: 'Reps & weight' },
-              { value: 'time', label: 'Timed / hold' },
-            ]}
-          />
+          {/* Five types don't fit a segmented control legibly — chips wrap instead. */}
+          <div className="flex flex-wrap gap-2">
+            {TYPE_OPTIONS.map((opt) => (
+              <Chip key={opt.value} active={type === opt.value} onClick={() => changeType(opt.value)}>
+                {opt.label}
+              </Chip>
+            ))}
+          </div>
 
-          <Stepper label="Sets" value={ex.sets ?? 1} min={1} onDelta={(d) => patch({ sets: Math.max(1, (ex.sets ?? 1) + d) })} />
-
-          {timed ? (
-            <Stepper
-              label="Duration (sec)"
-              value={ex.duration_seconds ?? 30}
-              step={5}
-              min={5}
-              onDelta={(d) => patch({ duration_seconds: Math.max(5, (ex.duration_seconds ?? 30) + d) })}
-            />
-          ) : (
+          {type === 'cardio' ? (
             <>
-              <Input
-                label="Reps (e.g. 10 or 8–12)"
-                value={ex.reps ?? ''}
-                onChange={(e) => patch({ reps: e.target.value })}
-              />
-              <div className="flex items-center gap-3">
-                <div className="flex-1">
-                  <Stepper
-                    label={`Weight (${unit})`}
-                    value={ex.target_weight ?? 0}
-                    step={unit === 'kg' ? 2.5 : 5}
-                    onDelta={(d) =>
-                      patch({
-                        target_weight: Math.max(0, Math.round(((ex.target_weight ?? 0) + d) * 10) / 10),
-                        weight_unit: unit,
+              <div className="flex flex-wrap gap-2">
+                {CARDIO_KINDS.map((kind) => (
+                  <Chip
+                    key={kind}
+                    active={(ex.activity_kind ?? 'other') === kind}
+                    onClick={() => patch({ activity_kind: kind })}
+                  >
+                    {cardioKindLabel(kind)}
+                  </Chip>
+                ))}
+              </div>
+
+              <SegmentedToggle
+                tone="mint"
+                value={ex.cardio_format ?? 'steady'}
+                onChange={(v) =>
+                  v === 'intervals'
+                    ? patch({
+                        cardio_format: 'intervals',
+                        intervals: ex.intervals ?? {
+                          rounds: 8,
+                          work_seconds: 60,
+                          recover_seconds: 90,
+                          work_hr_zone: 4,
+                          recover_hr_zone: 2,
+                        },
                       })
+                    : patch({ cardio_format: 'steady', intervals: undefined })
+                }
+                options={[
+                  { value: 'steady', label: 'Steady' },
+                  { value: 'intervals', label: 'Intervals' },
+                ]}
+              />
+
+              {ex.cardio_format === 'intervals' && ex.intervals ? (
+                <>
+                  <Stepper
+                    label="Rounds"
+                    value={ex.intervals.rounds}
+                    min={1}
+                    onDelta={(d) => patchIntervals({ rounds: Math.max(1, ex.intervals!.rounds + d) })}
+                  />
+                  <Stepper
+                    label="Work (sec)"
+                    value={ex.intervals.work_seconds}
+                    step={15}
+                    min={5}
+                    onDelta={(d) =>
+                      patchIntervals({ work_seconds: Math.max(5, ex.intervals!.work_seconds + d) })
                     }
                   />
-                </div>
-                <div className="w-24">
-                  <SegmentedToggle
-                    value={unit}
-                    onChange={(v) => patch({ weight_unit: v as WeightUnit })}
-                    options={[
-                      { value: 'kg', label: 'kg' },
-                      { value: 'lb', label: 'lb' },
-                    ]}
+                  <Stepper
+                    label="Recover (sec)"
+                    value={ex.intervals.recover_seconds}
+                    step={15}
+                    min={0}
+                    onDelta={(d) =>
+                      patchIntervals({ recover_seconds: Math.max(0, ex.intervals!.recover_seconds + d) })
+                    }
                   />
-                </div>
-              </div>
+                  <ZonePicker
+                    label="Work zone"
+                    value={ex.intervals.work_hr_zone}
+                    onChange={(z) => patchIntervals({ work_hr_zone: z })}
+                  />
+                  <ZonePicker
+                    label="Recover zone"
+                    value={ex.intervals.recover_hr_zone}
+                    onChange={(z) => patchIntervals({ recover_hr_zone: z })}
+                  />
+                </>
+              ) : (
+                <>
+                  <Stepper
+                    label="Distance (km)"
+                    value={ex.distance_km ?? 0}
+                    step={0.5}
+                    onDelta={(d) =>
+                      patch({ distance_km: Math.max(0, Math.round(((ex.distance_km ?? 0) + d) * 10) / 10) })
+                    }
+                  />
+                  <Stepper
+                    label="Duration (min)"
+                    value={ex.target_duration_minutes ?? 0}
+                    step={5}
+                    onDelta={(d) =>
+                      patch({ target_duration_minutes: Math.max(0, (ex.target_duration_minutes ?? 0) + d) })
+                    }
+                  />
+                  <ZonePicker
+                    label="Target zone"
+                    value={ex.target_hr_zone}
+                    onChange={(z) => patch({ target_hr_zone: z })}
+                  />
+                </>
+              )}
+            </>
+          ) : type === 'class' ? (
+            <>
+              <Input
+                label="Class name"
+                value={ex.class_name ?? ''}
+                placeholder="Spin, Body Pump, Vinyasa…"
+                onChange={(e) => patch({ class_name: e.target.value })}
+              />
+              <Stepper
+                label="Duration (min)"
+                value={ex.target_duration_minutes ?? 45}
+                step={5}
+                min={5}
+                onDelta={(d) =>
+                  patch({ target_duration_minutes: Math.max(5, (ex.target_duration_minutes ?? 45) + d) })
+                }
+              />
+            </>
+          ) : (
+            <>
+              <Stepper
+                label={type === 'mobility' ? 'Rounds' : 'Sets'}
+                value={ex.sets ?? 1}
+                min={1}
+                onDelta={(d) => patch({ sets: Math.max(1, (ex.sets ?? 1) + d) })}
+              />
+
+              {countdown ? (
+                <Stepper
+                  label="Duration (sec)"
+                  value={ex.duration_seconds ?? 30}
+                  step={5}
+                  min={5}
+                  onDelta={(d) => patch({ duration_seconds: Math.max(5, (ex.duration_seconds ?? 30) + d) })}
+                />
+              ) : (
+                <>
+                  <Input
+                    label="Reps (e.g. 10 or 8–12)"
+                    value={ex.reps ?? ''}
+                    onChange={(e) => patch({ reps: e.target.value })}
+                  />
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <Stepper
+                        label={`Weight (${unit})`}
+                        value={ex.target_weight ?? 0}
+                        step={unit === 'kg' ? 2.5 : 5}
+                        onDelta={(d) =>
+                          patch({
+                            target_weight: Math.max(0, Math.round(((ex.target_weight ?? 0) + d) * 10) / 10),
+                            weight_unit: unit,
+                          })
+                        }
+                      />
+                    </div>
+                    <div className="w-24">
+                      <SegmentedToggle
+                        value={unit}
+                        onChange={(v) => patch({ weight_unit: v as WeightUnit })}
+                        options={[
+                          { value: 'kg', label: 'kg' },
+                          { value: 'lb', label: 'lb' },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                </>
+              )}
             </>
           )}
 
-          <Stepper
-            label="Rest (sec)"
-            value={ex.rest_seconds ?? 0}
-            step={15}
-            onDelta={(d) => patch({ rest_seconds: Math.max(0, (ex.rest_seconds ?? 0) + d) })}
-          />
+          {type !== 'class' ? (
+            <label className="flex items-center gap-2.5 text-[13.5px]" style={{ color: 'var(--text-secondary)' }}>
+              <input
+                type="checkbox"
+                checked={ex.is_per_side === true}
+                onChange={(e) => patch({ is_per_side: e.target.checked || undefined })}
+                className="h-4 w-4"
+                style={{ accentColor: 'var(--accent)' }}
+              />
+              Per side (lunges, side planks — &ldquo;each side&rdquo;)
+            </label>
+          ) : null}
+
+          {type !== 'class' && ex.cardio_format !== 'intervals' ? (
+            <Stepper
+              label="Rest (sec)"
+              value={ex.rest_seconds ?? 0}
+              step={15}
+              onDelta={(d) => patch({ rest_seconds: Math.max(0, (ex.rest_seconds ?? 0) + d) })}
+            />
+          ) : null}
 
           <Input
             label="Notes (optional)"
@@ -679,7 +946,8 @@ export default function ExerciseDetailPage() {
         </div>
       </Card>
 
-      {/* Swap / link */}
+      {/* Swap / link — only meaningful for catalog-matchable movements. */}
+      {catalogged ? (
       <Card>
         <Eyebrow className="mb-3">Change or link exercise</Eyebrow>
 
@@ -769,6 +1037,7 @@ export default function ExerciseDetailPage() {
           </p>
         ) : null}
       </Card>
+      ) : null}
 
       {/* Danger */}
       <button

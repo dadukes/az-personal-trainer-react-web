@@ -1,10 +1,34 @@
-import { Calendar, ChevronLeft, ChevronRight, ChevronUp, Link2, Play, Plus, Zap } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import {
+  Bike,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  ChevronUp,
+  Dumbbell,
+  Footprints,
+  Link2,
+  Mountain,
+  Play,
+  Plus,
+  Sailboat,
+  StretchHorizontal,
+  Timer,
+  Users,
+  Waves,
+  Zap,
+} from 'lucide-react';
+import { useEffect, useState, type ComponentType } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import { getWorkoutPlan, updatePlanDay, type DashboardExercise } from '@/lib/api';
-import { isTimedExercise } from '@/lib/exercise';
+import {
+  exerciseIconKey,
+  exerciseMeta,
+  isCatalogExercise,
+  resolveExerciseType,
+  type ExerciseIconKey,
+} from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type PlanSection } from '@/store/useAppStore';
 
@@ -21,10 +45,20 @@ function resolveDayKey(param?: string): string {
   return DAY_KEYS[new Date().getDay()];
 }
 
-function exerciseMeta(ex: DashboardExercise): string {
-  if (isTimedExercise(ex)) return `${ex.sets && ex.sets > 1 ? `${ex.sets} × ` : ''}${ex.duration_seconds}s`;
-  return `${ex.sets ?? 1} × ${ex.reps ?? '—'}`;
-}
+/** Semantic icon key → lucide component. Lets the day scan by movement kind at a glance. */
+const ICONS: Record<ExerciseIconKey, ComponentType<{ size?: number; color?: string }>> = {
+  dumbbell: Dumbbell,
+  timer: Timer,
+  stretch: StretchHorizontal,
+  class: Users,
+  run: Footprints,
+  cycle: Bike,
+  swim: Waves,
+  row: Sailboat,
+  walk: Footprints,
+  hike: Mountain,
+  other: Footprints,
+};
 
 function ExerciseRow({
   ex,
@@ -39,7 +73,12 @@ function ExerciseRow({
   onOpen: () => void;
   onMove: (direction: -1 | 1) => void;
 }) {
+  const type = resolveExerciseType(ex);
   const subtitle = ex.target_muscle ?? ex.body_part;
+  const Icon = ICONS[exerciseIconKey(ex)];
+  // Cardio and class are never catalog-matched, so the "not linked to ExerciseDB"
+  // warning would fire on every run — it is only meaningful for trackable movements.
+  const showUnlinkedWarning = isCatalogExercise(type) && !ex.exercise_id;
   return (
     <div
       className="flex items-center gap-2 rounded-xl px-3 py-2.5"
@@ -67,12 +106,18 @@ function ExerciseRow({
       ) : null}
 
       <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
+        <div
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
+          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+        >
+          <Icon size={15} color="var(--text-secondary)" />
+        </div>
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-[14px] font-bold" style={{ color: 'var(--text-primary)' }}>
-              {ex.name}
+              {type === 'class' ? (ex.class_name ?? ex.name) : ex.name}
             </span>
-            {!ex.exercise_id ? (
+            {showUnlinkedWarning ? (
               <Link2 size={13} color="var(--forma-danger)" aria-label="Not linked to ExerciseDB" />
             ) : null}
           </div>
@@ -136,7 +181,7 @@ export default function PlanDayPage() {
   const handleAdd = (section: PlanSection) => {
     const field = SECTIONS.find((s) => s.key === section)!.field;
     const nextIndex = dayPlan?.[field]?.length ?? 0;
-    addDraftExercise(section, { name: 'New exercise', sets: 3, reps: '10' });
+    addDraftExercise(section, { name: 'New exercise', type: 'reps', sets: 3, reps: '10' });
     navigate(`/plan/${dayKey}/exercise/${section}/${nextIndex}`);
   };
 
