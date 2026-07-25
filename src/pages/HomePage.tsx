@@ -7,12 +7,11 @@ import QuickActionsFab from '@/components/QuickActionsFab';
 import QuickLogDialog from '@/components/QuickLogDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import UserMenu from '@/components/UserMenu';
-import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
+import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import {
   getDashboard,
   getHealthLog,
   logActivity,
-  submitPulse,
   syncHealth,
   type ActivityLogPayload,
 } from '@/lib/api';
@@ -27,11 +26,8 @@ import { completionKey, currentWeekDateForDayKey, localISODate } from '@/lib/wor
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
-type StressLevel = 'chill' | 'stressed' | null;
-
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const STRESS_LEVEL_MAP: Record<'chill' | 'stressed', number> = { chill: 1, stressed: 4 };
 
 function buildWeekLabels(): string[] {
   const today = new Date();
@@ -87,8 +83,6 @@ export default function HomePage() {
     completedWorkouts,
     addXp,
   } = useAppStore();
-  const [pulse, setPulse] = useState<StressLevel>(null);
-  const [pulseSubmitting, setPulseSubmitting] = useState(false);
   const [planId, setPlanId] = useState<string | undefined>();
   /** Authoritative completed dates (local `YYYY-MM-DD`) from the dashboard's `completed_days`. */
   const [serverCompletedDates, setServerCompletedDates] = useState<Set<string>>(() => new Set());
@@ -205,26 +199,6 @@ export default function HomePage() {
     return `${getTimeGreeting(new Date().getHours())}${name ? `, ${name}` : ''}`;
   }, [profile.display_name, user?.email]);
 
-  const pulseHint = useMemo(() => {
-    if (pulse === 'chill') return 'Nice. Keep momentum with today’s plan.';
-    if (pulse === 'stressed') return 'Noted. We can swap to a short recovery flow.';
-    return 'Set your pulse check so your plan can adapt.';
-  }, [pulse]);
-
-  const handlePulse = async (level: 'chill' | 'stressed') => {
-    if (pulseSubmitting) return;
-    setPulse(level);
-    if (!session?.access_token) return;
-    setPulseSubmitting(true);
-    try {
-      await submitPulse(session.access_token, STRESS_LEVEL_MAP[level]);
-    } catch {
-      // Optimistic update already applied
-    } finally {
-      setPulseSubmitting(false);
-    }
-  };
-
   /** Shared by the snapshot tiles and the FAB — both land on the same dialog. */
   const openCapture = useCallback(() => {
     setCaptureError(null);
@@ -322,79 +296,54 @@ export default function HomePage() {
         rightActions={<UserMenu className="md:hidden" />}
       />
 
-      {/* Snapshot + pulse */}
-      <div className="flex flex-col gap-5 lg:flex-row">
-        <Card className="lg:flex-[1.3]">
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <div className="flex min-w-0 items-center gap-1.5">
-              <ShieldCheck size={15} color="#34D2C1" />
-              <span
-                className="truncate text-[11.5px] font-bold tracking-[0.08em]"
-                style={{ color: 'var(--accent-text)' }}
-              >
-                {manualCapture
-                  ? 'LOGGED TODAY'
-                  : isNative
-                    ? 'HEALTH CONNECT SYNCED'
-                    : 'HEALTH SNAPSHOT'}
-              </span>
-            </div>
-          </div>
-          {/* Each tile is the shortest path to the value it shows: tapping any of them
-              opens the capture dialog (the FAB is the other way in). */}
-          <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
-            {metrics.map((m) => (
-              <button
-                key={m.label}
-                type="button"
-                onClick={openCapture}
-                aria-label={`${manualCapture ? 'Update' : 'Log'} ${m.label.toLowerCase()}`}
-                className="rounded-2xl p-4 text-left transition-transform hover:brightness-[0.98] active:scale-[0.97]"
-                style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
-              >
-                {m.icon}
-                <div className="tabular mt-2 text-[20px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                  {m.value}
-                </div>
-                <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                  {m.label}
-                </div>
-              </button>
-            ))}
-          </div>
-          {/* No browser health API and nothing captured — say so instead of showing
-              numbers, and point at the ways to fill them in. */}
-          {!manualCapture ? (
-            <p className="mt-3 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-              Nothing logged today — tap a tile or the{' '}
-              <span className="font-bold" style={{ color: 'var(--accent-text)' }}>+</span> button to add your numbers.
-            </p>
-          ) : null}
-        </Card>
-
-        <Card className="flex flex-col lg:flex-[0.85]">
-          <div className="flex items-center justify-between">
-            <span className="text-[15.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-              How are your stress levels?
+      {/* Health snapshot */}
+      <Card>
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <ShieldCheck size={15} color="#34D2C1" />
+            <span
+              className="truncate text-[11.5px] font-bold tracking-[0.08em]"
+              style={{ color: 'var(--accent-text)' }}
+            >
+              {manualCapture
+                ? 'LOGGED TODAY'
+                : isNative
+                  ? 'HEALTH CONNECT SYNCED'
+                  : 'HEALTH SNAPSHOT'}
             </span>
-            <Activity size={18} color="var(--forma-sleep)" />
           </div>
-          <p className="mb-3.5 mt-2 text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-            {pulseHint}
+        </div>
+        {/* Each tile is the shortest path to the value it shows: tapping any of them
+            opens the capture dialog (the FAB is the other way in). */}
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          {metrics.map((m) => (
+            <button
+              key={m.label}
+              type="button"
+              onClick={openCapture}
+              aria-label={`${manualCapture ? 'Update' : 'Log'} ${m.label.toLowerCase()}`}
+              className="rounded-2xl p-4 text-left transition-transform hover:brightness-[0.98] active:scale-[0.97]"
+              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
+            >
+              {m.icon}
+              <div className="tabular mt-2 text-[20px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+                {m.value}
+              </div>
+              <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                {m.label}
+              </div>
+            </button>
+          ))}
+        </div>
+        {/* No browser health API and nothing captured — say so instead of showing
+            numbers, and point at the ways to fill them in. */}
+        {!manualCapture ? (
+          <p className="mt-3 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+            Nothing logged today — tap a tile or the{' '}
+            <span className="font-bold" style={{ color: 'var(--accent-text)' }}>+</span> button to add your numbers.
           </p>
-          <div className="mt-auto">
-            <SegmentedToggle
-              options={[
-                { value: 'chill', label: 'Chill' },
-                { value: 'stressed', label: 'Stressed' },
-              ]}
-              value={pulse ?? ''}
-              onChange={(v) => void handlePulse(v as 'chill' | 'stressed')}
-              tone="mint"
-            />
-          </div>
-        </Card>
-      </div>
+        ) : null}
+      </Card>
 
       {/* Today's plan or CTA */}
       {hasPlan ? (

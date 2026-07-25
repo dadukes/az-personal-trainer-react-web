@@ -22,7 +22,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 |-------|------|-------|
 | `/login` | `LoginPage` | Split gradient hero + sign-in/sign-up toggle |
 | `/onboarding` | `OnboardingPage` | 3 steps; sends only backend-accepted profile fields |
-| `/` | `HomePage` | Health snapshot + pulse + today's plan / CTA + week strip; both manual-capture dialogs hang off the `QuickActionsFab` |
+| `/` | `HomePage` | Health snapshot + today's plan / CTA + week strip; both manual-capture dialogs hang off the `QuickActionsFab` |
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **health trends chart** + AI health insights |
