@@ -121,7 +121,7 @@ export default function OnboardingPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center p-5 sm:p-10" style={{ background: 'var(--bg-app)' }}>
+    <div className="flex min-h-[100dvh] items-center justify-center p-5 sm:p-10" style={{ background: 'var(--bg-app)' }}>
       <div className="w-full max-w-[600px] animate-fade-slide-up">
         <StepDots step={step} />
 

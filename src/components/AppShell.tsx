@@ -44,7 +44,14 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <div className="flex h-screen overflow-hidden" style={{ background: 'var(--bg-app)' }}>
+    /*
+     * Mobile (<768) deliberately scrolls the *document* rather than an inner element:
+     * browsers only auto-hide their URL bar for the root scroller, so this is what makes
+     * the chrome collapse on scroll-down and come back on scroll-up. `dvh` (not `vh`)
+     * keeps the frame exactly as tall as the currently visible viewport in both states.
+     * From `md` up the sidebar layout needs a fixed frame with its own scroll region.
+     */
+    <div className="flex min-h-[100dvh] md:h-[100dvh] md:overflow-hidden" style={{ background: 'var(--bg-app)' }}>
       {/* ── Desktop sidebar (≥1024) ─────────────────────────────────────────── */}
       <aside
         className="hidden h-full w-[264px] min-w-[264px] flex-col justify-between p-4 lg:flex"
@@ -164,14 +171,20 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
       </aside>
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
-      <main className="flex h-full min-w-0 flex-1 flex-col overflow-y-auto pb-[74px] md:pb-0">
+      <main className="flex min-w-0 flex-1 flex-col pb-[calc(74px+env(safe-area-inset-bottom))] md:h-full md:overflow-y-auto md:pb-0">
         {children}
       </main>
 
       {/* ── Mobile bottom tab bar (<768) ────────────────────────────────────── */}
       <nav
-        className="fixed inset-x-0 bottom-0 z-30 flex h-[74px] items-center justify-around px-2 pb-3 pt-1.5 md:hidden"
-        style={{ background: 'var(--tab-bg)', borderTop: '1px solid var(--tab-border)' }}
+        className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around px-2 pt-1.5 md:hidden"
+        style={{
+          background: 'var(--tab-bg)',
+          borderTop: '1px solid var(--tab-border)',
+          // Grows by the home-indicator inset rather than absorbing it into the 74px.
+          height: 'calc(74px + env(safe-area-inset-bottom))',
+          paddingBottom: 'calc(12px + env(safe-area-inset-bottom))',
+        }}
       >
         {NAV_ITEMS.map(({ to, label, icon: Icon }) => (
           <NavLink key={to} to={to} end={to === '/'} className="flex flex-col items-center gap-0.5">

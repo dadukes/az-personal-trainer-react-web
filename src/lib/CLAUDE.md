@@ -43,14 +43,16 @@ for project-wide rules.
 
 ## health.ts — health adapter (web)
 
-- Browsers have **no** Health Connect / Apple Health API, so `readTodayHealthData()` **always**
-  returns realistic mock data (mirroring the mobile app's Expo-Go fallback) and
-  `isNativeHealthAvailable()` returns `false` (drives the "(MOCK)" badge on Home).
-- The user can **manually capture** today's metrics from Home (`HealthCaptureDialog` →
+- Browsers have **no** Health Connect / Apple Health API, so a **manual capture is the only
+  source of health data**. There is deliberately no mock/synthesised fallback: with nothing
+  captured the snapshot stays `null` and Home renders `--`. Don't reintroduce generated
+  numbers — they also feed the Coach context panel and Fuel's calorie maths.
+  `isNativeHealthAvailable()` returns `false`.
+- The user **manually captures** today's metrics from Home's FAB (`HealthCaptureDialog` →
   `syncHealth`). `load`/`saveManualCapture` keep the latest capture per-user in `localStorage`
   as an instant/offline mirror. On Home mount, `getHealthLog(token, today)` reads the
   **authoritative** server capture (`GET /health/logs?date=`, backend-gaps.md #7 now resolved);
   `manualCaptureFromLog` maps it into the local shape, and it wins over the mirror + mock, so a
   capture from any device shows in the snapshot and prefills the dialog cross-device.
 - If a real web/wearable health integration is added later, implement it here and make
-  `isNativeHealthAvailable()` report accurately — keep the mock as the fallback.
+  `isNativeHealthAvailable()` report accurately.

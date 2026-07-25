@@ -330,7 +330,7 @@ export default function PlanDayPage() {
       {/* Sticky save bar — appears when there are unsaved edits. */}
       {dirty && canSave ? (
         <div
-          className="fixed inset-x-0 bottom-[74px] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
+          className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
           style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
         >
           <div className="mx-auto flex max-w-[760px] items-center gap-3">

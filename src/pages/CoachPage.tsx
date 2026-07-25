@@ -204,7 +204,7 @@ export default function CoachPage() {
   const hrLabel = healthSnapshot.resting_heart_rate != null ? `${healthSnapshot.resting_heart_rate} bpm` : '--';
 
   return (
-    <div className="flex h-[calc(100vh-74px)] min-h-0 md:h-screen">
+    <div className="flex h-[calc(100dvh-74px-env(safe-area-inset-bottom))] min-h-0 md:h-[100dvh]">
       {/* Main chat column */}
       <div className="flex min-w-0 flex-1 flex-col">
         <div className="flex items-start justify-between gap-4 px-5 pb-4 pt-6 sm:px-10 sm:pt-8" style={{ borderBottom: '1px solid var(--border-base)' }}>

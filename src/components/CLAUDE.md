@@ -10,6 +10,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **`AppShell.tsx`** — the responsive app frame: **sidebar (≥1024) → icon rail (768–1023) →
   bottom tab bar (<768)**, plus the footer user block, theme toggle, and sign-out.
 - **`ScreenHeader.tsx`** — title + subtitle + optional right actions.
+- **`QuickActionsFab.tsx`** — the floating "+" that fans out into Home's manual-capture
+  actions (log workout / log health data). It is the **single** entry point for both dialogs;
+  don't add competing "Log" buttons to the header or the snapshot card.
 - **`UserMenu.tsx`** — avatar button + dropdown (edit profile, theme toggle, sign out). Primarily
   the mobile account entry point (`md:hidden` in Home's `ScreenHeader`), since the sidebar/rail
   are hidden `<768`. Desktop keeps the sidebar footer + rail (Settings icon → `/profile`).
@@ -30,5 +33,12 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - Icons are **lucide-react** at brand stroke weight (`2` default; `2.2–2.5` for active nav).
   Don't hand-draw icons or swap icon sets.
 - Keep primitives presentational and stateless where possible; data-fetching belongs in pages.
+- **Anything sitting on the mint fill (`--bg-selected`) reads from the `--text-on-mint*` tokens.**
+  The mint is identical in both themes, so the theme-flipping text tokens (`--text-secondary`,
+  `--accent-text`) turn unreadable-on-mint in dark.
+- **Mobile (<768) scrolls the document, not an inner element** — that is what makes the browser
+  auto-hide its URL bar. `AppShell` only becomes a fixed `100dvh` frame with its own scroll
+  region from `md` up. Use `dvh`, never `vh`, and offset fixed bottom bars by
+  `calc(74px + env(safe-area-inset-bottom))`.
 - `ChatMarkdown` must keep escaping HTML before formatting — it renders backend/LLM text via
   `dangerouslySetInnerHTML`, so never interpolate raw model output without escaping.

@@ -1,8 +1,9 @@
-import { Activity, Calendar, Flame, HeartPulse, MessageCircle, Moon, Play, Plus, RotateCcw, ShieldCheck, Zap } from 'lucide-react';
+import { Activity, Calendar, Dumbbell, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, ShieldCheck, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import HealthCaptureDialog, { type HealthCaptureValues } from '@/components/HealthCaptureDialog';
+import QuickActionsFab from '@/components/QuickActionsFab';
 import QuickLogDialog from '@/components/QuickLogDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import UserMenu from '@/components/UserMenu';
@@ -19,7 +20,6 @@ import {
   isNativeHealthAvailable,
   loadManualCapture,
   manualCaptureFromLog,
-  readTodayHealthData,
   saveManualCapture,
   type ManualHealthCapture,
 } from '@/lib/health';
@@ -65,6 +65,14 @@ function snapshotFromCapture(capture: ManualHealthCapture) {
     active_calories_burned: capture.active_calories_burned ?? null,
   };
 }
+
+/** Nothing captured for today — the tiles render `--` rather than invented numbers. */
+const EMPTY_SNAPSHOT = {
+  sleep_hours: null,
+  resting_heart_rate: null,
+  step_count: null,
+  active_calories_burned: null,
+};
 
 export default function HomePage() {
   const navigate = useNavigate();
@@ -141,20 +149,15 @@ export default function HomePage() {
   useEffect(() => {
     let mounted = true;
     const todayISO = localISODate();
-    // Today's local capture (if any) shows instantly and works offline — the user's
-    // own numbers beat the mock.
+    // Today's local capture (if any) shows instantly and works offline. With no capture
+    // the tiles stay empty — the browser has no health API, and inventing numbers here
+    // would put fiction in front of the user (and into the Coach/Fuel context).
     const local = user?.id ? loadManualCapture(user.id, todayISO) : null;
-    if (local) {
-      setManualCapture(local);
-      setHealthSnapshot(snapshotFromCapture(local));
-    } else {
-      void readTodayHealthData().then((data) => {
-        if (mounted) setHealthSnapshot(data);
-      });
-    }
+    setManualCapture(local);
+    setHealthSnapshot(local ? snapshotFromCapture(local) : EMPTY_SNAPSHOT);
 
     // Authoritative, cross-device read (backend-gaps.md #7 is now closed): a capture
-    // made on any device wins over the local mirror / mock once it arrives.
+    // made on any device wins over the local mirror once it arrives.
     if (session?.access_token) {
       void getHealthLog(session.access_token, todayISO)
         .then((res) => {
@@ -165,7 +168,7 @@ export default function HomePage() {
           setHealthSnapshot(snapshotFromCapture(capture));
         })
         .catch(() => {
-          // Non-blocking — the local capture / mock already renders.
+          // Non-blocking — the local capture (or the empty state) already renders.
         });
     }
 
@@ -221,6 +224,12 @@ export default function HomePage() {
       setPulseSubmitting(false);
     }
   };
+
+  /** Shared by the snapshot tiles and the FAB — both land on the same dialog. */
+  const openCapture = useCallback(() => {
+    setCaptureError(null);
+    setCaptureOpen(true);
+  }, []);
 
   const handleCaptureSave = async (values: HealthCaptureValues) => {
     if (captureSaving) return;
@@ -305,23 +314,12 @@ export default function HomePage() {
   ];
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] animate-fade-slide-up flex-col gap-6 p-6 sm:p-10">
+    // Extra bottom padding keeps the last card clear of the floating log button.
+    <div className="mx-auto flex w-full max-w-[1120px] animate-fade-slide-up flex-col gap-6 p-6 pb-28 sm:p-10 sm:pb-28">
       <ScreenHeader
         title={greeting}
         subtitle="Fitness that fits you. Let's check your baseline before we move."
-        rightActions={
-          <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setQuickLogOpen(true)}
-              leftIcon={<Plus size={14} color="var(--accent-text)" />}
-            >
-              Log something
-            </Button>
-            <UserMenu className="md:hidden" />
-          </div>
-        }
+        rightActions={<UserMenu className="md:hidden" />}
       />
 
       {/* Snapshot + pulse */}
@@ -338,28 +336,20 @@ export default function HomePage() {
                   ? 'LOGGED TODAY'
                   : isNative
                     ? 'HEALTH CONNECT SYNCED'
-                    : 'HEALTH SNAPSHOT (MOCK)'}
+                    : 'HEALTH SNAPSHOT'}
               </span>
             </div>
-            <button
-              type="button"
-              onClick={() => {
-                setCaptureError(null);
-                setCaptureOpen(true);
-              }}
-              aria-label={manualCapture ? "Update today's health log" : "Log today's health data"}
-              className="inline-flex flex-shrink-0 items-center gap-1 rounded-full py-1.5 pl-2.5 pr-3.5 text-[12px] font-extrabold transition-transform active:scale-[0.95]"
-              style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
-            >
-              <Plus size={14} color="#06224D" strokeWidth={2.5} />
-              {manualCapture ? 'Update' : 'Log'}
-            </button>
           </div>
+          {/* Each tile is the shortest path to the value it shows: tapping any of them
+              opens the capture dialog (the FAB is the other way in). */}
           <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
             {metrics.map((m) => (
-              <div
+              <button
                 key={m.label}
-                className="rounded-2xl p-4"
+                type="button"
+                onClick={openCapture}
+                aria-label={`${manualCapture ? 'Update' : 'Log'} ${m.label.toLowerCase()}`}
+                className="rounded-2xl p-4 text-left transition-transform hover:brightness-[0.98] active:scale-[0.97]"
                 style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
               >
                 {m.icon}
@@ -369,9 +359,17 @@ export default function HomePage() {
                 <div className="mt-0.5 text-[11px]" style={{ color: 'var(--text-muted)' }}>
                   {m.label}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
+          {/* No browser health API and nothing captured — say so instead of showing
+              numbers, and point at the ways to fill them in. */}
+          {!manualCapture ? (
+            <p className="mt-3 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+              Nothing logged today — tap a tile or the{' '}
+              <span className="font-bold" style={{ color: 'var(--accent-text)' }}>+</span> button to add your numbers.
+            </p>
+          ) : null}
         </Card>
 
         <Card className="flex flex-col lg:flex-[0.85]">
@@ -496,7 +494,9 @@ export default function HomePage() {
               AI ADAPTS DAILY
             </Badge>
           </div>
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+          {/* Mobile keeps the 5 days on one swipeable row (a 2-col grid leaves a ragged
+              last row); from `sm` up there is room for a real grid. */}
+          <div className="hide-scrollbar -mx-6 flex snap-x snap-mandatory gap-3 overflow-x-auto px-6 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:gap-4 sm:overflow-visible sm:px-0 lg:grid-cols-5">
             {weekPlan.map((day) => {
               const isToday = day.status === 'today';
               const completed = isDayCompleted(day.date);
@@ -504,7 +504,7 @@ export default function HomePage() {
                 <button
                   key={day.key}
                   onClick={() => navigate(`/plan/${day.key}`)}
-                  className="relative overflow-hidden rounded-[18px] p-4 text-left transition-transform active:scale-[0.98]"
+                  className="relative w-[68%] flex-shrink-0 snap-start overflow-hidden rounded-[18px] p-4 text-left transition-transform active:scale-[0.98] sm:w-auto"
                   style={{
                     background: isToday ? 'var(--bg-selected)' : 'var(--bg-surface)',
                     border: `1px solid ${completed ? 'var(--accent)' : isToday ? 'var(--accent)' : 'var(--border-base)'}`,
@@ -552,6 +552,28 @@ export default function HomePage() {
           </div>
         </div>
       ) : null}
+
+      {/* Both manual-capture flows live on one FAB so the header and the snapshot card
+          stay clean (and two different "Log" buttons stop competing). */}
+      <QuickActionsFab
+        actions={[
+          {
+            id: 'activity',
+            label: 'Log workout',
+            icon: <Dumbbell size={16} color="var(--accent-text)" />,
+            onSelect: () => {
+              setQuickLogError(null);
+              setQuickLogOpen(true);
+            },
+          },
+          {
+            id: 'health',
+            label: manualCapture ? 'Update health data' : 'Log health data',
+            icon: <HeartPulse size={16} color="var(--accent-text)" />,
+            onSelect: openCapture,
+          },
+        ]}
+      />
 
       {/* Manual health capture — prefilled with today's previous entry for quick edits. */}
       {captureOpen ? (

@@ -22,7 +22,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 |-------|------|-------|
 | `/login` | `LoginPage` | Split gradient hero + sign-in/sign-up toggle |
 | `/onboarding` | `OnboardingPage` | 3 steps; sends only backend-accepted profile fields |
-| `/` | `HomePage` | Health snapshot (+ manual "Log" capture dialog) + pulse + today's plan / CTA + week |
+| `/` | `HomePage` | Health snapshot + pulse + today's plan / CTA + week strip; both manual-capture dialogs hang off the `QuickActionsFab` |
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **health trends chart** + AI health insights |
@@ -42,6 +42,11 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   updates. Don't hold duplicate copies of store data.
 - **Home**: dashboard + health load must stay resilient and non-blocking (fall back to
   placeholder/CTA). Empty `active_workout_plan` → the "Ready to plan your workout?" CTA.
+  The 5-day "Upcoming week" is a snap-scrolling row on mobile and a grid from `sm` up — a
+  2-col grid left a ragged single-card last row.
+- **Workout session**: the header carries the guided/list toggle and (when the day has
+  `ai_notes`) an info button. The session note is a **dialog**, auto-opened once per
+  plan+day via `forma:workout-note-seen` — it must not reappear above every exercise.
 - **Coach**: consume the `streamChat` SSE helper; render incremental chunks; keep the
   stop/retry/new-session affordances and the "scroll to latest" button.
 - **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads

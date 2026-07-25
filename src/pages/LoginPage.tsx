@@ -45,7 +45,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen" style={{ background: 'var(--bg-app)' }}>
+    <div className="flex min-h-[100dvh]" style={{ background: 'var(--bg-app)' }}>
       {/* Hero panel */}
       <div
         className="relative hidden w-[46%] max-w-[620px] flex-col justify-center overflow-hidden p-16 lg:flex"

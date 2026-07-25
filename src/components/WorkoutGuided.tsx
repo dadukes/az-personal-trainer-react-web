@@ -19,7 +19,6 @@ import {
 interface GuidedWorkoutProps {
   blocks: Block[];
   accessToken?: string;
-  dayNotes?: string;
   onSetReps: (blockIndex: number, setIndex: number, reps: number) => void;
   onSetWeight: (blockIndex: number, setIndex: number, weight: number) => void;
   onSetCapture: (
@@ -53,7 +52,6 @@ interface Position {
 export default function WorkoutGuided({
   blocks,
   accessToken,
-  dayNotes,
   onSetReps,
   onSetWeight,
   onSetCapture,
@@ -229,8 +227,6 @@ export default function WorkoutGuided({
           </span>
         </div>
 
-        {dayNotes ? <CoachNote text={dayNotes} label="SESSION NOTE" subtle /> : null}
-
         {showDemo ? (
           <ExerciseDemo
             key={block.key}
@@ -341,7 +337,7 @@ export default function WorkoutGuided({
 
       {/* Sticky footer — sits above the mobile tab bar (bottom-[74px]) like the list view's finish bar. */}
       <div
-        className="fixed inset-x-0 bottom-[74px] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
+        className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
         style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
       >
         <div className="mx-auto flex max-w-[760px] items-center gap-3">
@@ -880,20 +876,20 @@ function ProgramSheet({
 
 // ─── Coach note + form cues ───────────────────────────────────────────────────
 
-function CoachNote({ text, label = 'COACH NOTE', subtle = false }: { text: string; label?: string; subtle?: boolean }) {
+/**
+ * The mint fill is the same in light and dark, so everything on it reads from the
+ * `on-mint` tokens — the theme-flipping text colours turn white-on-mint in dark.
+ */
+function CoachNote({ text }: { text: string }) {
   return (
-    <Card
-      variant={subtle ? 'subtle' : 'default'}
-      padding="12px"
-      style={subtle ? undefined : { background: 'var(--bg-selected)', border: '1px solid var(--accent)' }}
-    >
+    <Card padding="12px" style={{ background: 'var(--bg-selected)', border: '1px solid var(--accent)' }}>
       <div className="flex items-start gap-2.5">
-        <Sparkles size={16} color="var(--accent-text)" className="mt-0.5 flex-shrink-0" />
+        <Sparkles size={16} color="var(--text-on-mint)" className="mt-0.5 flex-shrink-0" />
         <div className="flex-1">
-          <div className="text-[10.5px] font-extrabold tracking-[0.06em]" style={{ color: 'var(--accent-text)' }}>
-            {label}
+          <div className="text-[10.5px] font-extrabold tracking-[0.06em]" style={{ color: 'var(--text-on-mint)' }}>
+            COACH NOTE
           </div>
-          <p className="mt-0.5 text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+          <p className="mt-0.5 text-[13px] leading-[1.5]" style={{ color: 'var(--text-on-mint-soft)' }}>
             {text}
           </p>
         </div>

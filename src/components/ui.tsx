@@ -142,6 +142,8 @@ interface SegmentedToggleProps {
   value: string;
   onChange: (value: string) => void;
   tone?: 'default' | 'mint';
+  /** `sm` shrink-wraps to its labels — for toolbar/header placement rather than a full row. */
+  size?: 'sm' | 'md';
   className?: string;
 }
 
@@ -150,8 +152,11 @@ export function SegmentedToggle({
   value,
   onChange,
   tone = 'default',
+  size = 'md',
   className = '',
 }: SegmentedToggleProps) {
+  const segmentSize =
+    size === 'sm' ? 'px-2.5 py-1.5 text-[12.5px]' : 'flex-1 py-2.5 text-sm';
   return (
     <div
       className={`flex gap-1 rounded-xl p-1 ${className}`}
@@ -166,7 +171,7 @@ export function SegmentedToggle({
             key={opt.value}
             type="button"
             onClick={() => onChange(opt.value)}
-            className="flex-1 rounded-lg py-2.5 text-sm font-bold transition-all"
+            className={`whitespace-nowrap rounded-lg font-bold transition-all ${segmentSize}`}
             style={{
               background: active ? activeBg : 'transparent',
               color: active ? activeColor : 'var(--text-muted)',

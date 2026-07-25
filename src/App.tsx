@@ -19,7 +19,7 @@ import WorkoutSessionPage from '@/pages/WorkoutSessionPage';
 
 function Splash() {
   return (
-    <div className="flex h-screen items-center justify-center" style={{ background: 'var(--bg-app)' }}>
+    <div className="flex h-[100dvh] items-center justify-center" style={{ background: 'var(--bg-app)' }}>
       <div className="flex flex-col items-center gap-4">
         <img src="/forma_logo.png" alt="Forma" className="h-12 w-12 animate-pulse" />
         <span className="text-sm font-semibold" style={{ color: 'var(--text-muted)' }}>

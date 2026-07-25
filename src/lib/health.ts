@@ -2,15 +2,13 @@
  * Health adapter (web).
  *
  * The mobile app reads Android Health Connect / Apple Health via a native
- * module. The browser has no equivalent, so on web this module always returns
- * realistic mock data — mirroring the mobile app's Expo-Go fallback path so the
- * Home health snapshot and Fuel calorie estimates still render.
+ * module. The browser has no equivalent, so on web a **manual capture is the only
+ * source of health data** — there is no synthesised fallback. With nothing captured
+ * the snapshot stays empty and the UI renders `--`.
  *
- * The user can also **manually capture** today's metrics from Home
- * (`POST /health/sync`). The latest capture is persisted per-user in
- * `localStorage` so reopening the dialog the same day prefills the previous
- * entry for editing (the backend has no read endpoint for health logs — see
- * backend-gaps.md #7). A same-day manual capture takes precedence over mock.
+ * The user captures today's metrics from Home's FAB (`POST /health/sync`). The latest
+ * capture is persisted per-user in `localStorage` as an instant/offline mirror of the
+ * server copy, and reopening the dialog the same day prefills it for editing.
  *
  * If a wearable/web health integration is added later, implement it here and
  * make `isNativeHealthAvailable()` report accurately.
@@ -88,25 +86,6 @@ export function saveManualCapture(userId: string, capture: ManualHealthCapture):
 }
 
 export type HealthPermissionStatus = 'granted' | 'denied' | 'unavailable';
-
-// Non-cryptographic random used only to generate mock display values.
-function randomBetween(min: number, max: number): number {
-  return Math.round((Math.random() * (max - min) + min) * 10) / 10;
-}
-
-function buildMockData(): HealthData {
-  return {
-    sleep_hours: randomBetween(5.0, 8.5),
-    resting_heart_rate: Math.round(randomBetween(58, 78)),
-    step_count: Math.round(randomBetween(2500, 12000)),
-    active_calories_burned: Math.round(randomBetween(150, 600)),
-  };
-}
-
-/** Reads today's health metrics. On web this is always mock data. */
-export async function readTodayHealthData(): Promise<HealthData> {
-  return buildMockData();
-}
 
 /** No native health provider exists in the browser. */
 export function isNativeHealthAvailable(): boolean {

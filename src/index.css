@@ -45,6 +45,9 @@
   --text-label: #586c80;
   --text-on-accent: var(--forma-navy);
   --text-on-mint: #0e4c45;
+  /* Body copy on the mint fill. The mint is identical in both themes, so this is too —
+     the theme-flipping text tokens would go white-on-mint in dark. */
+  --text-on-mint-soft: #2d6259;
 
   --accent: var(--forma-aqua);
   --accent-text: #0e4c45;
@@ -88,6 +91,9 @@
   --text-label: #afd0bf;
   --text-on-accent: var(--forma-navy);
   --text-on-mint: #0e4c45;
+  /* Body copy on the mint fill. The mint is identical in both themes, so this is too —
+     the theme-flipping text tokens would go white-on-mint in dark. */
+  --text-on-mint-soft: #2d6259;
 
   --accent: var(--forma-aqua);
   --accent-text: #34d2c1;
@@ -108,10 +114,13 @@
   box-sizing: border-box;
 }
 
+/* `min-height`, not `height`: on mobile the document itself is the scroll container
+   (that is what lets the browser auto-hide its URL bar), so it has to be free to grow
+   past the viewport. The app frame sets its own `100dvh` floor in AppShell. */
 html,
 body,
 #root {
-  height: 100%;
+  min-height: 100%;
 }
 
 body {
@@ -121,6 +130,15 @@ body {
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Swipeable rows (e.g. the mobile week strip) keep the gesture, drop the bar */
+.hide-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
 }
 
 /* Numeric/metric display uses the mono/tabular figures for a data feel */

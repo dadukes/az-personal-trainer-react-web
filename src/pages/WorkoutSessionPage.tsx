@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, Clock, Dumbbell, Minus, Pause, Play, Plus, RotateCcw, TrendingUp } from 'lucide-react';
+import { Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Sparkles, TrendingUp, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -26,6 +26,8 @@ import { useAppStore } from '@/store/useAppStore';
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 const SESSION_KEY = 'forma:workout-session';
 const VIEW_KEY = 'forma:workout-view';
+/** Which session's coach note has already been shown, so it auto-opens only once. */
+const NOTE_SEEN_KEY = 'forma:workout-note-seen';
 
 type WorkoutView = 'guided' | 'list';
 
@@ -81,6 +83,7 @@ export default function WorkoutSessionPage() {
   // Per-exercise XP tally. XP is effort-based and variable, so showing where it came
   // from is the difference between a number and a reason to come back.
   const [xpBreakdown, setXpBreakdown] = useState<XpBreakdownEntry[] | null>(null);
+  const [noteOpen, setNoteOpen] = useState(false);
   const [view, setView] = useState<WorkoutView>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(VIEW_KEY) : null;
     return saved === 'list' ? 'list' : 'guided';
@@ -145,6 +148,23 @@ export default function WorkoutSessionPage() {
       active = false;
     };
   }, [session, dayKey, unit]);
+
+  /**
+   * The coach's intention for the session is worth reading once, when the workout
+   * starts — after that it lives behind the header info button instead of repeating
+   * above every exercise.
+   */
+  useEffect(() => {
+    if (loading || !dayNotes || blocks.length === 0) return;
+    const key = `${planId ?? 'none'}|${dayKey}|${dateForDayKey(dayKey)}`;
+    try {
+      if (localStorage.getItem(NOTE_SEEN_KEY) === key) return;
+      localStorage.setItem(NOTE_SEEN_KEY, key);
+    } catch {
+      // Storage unavailable — showing it once per load is an acceptable fallback.
+    }
+    setNoteOpen(true);
+  }, [loading, dayNotes, blocks.length, planId, dayKey]);
 
   // Persist captured progress so nothing is lost when the screen goes inactive.
   useEffect(() => {
@@ -263,7 +283,7 @@ export default function WorkoutSessionPage() {
 
   if (loading) {
     return (
-      <div className="flex h-full items-center justify-center" style={{ background: 'var(--bg-app)' }}>
+      <div className="flex min-h-[50vh] flex-1 items-center justify-center" style={{ background: 'var(--bg-app)' }}>
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
       </div>
     );
@@ -362,23 +382,47 @@ export default function WorkoutSessionPage() {
 
   return (
     <div className="mx-auto flex w-full max-w-[760px] flex-col gap-5 p-5 pb-40 sm:p-8 sm:pb-40">
-      {/* Header */}
-      <div className="flex items-center gap-3">
+      {/* Header — the view toggle and the coach's session note ride here rather than
+          each taking a row of their own above the exercise. */}
+      <div className="flex items-center gap-2.5">
         <button
           onClick={() => navigate(-1)}
           aria-label="Back"
-          className="flex h-10 w-10 items-center justify-center rounded-xl"
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
         >
           <ChevronLeft size={20} color="var(--text-secondary)" />
         </button>
-        <div className="flex-1">
-          <div className="text-[20px] font-extrabold capitalize" style={{ color: 'var(--text-primary)' }}>
-            {dayKey}&rsquo;s workout
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-[17px] font-extrabold capitalize sm:text-[20px]" style={{ color: 'var(--text-primary)' }}>
+            {dayKey}
+            <span className="hidden sm:inline">&rsquo;s workout</span>
           </div>
           <div className="tabular mt-0.5 flex items-center gap-1.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
             <Clock size={13} /> {formatClock(elapsed)} · {completedSets}/{totalSets} sets
           </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2">
+          {dayNotes ? (
+            <button
+              onClick={() => setNoteOpen(true)}
+              aria-label="Coach's plan for this session"
+              className="flex h-9 w-9 items-center justify-center rounded-xl transition-transform active:scale-95"
+              style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+            >
+              <Info size={17} color="var(--accent-text)" />
+            </button>
+          ) : null}
+          <SegmentedToggle
+            tone="mint"
+            size="sm"
+            value={view}
+            onChange={(v) => changeView(v as WorkoutView)}
+            options={[
+              { value: 'guided', label: 'Guided' },
+              { value: 'list', label: 'All' },
+            ]}
+          />
         </div>
       </div>
 
@@ -386,22 +430,10 @@ export default function WorkoutSessionPage() {
         <div className="h-full rounded-full transition-[width]" style={{ width: `${progressPct}%`, background: 'var(--accent)' }} />
       </div>
 
-      {/* View toggle — guided (one exercise at a time) vs. the full single-page list. */}
-      <SegmentedToggle
-        tone="mint"
-        value={view}
-        onChange={(v) => changeView(v as WorkoutView)}
-        options={[
-          { value: 'guided', label: 'Guided' },
-          { value: 'list', label: 'All exercises' },
-        ]}
-      />
-
       {view === 'guided' ? (
         <WorkoutGuided
           blocks={blocks}
           accessToken={session?.access_token}
-          dayNotes={dayNotes}
           onSetReps={setReps}
           onSetWeight={setWeight}
           onSetCapture={setCapture}
@@ -410,15 +442,6 @@ export default function WorkoutSessionPage() {
         />
       ) : (
         <>
-      {dayNotes ? (
-        <Card variant="subtle" padding="14px 16px">
-          <Eyebrow className="mb-1">Session note</Eyebrow>
-          <p className="text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-            {dayNotes}
-          </p>
-        </Card>
-      ) : null}
-
       {blocks.map((block, bi) => (
         <Card key={block.key} padding="18px">
           <div className="mb-3 flex items-center justify-between">
@@ -511,7 +534,7 @@ export default function WorkoutSessionPage() {
 
       {/* Sticky finish bar — sits above the mobile tab bar (bottom-[74px]) so it stays reachable. */}
       <div
-        className="fixed inset-x-0 bottom-[74px] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
+        className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
         style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
       >
         <div className="mx-auto flex max-w-[760px] items-center gap-3">
@@ -525,6 +548,67 @@ export default function WorkoutSessionPage() {
       </div>
         </>
       )}
+
+      {noteOpen && dayNotes ? (
+        <SessionNoteDialog text={dayNotes} onClose={() => setNoteOpen(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * The coach's plan for the whole session. Shown once on start and thereafter on
+ * demand from the header, so the same paragraph doesn't sit above every exercise.
+ */
+function SessionNoteDialog({ text, onClose }: { text: string; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-5"
+      style={{ background: 'rgba(6,34,77,0.45)' }}
+      onClick={onClose}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Coach's plan for this session"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[420px] rounded-[24px] p-6"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
+            style={{ background: 'var(--bg-selected)' }}
+          >
+            <Sparkles size={18} color="var(--text-on-mint)" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <Eyebrow>Coach&rsquo;s plan today</Eyebrow>
+            <p className="mt-1.5 text-[14px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
+              {text}
+            </p>
+          </div>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
+            style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
+          >
+            <X size={16} color="var(--text-secondary)" />
+          </button>
+        </div>
+        <Button fullWidth className="mt-5" onClick={onClose}>
+          Let&rsquo;s go
+        </Button>
+      </div>
     </div>
   );
 }
