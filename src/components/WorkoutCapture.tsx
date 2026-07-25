@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from 're
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import type { CardioActivityKind } from '@/lib/api';
 import { cardioKindLabel, formatDistanceKm, hrZoneHelper, hrZoneText } from '@/lib/exercise';
+import { useWakeLock } from '@/lib/wakeLock';
 import { formatClock, type Block } from '@/lib/workoutSession';
 
 /**
@@ -370,6 +371,9 @@ export function IntervalPlayer({
   onCompleteRoundRef.current = onCompleteRound;
   const onEndEarlyRef = useRef(onEndEarly);
   onEndEarlyRef.current = onEndEarly;
+
+  // Rounds advance themselves, so the screen has to stay up to be worth watching.
+  useWakeLock(status === 'running');
 
   const isWork = activePhase === 'work';
   const phaseSeconds = isWork ? workSeconds : recoverSeconds;

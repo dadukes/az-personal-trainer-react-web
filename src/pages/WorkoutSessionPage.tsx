@@ -1,4 +1,4 @@
-import { Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Sparkles, TrendingUp, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Sparkles, TrendingUp, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -84,6 +84,7 @@ export default function WorkoutSessionPage() {
   // from is the difference between a number and a reason to come back.
   const [xpBreakdown, setXpBreakdown] = useState<XpBreakdownEntry[] | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
+  const [exitOpen, setExitOpen] = useState(false);
   const [view, setView] = useState<WorkoutView>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem(VIEW_KEY) : null;
     return saved === 'list' ? 'list' : 'guided';
@@ -202,6 +203,49 @@ export default function WorkoutSessionPage() {
     };
   }, [finished, startedAt]);
 
+  /** A workout is on screen and not yet logged — leaving now throws the session away. */
+  const guardExit = !loading && !error && !finished && blocks.length > 0;
+
+  /**
+   * Back-navigation guard. The app nav is hidden during a workout, but the browser's
+   * own Back (and Android's system back) still points straight out of the session — and
+   * nothing is logged until the user finishes. So we park a sentinel history entry and
+   * turn any pop into the confirm dialog, re-parking it each time they choose to stay.
+   */
+  useEffect(() => {
+    if (!guardExit) return;
+    window.history.pushState({ formaWorkoutGuard: true }, '');
+    const onPop = () => {
+      window.history.pushState({ formaWorkoutGuard: true }, '');
+      setExitOpen(true);
+    };
+    // Covers tab close / reload, which no in-page dialog can intercept.
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('popstate', onPop);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    return () => {
+      window.removeEventListener('popstate', onPop);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+    };
+  }, [guardExit]);
+
+  /** The one way out mid-session. Home rather than `-1`: `-1` is the sentinel entry. */
+  const leaveWorkout = useCallback(() => {
+    setExitOpen(false);
+    navigate('/', { replace: true });
+  }, [navigate]);
+
+  const requestExit = useCallback(() => {
+    if (guardExit) {
+      setExitOpen(true);
+      return;
+    }
+    navigate(-1);
+  }, [guardExit, navigate]);
+
   const totalSets = useMemo(() => blocks.reduce((n, b) => n + b.sets.length, 0), [blocks]);
   const completedSets = useMemo(
     () => blocks.reduce((n, b) => n + b.sets.filter((s) => s.completed).length, 0),
@@ -238,14 +282,26 @@ export default function WorkoutSessionPage() {
    * would not have flushed by the time we serialize here — without this, the last set
    * of every workout logs as skipped.
    */
-  const finish = useCallback(async (finalCompletion?: { blockIndex: number; setIndex: number }) => {
+  const finish = useCallback(async (finalCompletion?: {
+    blockIndex: number;
+    setIndex: number;
+    durationSeconds?: number;
+  }) => {
     const finalBlocks = finalCompletion
       ? blocks.map((b, bi) =>
           bi === finalCompletion.blockIndex
             ? {
                 ...b,
                 sets: b.sets.map((s, si) =>
-                  si === finalCompletion.setIndex ? { ...s, completed: true } : s,
+                  si === finalCompletion.setIndex
+                    ? {
+                        ...s,
+                        completed: true,
+                        ...(finalCompletion.durationSeconds != null
+                          ? { durationSeconds: finalCompletion.durationSeconds }
+                          : {}),
+                      }
+                    : s,
                 ),
               }
             : b,
@@ -386,8 +442,8 @@ export default function WorkoutSessionPage() {
           each taking a row of their own above the exercise. */}
       <div className="flex items-center gap-2.5">
         <button
-          onClick={() => navigate(-1)}
-          aria-label="Back"
+          onClick={requestExit}
+          aria-label="Leave workout"
           className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
         >
@@ -442,7 +498,12 @@ export default function WorkoutSessionPage() {
         />
       ) : (
         <>
-      {blocks.map((block, bi) => (
+      {blocks.map((block, bi) => {
+        // On a rep block the "per side" qualifier rides on the rep stepper, so the
+        // header would only be repeating it.
+        const perSideOnDial =
+          block.isPerSide && !isCountdownBlock(block) && !isSingleCaptureBlock(block);
+        return (
         <Card key={block.key} padding="18px">
           <div className="mb-3 flex items-center justify-between">
             <div>
@@ -451,7 +512,7 @@ export default function WorkoutSessionPage() {
               </div>
               <div className="mt-0.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
                 {blockTargetText(block)}
-                {block.isPerSide ? ' · each side' : ''}
+                {block.isPerSide && !perSideOnDial ? ' · each side' : ''}
               </div>
               {block.notes ? (
                 <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
@@ -500,7 +561,7 @@ export default function WorkoutSessionPage() {
 
                   <div className="flex flex-1 items-center gap-4">
                     <Stepper
-                      label="reps"
+                      label={perSideOnDial ? 'reps/side' : 'reps'}
                       value={set.reps}
                       step={1}
                       onDelta={(d) => mutateSet(bi, si, { reps: Math.max(0, Math.round(set.reps + d)) })}
@@ -530,12 +591,17 @@ export default function WorkoutSessionPage() {
             )}
           </div>
         </Card>
-      ))}
+        );
+      })}
 
-      {/* Sticky finish bar — sits above the mobile tab bar (bottom-[74px]) so it stays reachable. */}
+      {/* Sticky finish bar — workout mode hides the app nav, so this owns the bottom edge. */}
       <div
-        className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
-        style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
+        className="fixed inset-x-0 bottom-0 z-30 px-5 pt-4"
+        style={{
+          background: 'var(--bg-surface)',
+          borderTop: '1px solid var(--border-base)',
+          paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
+        }}
       >
         <div className="mx-auto flex max-w-[760px] items-center gap-3">
           <div className="tabular flex-1 text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
@@ -552,6 +618,85 @@ export default function WorkoutSessionPage() {
       {noteOpen && dayNotes ? (
         <SessionNoteDialog text={dayNotes} onClose={() => setNoteOpen(false)} />
       ) : null}
+
+      {exitOpen ? (
+        <ExitWorkoutDialog
+          completedSets={completedSets}
+          totalSets={totalSets}
+          onStay={() => setExitOpen(false)}
+          onLeave={leaveWorkout}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Confirms leaving a workout that has not been logged yet. Deliberately specific about
+ * what is and isn't lost: the captures survive in `localStorage` and are restored if the
+ * user comes back to the same day, but nothing reaches the backend — no session, no XP —
+ * until the workout is finished.
+ */
+function ExitWorkoutDialog({
+  completedSets,
+  totalSets,
+  onStay,
+  onLeave,
+}: {
+  completedSets: number;
+  totalSets: number;
+  onStay: () => void;
+  onLeave: () => void;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onStay();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [onStay]);
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-5"
+      style={{ background: 'rgba(6,34,77,0.45)' }}
+      onClick={onStay}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Leave this workout?"
+        onClick={(e) => e.stopPropagation()}
+        className="w-full max-w-[420px] rounded-[24px] p-6"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+      >
+        <div className="flex items-start gap-3">
+          <div
+            className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
+            style={{ background: 'var(--bg-subtle)' }}
+          >
+            <AlertTriangle size={18} color="var(--forma-danger)" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+              Leave this workout?
+            </div>
+            <p className="mt-1.5 text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
+              Nothing is logged until you finish, so the {completedSets} of {totalSets} sets you
+              have done won&rsquo;t count and no XP is awarded. We&rsquo;ll keep them on this device
+              if you come back today.
+            </p>
+          </div>
+        </div>
+        <div className="mt-5 flex flex-col gap-2.5">
+          <Button fullWidth onClick={onStay}>
+            Keep going
+          </Button>
+          <Button variant="ghost" fullWidth onClick={onLeave}>
+            <span style={{ color: 'var(--forma-danger)' }}>Leave workout</span>
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }

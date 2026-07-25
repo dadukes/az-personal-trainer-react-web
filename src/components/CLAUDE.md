@@ -8,7 +8,10 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   `FormaFitnessDesignSystem` components: `Button`, `Card`, `Input`, `SegmentedToggle`, `Chip`,
   `StatTile`, `Badge`, `Avatar`, `ProgressBar`, `ChatBubble`, plus `Eyebrow` (uppercase label).
 - **`AppShell.tsx`** — the responsive app frame: **sidebar (≥1024) → icon rail (768–1023) →
-  bottom tab bar (<768)**, plus the footer user block, theme toggle, and sign-out.
+  bottom tab bar (<768)**, plus the footer user block, theme toggle, and sign-out. Routes matching
+  `isImmersiveRoute` (today: `/workout/*`) render **with all three nav surfaces hidden** — a
+  mis-tap mid-set costs the user their session — so those screens own the bottom edge and must
+  place their own sticky bars at `bottom-0` (+ `env(safe-area-inset-bottom)`), not above `74px`.
 - **`ScreenHeader.tsx`** — title + subtitle + optional right actions.
 - **`QuickActionsFab.tsx`** — the floating "+" that fans out into Home's manual-capture
   actions (log workout / log health data). It is the **single** entry point for both dialogs;

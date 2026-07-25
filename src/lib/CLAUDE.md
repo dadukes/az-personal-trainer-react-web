@@ -1,4 +1,4 @@
-# src/lib/ — API, env, Supabase, health
+# src/lib/ — API, env, Supabase, health, wake lock
 
 Scoped guidance for the data/integration layer. See the root [CLAUDE.md](../../CLAUDE.md)
 for project-wide rules.
@@ -56,3 +56,13 @@ for project-wide rules.
   capture from any device shows in the snapshot and prefills the dialog cross-device.
 - If a real web/wearable health integration is added later, implement it here and make
   `isNativeHealthAvailable()` report accurately.
+
+## wakeLock.ts — keep the screen on
+
+- `useWakeLock(active)` holds a **Screen Wake Lock** while `active` — the web stand-in for the
+  mobile app's `expo-keep-awake`. Used by the workout timers (`TimedRing`, `IntervalPlayer`,
+  `RestOverlay`) so a running countdown isn't ended by the phone locking itself.
+- Strictly **best-effort**: no Firefox support, requires a visible secure-context page, and the
+  browser revokes the lock whenever the tab is hidden (the hook re-requests on re-show). Every
+  failure is swallowed. This is safe *because* all the timers derive their remaining time from a
+  wall-clock deadline, so losing the lock costs a screen tap and never accuracy — keep it that way.

@@ -1,6 +1,6 @@
 import { Home, LogOut, MessageSquare, Moon, Settings, Sun, TrendingUp, Utensils } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
@@ -25,8 +25,19 @@ function deriveDisplay(email: string | null | undefined, storedName: string): { 
   return { name: name.charAt(0).toUpperCase() + name.slice(1), email: email ?? '' };
 }
 
+/**
+ * Routes that take over the whole frame. A live workout is the one place where a
+ * mis-tap on a nav item costs the user their session, so the chrome goes away and the
+ * screen's own back affordance (which warns first) becomes the only way out.
+ */
+function isImmersiveRoute(pathname: string): boolean {
+  return pathname.startsWith('/workout/');
+}
+
 export default function AppShell({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
+  const { pathname } = useLocation();
+  const immersive = isImmersiveRoute(pathname);
   const { user, signOut } = useAuth();
   const { isDark, toggleTheme } = useAppTheme();
   const profile = useAppStore((s) => s.profile);
@@ -53,6 +64,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
      */
     <div className="flex min-h-[100dvh] md:h-[100dvh] md:overflow-hidden" style={{ background: 'var(--bg-app)' }}>
       {/* ── Desktop sidebar (≥1024) ─────────────────────────────────────────── */}
+      {immersive ? null : (
       <aside
         className="hidden h-full w-[264px] min-w-[264px] flex-col justify-between p-4 lg:flex"
         style={{ background: 'var(--bg-surface)', borderRight: '1px solid var(--border-base)' }}
@@ -131,8 +143,10 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </button>
         </div>
       </aside>
+      )}
 
       {/* ── Tablet icon rail (768–1023) ─────────────────────────────────────── */}
+      {immersive ? null : (
       <aside
         className="hidden h-full w-[88px] min-w-[88px] flex-col items-center justify-between py-6 md:flex lg:hidden"
         style={{ background: 'var(--bg-surface)', borderRight: '1px solid var(--border-base)' }}
@@ -169,13 +183,19 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           <Avatar initial={initial} />
         </div>
       </aside>
+      )}
 
       {/* ── Main content ────────────────────────────────────────────────────── */}
-      <main className="flex min-w-0 flex-1 flex-col pb-[calc(74px+env(safe-area-inset-bottom))] md:h-full md:overflow-y-auto md:pb-0">
+      <main
+        className={`flex min-w-0 flex-1 flex-col md:h-full md:overflow-y-auto md:pb-0 ${
+          immersive ? '' : 'pb-[calc(74px+env(safe-area-inset-bottom))]'
+        }`}
+      >
         {children}
       </main>
 
       {/* ── Mobile bottom tab bar (<768) ────────────────────────────────────── */}
+      {immersive ? null : (
       <nav
         className="fixed inset-x-0 bottom-0 z-30 flex items-center justify-around px-2 pt-1.5 md:hidden"
         style={{
@@ -206,6 +226,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           </NavLink>
         ))}
       </nav>
+      )}
     </div>
   );
 }

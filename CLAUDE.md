@@ -47,7 +47,7 @@ plan-day view, guided workout session, and chat history.
 |------|---------|
 | `src/App.tsx` | Router + the single auth guard (`RequireAuth`). Keep redirect logic here. |
 | `src/main.tsx` | Provider tree: `ThemeProvider → BrowserRouter → AuthProvider → App`. |
-| `src/lib/` | API client, env, Supabase client, health adapter. See [src/lib/CLAUDE.md](src/lib/CLAUDE.md). |
+| `src/lib/` | API client, env, Supabase client, health adapter, wake lock. See [src/lib/CLAUDE.md](src/lib/CLAUDE.md). |
 | `src/store/` | Zustand store (single source of truth for cross-screen data). |
 | `src/providers/` | `AuthProvider` (session + onboarding), `ThemeProvider` (light/dark). |
 | `src/components/` | Design-system primitives + shell. See [src/components/CLAUDE.md](src/components/CLAUDE.md). |
@@ -116,4 +116,7 @@ gates surface a clear error instead of crashing).
   `100vh` shell) so the browser's URL bar auto-hides on scroll; the fixed frame with its own
   scroll region only kicks in from `md`. `index.html` also ships a manifest, so "Add to Home
   Screen" runs it standalone with no browser chrome at all.
-- `expo-haptics` / `expo-clipboard` are dropped or degraded (no-ops).
+- `expo-haptics` / `expo-clipboard` are dropped or degraded (no-ops). `expo-keep-awake` maps onto
+  the **Screen Wake Lock API** (`src/lib/wakeLock.ts`) — best-effort, and unavailable on Firefox.
+- The workout session is an **immersive route**: `AppShell` hides the nav for `/workout/*` and the
+  screen guards Back with a confirm dialog (see [src/pages/CLAUDE.md](src/pages/CLAUDE.md)).

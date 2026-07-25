@@ -1,10 +1,11 @@
-import { Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
+import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
-import { Badge, Button, Card, Eyebrow } from '@/components/ui';
+import { Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail } from '@/lib/api';
 import { cardioKindVerb, isCatalogExercise } from '@/lib/exercise';
+import { useWakeLock } from '@/lib/wakeLock';
 import {
   blockTargetText,
   formatClock,
@@ -33,12 +34,18 @@ interface GuidedWorkoutProps {
    * same tick — a `setState` here would not have flushed, and the last set of the
    * workout would log as skipped.
    */
-  onFinish: (finalCompletion?: Position) => void;
+  onFinish: (finalCompletion?: FinalCompletion) => void;
 }
 
 interface Position {
   blockIndex: number;
   setIndex: number;
+}
+
+/** A `Position` plus anything captured on it that has not been flushed to the parent. */
+interface FinalCompletion extends Position {
+  /** Timed holds only: the (possibly user-adjusted) seconds actually worked. */
+  durationSeconds?: number;
 }
 
 /**
@@ -100,6 +107,19 @@ export default function WorkoutGuided({
     setDetailCues([]);
   }, [blockIndex]);
 
+  /**
+   * Planned seconds for the current timed exercise. Owned here rather than inside the
+   * ring so an adjustment carries across the block's remaining sets and is what gets
+   * logged — whether the countdown ran out or the set was completed by hand.
+   */
+  const blockKey = blocks[blockIndex]?.key;
+  const plannedSeconds = blocks[blockIndex]?.durationSeconds;
+  const [timedDuration, setTimedDuration] = useState(plannedSeconds ?? DEFAULT_HOLD_SECONDS);
+  useEffect(() => {
+    setTimedDuration(plannedSeconds ?? DEFAULT_HOLD_SECONDS);
+    // `blockKey` is the reset trigger: a new exercise starts from its own planned time.
+  }, [blockKey, plannedSeconds]);
+
   const computeNext = useCallback(
     (bi: number, si: number): Position | null => {
       if (si + 1 < blocks[bi].sets.length) return { blockIndex: bi, setIndex: si + 1 };
@@ -111,11 +131,16 @@ export default function WorkoutGuided({
 
   const advance = useCallback(() => {
     if (!block) return;
+    // A per-side hold is worked twice, so the logged time is both sides together.
+    const worked = isCountdownBlock(block)
+      ? timedDuration * (block.isPerSide ? 2 : 1)
+      : undefined;
     const next = computeNext(blockIndex, setIndex);
     if (!next) {
-      onFinish({ blockIndex, setIndex });
+      onFinish({ blockIndex, setIndex, durationSeconds: worked });
       return;
     }
+    if (worked != null) onSetCapture(blockIndex, setIndex, { durationSeconds: worked });
     onCompleteSet(blockIndex, setIndex);
     if (block.restSeconds > 0) {
       setPendingNext(next);
@@ -124,7 +149,7 @@ export default function WorkoutGuided({
     }
     setBlockIndex(next.blockIndex);
     setSetIndex(next.setIndex);
-  }, [block, blockIndex, setIndex, computeNext, onCompleteSet, onFinish]);
+  }, [block, blockIndex, setIndex, timedDuration, computeNext, onCompleteSet, onSetCapture, onFinish]);
 
   /**
    * Leaves the current block entirely, without the between-sets rest. Used by the single
@@ -237,8 +262,8 @@ export default function WorkoutGuided({
           />
         ) : null}
 
-        {block.isPerSide ? <Badge tone="neutral">Each side</Badge> : null}
-
+        {/* "Each side" is not a row of its own — it rides on the rep dial / timer,
+            where the number it qualifies actually lives. */}
         {block.notes ? <CoachNote text={block.notes} /> : null}
 
         {cues.length > 0 ? (
@@ -279,7 +304,11 @@ export default function WorkoutGuided({
         ) : isCountdownBlock(block) ? (
           <TimedRing
             key={`${block.key}-${setIndex}`}
-            durationSeconds={block.durationSeconds ?? 30}
+            durationSeconds={timedDuration}
+            perSide={block.isPerSide}
+            onAdjust={(delta) =>
+              setTimedDuration((d) => Math.max(ADJUST_STEP_SECONDS, d + delta))
+            }
             setLabel={setLabel}
             completed={completedFlags}
             currentIndex={setIndex}
@@ -291,6 +320,7 @@ export default function WorkoutGuided({
             weight={set.weight}
             weightUnit={block.weightUnit}
             repTarget={block.repText}
+            isPerSide={block.isPerSide}
             setLabel={setLabel}
             completed={completedFlags}
             currentIndex={setIndex}
@@ -335,10 +365,14 @@ export default function WorkoutGuided({
         </div>
       </div>
 
-      {/* Sticky footer — sits above the mobile tab bar (bottom-[74px]) like the list view's finish bar. */}
+      {/* Sticky footer — workout mode hides the app nav, so this owns the bottom edge. */}
       <div
-        className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
-        style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
+        className="fixed inset-x-0 bottom-0 z-30 px-5 pt-4"
+        style={{
+          background: 'var(--bg-surface)',
+          borderTop: '1px solid var(--border-base)',
+          paddingBottom: 'calc(16px + env(safe-area-inset-bottom))',
+        }}
       >
         <div className="mx-auto flex max-w-[760px] items-center gap-3">
           <div className="tabular flex-1 text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
@@ -499,27 +533,50 @@ const RING_THICKNESS = 12;
 const RADIUS = (RING_SIZE - RING_THICKNESS) / 2;
 const CENTER = RING_SIZE / 2;
 const CIRCUMFERENCE = 2 * Math.PI * RADIUS;
+/** Granularity of the ± control under the ring, and its floor. */
+const ADJUST_STEP_SECONDS = 5;
+const DEFAULT_HOLD_SECONDS = 30;
 
+/**
+ * The countdown for a timed hold, with the planned time and a ± control underneath so
+ * it can be re-dialled without leaving the set.
+ *
+ * A per-side hold runs the clock twice: side one, a "switch side" stop the user has to
+ * acknowledge (they need both hands free to reposition, not a clock that has already
+ * started), then side two — after which the set completes.
+ */
 function TimedRing({
   durationSeconds,
+  perSide = false,
+  onAdjust,
   setLabel,
   completed,
   currentIndex,
   onAutoComplete,
 }: {
   durationSeconds: number;
+  perSide?: boolean;
+  onAdjust: (delta: number) => void;
   setLabel: string;
   completed: boolean[];
   currentIndex: number;
   onAutoComplete: () => void;
 }) {
-  type Status = 'idle' | 'running' | 'paused' | 'done';
+  type Status = 'idle' | 'running' | 'paused' | 'switch' | 'done';
   const [status, setStatus] = useState<Status>('idle');
   const [remaining, setRemaining] = useState(durationSeconds);
+  /** 1 = first side (or the only round for a two-sided-agnostic hold), 2 = second. */
+  const [side, setSide] = useState(1);
   const endsAtRef = useRef<number | null>(null);
   const firedRef = useRef(false);
   const onCompleteRef = useRef(onAutoComplete);
   onCompleteRef.current = onAutoComplete;
+  const sideRef = useRef(side);
+  sideRef.current = side;
+
+  // Keep the screen alive for the duration of the hold — the browser's stand-in for
+  // the mobile app's keep-awake, and the reason a 90s plank doesn't end in a lock screen.
+  useWakeLock(status === 'running');
 
   // Single source of truth: derive remaining from a wall-clock deadline so the
   // countdown stays correct across tab-backgrounding (JS timers throttle there).
@@ -528,13 +585,17 @@ function TimedRing({
     if (endsAt == null) return;
     const next = Math.max(0, (endsAt - Date.now()) / 1000);
     setRemaining(next);
-    if (next <= 0 && !firedRef.current) {
-      firedRef.current = true;
-      endsAtRef.current = null;
-      setStatus('done');
-      onCompleteRef.current();
+    if (next > 0 || firedRef.current) return;
+    firedRef.current = true;
+    endsAtRef.current = null;
+    if (perSide && sideRef.current === 1) {
+      // Hold here until the user has actually swapped sides.
+      setStatus('switch');
+      return;
     }
-  }, []);
+    setStatus('done');
+    onCompleteRef.current();
+  }, [perSide]);
 
   useEffect(() => {
     if (status !== 'running') return;
@@ -549,34 +610,85 @@ function TimedRing({
     };
   }, [status, evaluate]);
 
+  // An un-started clock always shows the planned time. The prop can move after mount —
+  // the ± control below, and the parent settling on the new block's planned seconds
+  // the render after a jump — and a stale `remaining` would draw a part-filled ring.
+  useEffect(() => {
+    if (status === 'idle') setRemaining(durationSeconds);
+  }, [status, durationSeconds]);
+
   const toggle = useCallback(() => {
     if (status === 'running') {
       const endsAt = endsAtRef.current;
       if (endsAt != null) setRemaining(Math.max(0, (endsAt - Date.now()) / 1000));
       endsAtRef.current = null;
       setStatus('paused');
-    } else if (status === 'idle' || status === 'paused') {
+      return;
+    }
+    if (status === 'switch') {
+      // Second side starts from a full clock.
+      firedRef.current = false;
+      setSide(2);
+      setRemaining(durationSeconds);
+      endsAtRef.current = Date.now() + durationSeconds * 1000;
+      setStatus('running');
+      return;
+    }
+    if (status === 'idle' || status === 'paused') {
       endsAtRef.current = Date.now() + remaining * 1000;
       setStatus('running');
     }
-  }, [status, remaining]);
+  }, [status, remaining, durationSeconds]);
+
+  /**
+   * Re-dial the planned time mid-set. While the clock runs the deadline shifts by the
+   * same amount, so "+5s" means five more seconds of work rather than a restart.
+   */
+  const adjust = useCallback(
+    (delta: number) => {
+      const applied = Math.max(ADJUST_STEP_SECONDS, durationSeconds + delta) - durationSeconds;
+      if (applied === 0) return;
+      onAdjust(applied);
+      if (status === 'running' && endsAtRef.current != null) {
+        endsAtRef.current += applied * 1000;
+        evaluate();
+      } else if (status === 'paused') {
+        setRemaining((r) => Math.max(0, r + applied));
+      }
+      // Idle is handled by the sync effect above.
+    },
+    [durationSeconds, status, onAdjust, evaluate],
+  );
 
   const progress = durationSeconds > 0 ? Math.min(1, Math.max(0, (durationSeconds - remaining) / durationSeconds)) : 0;
   const dashoffset = CIRCUMFERENCE * (1 - progress);
   const displaySeconds = Math.ceil(Math.max(0, remaining));
   const isIdle = status === 'idle';
+  const isSwitch = status === 'switch';
+  const ringLabel = isSwitch
+    ? 'Start the second side'
+    : isIdle
+      ? 'Start timer'
+      : status === 'running'
+        ? 'Pause timer'
+        : 'Resume timer';
+  const runningCaption = status === 'paused'
+    ? 'Paused · tap to resume'
+    : perSide
+      ? `${setLabel} · side ${side} of 2`
+      : setLabel;
 
   return (
-    <div className="flex flex-col items-center gap-4 pt-1">
+    <div className="flex flex-col items-center gap-3.5 pt-1">
       <button
         onClick={toggle}
-        aria-label={isIdle ? 'Start timer' : status === 'running' ? 'Pause timer' : 'Resume timer'}
+        aria-label={ringLabel}
         className="relative flex items-center justify-center transition-transform active:scale-95"
         style={{ width: RING_SIZE, height: RING_SIZE }}
       >
         <svg width={RING_SIZE} height={RING_SIZE} className="absolute">
           <circle cx={CENTER} cy={CENTER} r={RADIUS} stroke="var(--border-base)" strokeWidth={RING_THICKNESS} fill="none" />
-          {progress > 0 ? (
+          {progress > 0 && !isSwitch ? (
             <circle
               cx={CENTER}
               cy={CENTER}
@@ -590,9 +702,22 @@ function TimedRing({
               transform={`rotate(-90 ${CENTER} ${CENTER})`}
             />
           ) : null}
+          {isSwitch ? (
+            <circle cx={CENTER} cy={CENTER} r={RADIUS} stroke="var(--accent)" strokeWidth={RING_THICKNESS} fill="none" />
+          ) : null}
         </svg>
 
-        {isIdle ? (
+        {isSwitch ? (
+          <div className="flex flex-col items-center gap-1.5 px-6">
+            <ArrowLeftRight size={34} color="var(--accent-text)" strokeWidth={2.4} />
+            <span className="text-[19px] font-extrabold leading-tight" style={{ color: 'var(--text-primary)' }}>
+              Switch side
+            </span>
+            <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              Tap when you&rsquo;re set
+            </span>
+          </div>
+        ) : isIdle ? (
           <div className="flex flex-col items-center gap-1.5">
             <Play size={42} color="var(--accent)" fill="var(--accent)" />
             <span className="text-[13px] font-extrabold tracking-[0.12em]" style={{ color: 'var(--accent-text)' }}>
@@ -608,11 +733,30 @@ function TimedRing({
               {formatClock(displaySeconds)}
             </span>
             <span className="mt-1.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-              {status === 'paused' ? 'Paused · tap to resume' : setLabel}
+              {runningCaption}
             </span>
           </div>
         )}
       </button>
+
+      {/* Planned time — dialled here rather than back on the plan screen. */}
+      <div className="flex flex-col items-center gap-1">
+        <div className="flex items-center gap-3.5">
+          <RoundStep kind="dec" onClick={() => adjust(-ADJUST_STEP_SECONDS)} label="Reduce hold time" />
+          <span className="tabular min-w-[112px] text-center text-[22px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+            {formatClock(durationSeconds)}
+            {perSide ? (
+              <span className="ml-1.5 text-[13px] font-bold" style={{ color: 'var(--text-muted)' }}>
+                per side
+              </span>
+            ) : null}
+          </span>
+          <RoundStep kind="inc" onClick={() => adjust(ADJUST_STEP_SECONDS)} label="Increase hold time" />
+        </div>
+        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          Planned time — adjust if you need to
+        </span>
+      </div>
 
       <SetPips total={completed.length} currentIndex={currentIndex} completed={completed} />
     </div>
@@ -626,6 +770,7 @@ function RepWeightDials({
   weight,
   weightUnit,
   repTarget,
+  isPerSide,
   setLabel,
   completed,
   currentIndex,
@@ -636,6 +781,7 @@ function RepWeightDials({
   weight: number;
   weightUnit: string;
   repTarget?: string;
+  isPerSide?: boolean;
   setLabel: string;
   completed: boolean[];
   currentIndex: number;
@@ -649,7 +795,14 @@ function RepWeightDials({
         {setLabel}
       </span>
       <div className="flex w-full gap-3">
-        <Dial label="Reps" value={String(reps)} caption={repTarget ? `target ${repTarget}` : 'reps'} onDec={() => onRepDelta(-1)} onInc={() => onRepDelta(1)} />
+        {/* "per side" qualifies the rep count, so it belongs on the rep dial. */}
+        <Dial
+          label={isPerSide ? 'Reps per side' : 'Reps'}
+          value={String(reps)}
+          caption={repTarget ? `target ${repTarget}` : 'reps'}
+          onDec={() => onRepDelta(-1)}
+          onInc={() => onRepDelta(1)}
+        />
         <Dial label="Weight" value={String(weight)} caption={weightUnit} onDec={() => onWeightDelta(-weightStep)} onInc={() => onWeightDelta(weightStep)} />
       </div>
       <SetPips total={completed.length} currentIndex={currentIndex} completed={completed} />
@@ -730,6 +883,9 @@ function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabe
   const firedRef = useRef(false);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+
+  // Rest is exactly when a phone would otherwise lock itself.
+  useWakeLock(true);
 
   useEffect(() => {
     if (remaining <= 0) {

@@ -47,6 +47,15 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 - **Workout session**: the header carries the guided/list toggle and (when the day has
   `ai_notes`) an info button. The session note is a **dialog**, auto-opened once per
   plan+day via `forma:workout-note-seen` — it must not reappear above every exercise.
+  This is an **immersive route**: `AppShell` hides all nav, so the header back button is the
+  only exit and it goes through `ExitWorkoutDialog`. A sentinel `history.pushState` entry turns
+  browser/system Back into that same dialog, and `beforeunload` covers reload/close. Confirming
+  navigates to `/` (never `-1` — that lands back on the sentinel).
+  **Per-side belongs on the number it qualifies**, not on a row of its own: the rep dial reads
+  "Reps per side" (`reps/side` in the list view), the countdown reads "1:00 per side". A per-side
+  timed hold runs the clock twice with a tap-to-continue **"Switch side"** stop in between, and
+  logs both sides' seconds. The planned hold time is owned by `WorkoutGuided` (not the ring) so a
+  ± adjustment carries across the block's sets and is what `logWorkout` receives.
 - **Coach**: consume the `streamChat` SSE helper; render incremental chunks; keep the
   stop/retry/new-session affordances and the "scroll to latest" button.
 - **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads
