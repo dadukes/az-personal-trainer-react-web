@@ -2,6 +2,7 @@ import { ChevronDown, ChevronLeft, ChevronUp, Dumbbell, History, Info, Link2, Mi
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import { ExerciseLookup } from '@/components/ExerciseLookup';
 import { Badge, Button, Card, Chip, Eyebrow, Input, SegmentedToggle } from '@/components/ui';
 import {
   getExerciseAlternatives,
@@ -154,7 +155,7 @@ function Stepper({
 
 // ─── Exercise info (ExerciseDB) ───────────────────────────────────────────────
 
-function ExerciseInfo({ exerciseId }: { exerciseId: string }) {
+function ExerciseInfo({ exerciseId, name }: { exerciseId: string; name: string }) {
   const { session } = useAuth();
   const [detail, setDetail] = useState<ExerciseDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -191,13 +192,18 @@ function ExerciseInfo({ exerciseId }: { exerciseId: string }) {
       </Card>
     );
   }
+  // Catalog lookup failed or came back empty — the web search is then the only
+  // route to form guidance, so lead with it.
   if (error || !detail) {
     return (
-      <Card variant="subtle">
-        <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
-          {error ?? 'No demo available for this exercise.'}
-        </p>
-      </Card>
+      <div className="flex flex-col gap-2.5">
+        <Card variant="subtle">
+          <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
+            {error ?? 'No demo available for this exercise.'}
+          </p>
+        </Card>
+        <ExerciseLookup name={name} prominent />
+      </div>
     );
   }
 
@@ -210,85 +216,90 @@ function ExerciseInfo({ exerciseId }: { exerciseId: string }) {
     detail.tips.length > 0;
 
   return (
-    <Card padding="0" className="overflow-hidden">
-      {detail.video_url || detail.gif_url || detail.image_url ? (
-        <div className="flex aspect-video w-full items-center justify-center" style={{ background: 'var(--bg-subtle)' }}>
-          {detail.video_url ? (
-            <video src={detail.video_url} autoPlay loop muted playsInline className="h-full w-full object-contain" />
-          ) : (
-            <img src={detail.gif_url ?? detail.image_url ?? ''} alt={detail.name} className="h-full w-full object-contain" />
-          )}
-        </div>
-      ) : null}
+    <div className="flex flex-col gap-2.5">
+      <Card padding="0" className="overflow-hidden">
+        {detail.video_url || detail.gif_url || detail.image_url ? (
+          <div className="flex aspect-video w-full items-center justify-center" style={{ background: 'var(--bg-subtle)' }}>
+            {detail.video_url ? (
+              <video src={detail.video_url} autoPlay loop muted playsInline className="h-full w-full object-contain" />
+            ) : (
+              <img src={detail.gif_url ?? detail.image_url ?? ''} alt={detail.name} className="h-full w-full object-contain" />
+            )}
+          </div>
+        ) : null}
 
-      {hasInfo ? (
-        <button
-          onClick={() => setShowInfo((v) => !v)}
-          className="flex w-full items-center justify-between px-5 py-3.5"
-          style={{ borderTop: '1px solid var(--border-base)' }}
-        >
-          <span className="flex items-center gap-2 text-[13px] font-bold" style={{ color: 'var(--accent-text)' }}>
-            <Info size={15} /> Exercise info
-          </span>
-          {showInfo ? (
-            <ChevronUp size={16} color="var(--text-muted)" />
-          ) : (
-            <ChevronDown size={16} color="var(--text-muted)" />
-          )}
-        </button>
-      ) : null}
+        {hasInfo ? (
+          <button
+            onClick={() => setShowInfo((v) => !v)}
+            className="flex w-full items-center justify-between px-5 py-3.5"
+            style={{ borderTop: '1px solid var(--border-base)' }}
+          >
+            <span className="flex items-center gap-2 text-[13px] font-bold" style={{ color: 'var(--accent-text)' }}>
+              <Info size={15} /> Exercise info
+            </span>
+            {showInfo ? (
+              <ChevronUp size={16} color="var(--text-muted)" />
+            ) : (
+              <ChevronDown size={16} color="var(--text-muted)" />
+            )}
+          </button>
+        ) : null}
 
-      {hasInfo && showInfo ? (
-        <div className="flex flex-col gap-3.5 px-5 pb-5">
-          {muscles.length > 0 || detail.equipment ? (
-            <div className="flex flex-wrap gap-1.5">
-              {muscles.map((m) => (
-                <Badge key={m} tone="mint">
-                  {m}
-                </Badge>
-              ))}
-              {detail.equipment ? <Badge tone="neutral">{detail.equipment}</Badge> : null}
-            </div>
-          ) : null}
-
-          {detail.overview ? (
-            <p className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
-              {detail.overview}
-            </p>
-          ) : null}
-
-          {detail.instructions.length > 0 ? (
-            <div>
-              <Eyebrow className="mb-2">How to</Eyebrow>
-              <ol className="flex flex-col gap-1.5">
-                {detail.instructions.map((step, i) => (
-                  <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                    <span className="tabular flex-shrink-0 font-bold" style={{ color: 'var(--accent-text)' }}>
-                      {i + 1}.
-                    </span>
-                    <span>{step}</span>
-                  </li>
+        {hasInfo && showInfo ? (
+          <div className="flex flex-col gap-3.5 px-5 pb-5">
+            {muscles.length > 0 || detail.equipment ? (
+              <div className="flex flex-wrap gap-1.5">
+                {muscles.map((m) => (
+                  <Badge key={m} tone="mint">
+                    {m}
+                  </Badge>
                 ))}
-              </ol>
-            </div>
-          ) : null}
+                {detail.equipment ? <Badge tone="neutral">{detail.equipment}</Badge> : null}
+              </div>
+            ) : null}
 
-          {detail.tips.length > 0 ? (
-            <div>
-              <Eyebrow className="mb-2">Tips</Eyebrow>
-              <ul className="flex flex-col gap-1.5">
-                {detail.tips.map((tip, i) => (
-                  <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                    <Sparkles size={13} className="mt-0.5 flex-shrink-0" color="#34D2C1" />
-                    <span>{tip}</span>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-        </div>
-      ) : null}
-    </Card>
+            {detail.overview ? (
+              <p className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
+                {detail.overview}
+              </p>
+            ) : null}
+
+            {detail.instructions.length > 0 ? (
+              <div>
+                <Eyebrow className="mb-2">How to</Eyebrow>
+                <ol className="flex flex-col gap-1.5">
+                  {detail.instructions.map((step, i) => (
+                    <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                      <span className="tabular flex-shrink-0 font-bold" style={{ color: 'var(--accent-text)' }}>
+                        {i + 1}.
+                      </span>
+                      <span>{step}</span>
+                    </li>
+                  ))}
+                </ol>
+              </div>
+            ) : null}
+
+            {detail.tips.length > 0 ? (
+              <div>
+                <Eyebrow className="mb-2">Tips</Eyebrow>
+                <ul className="flex flex-col gap-1.5">
+                  {detail.tips.map((tip, i) => (
+                    <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                      <Sparkles size={13} className="mt-0.5 flex-shrink-0" color="#34D2C1" />
+                      <span>{tip}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </Card>
+      {/* Offered even with a catalog hit: the entry may be thin (no instructions
+          or tips), in which case this is the only real form guidance. */}
+      <ExerciseLookup name={name} prominent={!hasInfo} />
+    </div>
   );
 }
 
@@ -694,17 +705,21 @@ export default function ExerciseDetailPage() {
       {/* Info / demo — cardio and class are never catalog-matched, so neither the demo
           nor the "link it" nudge applies to them. */}
       {!catalogged ? null : ex.exercise_id ? (
-        <ExerciseInfo exerciseId={ex.exercise_id} />
+        <ExerciseInfo exerciseId={ex.exercise_id} name={ex.name} />
       ) : (
-        <Card variant="subtle">
-          <div className="flex items-start gap-2.5">
-            <Link2 size={16} color="var(--forma-danger)" className="mt-0.5 flex-shrink-0" />
-            <p className="text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-              This exercise isn&rsquo;t linked to the ExerciseDB catalog, so there&rsquo;s no demo or form guidance.
-              Search below to link it — or leave it and we&rsquo;ll try to match it by name when you save.
-            </p>
-          </div>
-        </Card>
+        <div className="flex flex-col gap-2.5">
+          <Card variant="subtle">
+            <div className="flex items-start gap-2.5">
+              <Link2 size={16} color="var(--forma-danger)" className="mt-0.5 flex-shrink-0" />
+              <p className="text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
+                This exercise isn&rsquo;t linked to the ExerciseDB catalog, so there&rsquo;s no demo or form
+                guidance. Look it up on the web below, search to link it — or leave it and we&rsquo;ll try to
+                match it by name when you save.
+              </p>
+            </div>
+          </Card>
+          <ExerciseLookup name={ex.name} prominent />
+        </div>
       )}
 
       {/* Last performance */}

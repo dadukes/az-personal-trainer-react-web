@@ -1,6 +1,7 @@
 import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { ExerciseLookup } from '@/components/ExerciseLookup';
 import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
 import { Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail } from '@/lib/api';
@@ -253,13 +254,19 @@ export default function WorkoutGuided({
         </div>
 
         {showDemo ? (
-          <ExerciseDemo
-            key={block.key}
-            exerciseId={block.exercise_id}
-            name={block.name}
-            accessToken={accessToken}
-            onCues={setDetailCues}
-          />
+          <div className="flex flex-col gap-2.5">
+            <ExerciseDemo
+              key={block.key}
+              exerciseId={block.exercise_id}
+              name={block.name}
+              accessToken={accessToken}
+              onCues={setDetailCues}
+            />
+            {/* Escape hatch to the wider web: catalog coverage is never complete,
+                and "how do I do this?" is most urgent mid-set. Opens in a new tab
+                so the session in progress is never navigated away from. */}
+            <ExerciseLookup name={block.name} prominent={!block.exercise_id} />
+          </div>
         ) : null}
 
         {/* "Each side" is not a row of its own — it rides on the rep dial / timer,
@@ -515,9 +522,13 @@ function ExerciseDemo({
       </span>
 
       {!playing ? (
+        // Scrim chip, matching the FORM DEMO badge. A bare text-shadow is not
+        // enough here: the poster is `object-contain`, so the bottom-left corner
+        // this label sits in is letterboxed card background, not image — and with
+        // no catalog match there is no image at all. White-on-light either way.
         <span
-          className="relative m-3.5 truncate text-[18px] font-extrabold text-white"
-          style={{ textShadow: '0 1px 8px rgba(0,0,0,0.5)' }}
+          className="relative m-3.5 max-w-[calc(100%-28px)] truncate rounded-lg px-2.5 py-1 text-[18px] font-extrabold text-white"
+          style={{ background: 'rgba(6,34,77,0.5)' }}
         >
           {name}
         </span>
