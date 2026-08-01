@@ -5,6 +5,7 @@ import AppShell from '@/components/AppShell';
 import { useAuth } from '@/providers/AuthProvider';
 import ChatHistoryPage from '@/pages/ChatHistoryPage';
 import CoachPage from '@/pages/CoachPage';
+import DeleteAccountPage from '@/pages/DeleteAccountPage';
 import ExerciseDetailPage from '@/pages/ExerciseDetailPage';
 import FuelPage from '@/pages/FuelPage';
 import HomePage from '@/pages/HomePage';
@@ -71,6 +72,13 @@ export default function App() {
           )
         }
       />
+
+      {/*
+        Public by design — this is the account-deletion URL published in the Play
+        Console listing, so it must work in a browser with no app install and no
+        prior session. It carries its own sign-in step (see the page).
+      */}
+      <Route path="/delete-account" element={<DeleteAccountPage />} />
 
       <Route path="/" element={<RequireAuth><HomePage /></RequireAuth>} />
       <Route path="/coach" element={<RequireAuth><CoachPage /></RequireAuth>} />

@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 
 import { Button, Input, SegmentedToggle } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
@@ -147,7 +148,11 @@ export default function LoginPage() {
           </Button>
 
           <p className="text-[12.5px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
-            Secured by Supabase Auth, then the Forma coaching API for your onboarding and plans.
+            Secured by Supabase Auth, then the Forma coaching API for your onboarding and plans.{' '}
+            <Link to="/delete-account" className="font-semibold underline-offset-2 hover:underline">
+              Delete your account
+            </Link>
+            .
           </p>
         </form>
       </div>

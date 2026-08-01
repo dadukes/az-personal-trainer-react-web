@@ -75,6 +75,49 @@ export interface ProfileResponse {
   profile: UserProfileData;
 }
 
+// ─── Coach memory types ───────────────────────────────────────────────────────
+
+/** `permanent` facts persist until changed; `temporary` ones fade at `expires_at`. */
+export type MemoryKind = 'permanent' | 'temporary';
+
+/** Who wrote a fact: the coach (AI) or the user, editing their own profile. */
+export type MemoryOrigin = 'coach' | 'user';
+
+/**
+ * One fact from the coach's global memory — the same rows the backend pastes into
+ * the system instruction on every chat turn, so editing one changes what the coach
+ * believes on the next message.
+ */
+export interface UserMemoryItem {
+  id: string;
+  kind: MemoryKind;
+  category: string | null;
+  content: string;
+  origin: MemoryOrigin;
+  /** Always null for permanent facts. */
+  expires_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UserMemoryListResponse {
+  success: boolean;
+  memory: UserMemoryItem[];
+}
+
+export interface UserMemoryItemResponse {
+  success: boolean;
+  memory: UserMemoryItem;
+}
+
+/** Body for creating/editing a fact. `expires_at` is clamped server-side to 1–30 days. */
+export interface UserMemoryPayload {
+  content?: string;
+  kind?: MemoryKind;
+  category?: string | null;
+  expires_at?: string;
+}
+
 /**
  * A stored manual health capture row from `GET /api/health/logs` (mirrors the
  * backend `health_metrics` row / `HealthSyncPayload`). This is the read-back
@@ -674,6 +717,71 @@ export async function updateProfile(
     method: 'PUT',
     body: JSON.stringify(payload),
   });
+}
+
+// ─── Coach memory ─────────────────────────────────────────────────────────────
+
+/**
+ * Everything the coach currently remembers about the user: permanent facts plus
+ * temporary ones that have not expired, oldest first.
+ *
+ * Not folded into `getProfile` on purpose — the profile is cached in
+ * `localStorage` and served stale-while-revalidate, while memory changes on its
+ * own schedule (every chat-session rollover consolidates new facts), so it wants
+ * its own fetch rather than a stale cached copy.
+ */
+export async function getUserMemory(accessToken: string): Promise<UserMemoryListResponse> {
+  return apiFetch<UserMemoryListResponse>('/profile/memory', accessToken);
+}
+
+/** Adds a fact the user typed themselves. Stored with `origin: 'user'`. */
+export async function createUserMemory(
+  accessToken: string,
+  payload: UserMemoryPayload & { content: string },
+): Promise<UserMemoryItemResponse> {
+  return apiFetch<UserMemoryItemResponse>('/profile/memory', accessToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Rewrites one active fact — coach-written ones included; that is the point. */
+export async function updateUserMemory(
+  accessToken: string,
+  memoryId: string,
+  payload: UserMemoryPayload,
+): Promise<UserMemoryItemResponse> {
+  return apiFetch<UserMemoryItemResponse>(
+    `/profile/memory/${encodeURIComponent(memoryId)}`,
+    accessToken,
+    { method: 'PATCH', body: JSON.stringify(payload) },
+  );
+}
+
+/**
+ * Makes the coach forget one fact (soft delete server-side). The coach can still
+ * re-learn it from a later conversation — this clears what is stored, it does not
+ * blacklist the subject.
+ */
+export async function deleteUserMemory(
+  accessToken: string,
+  memoryId: string,
+): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>(
+    `/profile/memory/${encodeURIComponent(memoryId)}`,
+    accessToken,
+    { method: 'DELETE' },
+  );
+}
+
+/**
+ * Permanently deletes the signed-in user's account and every row that belongs to
+ * them (the backend drops the Supabase auth user; FK cascades do the rest).
+ * Immediate and irreversible — only call this behind an explicit confirmation,
+ * and clear the local session afterwards (`useAuth().deleteAccount` does both).
+ */
+export async function deleteAccount(accessToken: string): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>('/account', accessToken, { method: 'DELETE' });
 }
 
 export async function getDashboard(accessToken: string): Promise<DashboardResponse> {

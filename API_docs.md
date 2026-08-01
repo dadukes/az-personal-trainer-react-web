@@ -23,6 +23,11 @@ This document describes every HTTP endpoint exposed by the Azure Functions backe
     - [GET /api/profile](#get-apiprofile)
     - [PATCH /api/profile](#patch-apiprofile)
    - [PUT /api/profile](#put-apiprofile)
+   - [GET /api/profile/memory](#get-apiprofilememory)
+   - [POST /api/profile/memory](#post-apiprofilememory)
+   - [PATCH /api/profile/memory/{memoryId}](#patch-apiprofilememorymemoryid)
+   - [DELETE /api/profile/memory/{memoryId}](#delete-apiprofilememorymemoryid)
+   - [DELETE /api/account](#delete-apiaccount)
    - [POST /api/health/pulse](#post-apihealthpulse)
    - [POST /api/health/sync](#post-apihealthsync)
    - [GET /api/health/logs](#get-apihealthlogs)
@@ -207,6 +212,30 @@ data: {"success":true}
 | `400` | `message` field is missing or empty |
 | `401` | Invalid or missing Bearer token |
 | `403` | Provided `userId` does not match the authenticated user |
+| `413` | `message` exceeds the character cap (default 4000, `code: "message_too_long"`), or the request body exceeds 256 KB (`code: "body_too_large"`) |
+| `429` | Daily coach message limit reached (rolling 24h window; default 100, operator-configurable via `CHAT_DAILY_MESSAGE_LIMIT`). Includes a `Retry-After: 3600` header. |
+
+**`429` body:**
+
+```json
+{
+  "success": false,
+  "error": "Daily coach message limit reached. Your coach will be ready again soon — keep logging in the meantime!",
+  "code": "chat_limit_exceeded",
+  "limit": 100
+}
+```
+
+**`413` body** (same shape across every endpoint — `code` identifies which limit was hit, `limit` is the server's current value so the client need not hardcode it):
+
+```json
+{
+  "success": false,
+  "error": "message must be <= 4000 characters.",
+  "code": "message_too_long",
+  "limit": 4000
+}
+```
 
 **Error within stream (after `200` is returned):**
 
@@ -560,6 +589,31 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 ```
 
 When there is no active plan, `active_workout_plan` is `null`. When there are no new insights, `pending_insights` is an empty array `[]`.
+
+**Typed `Exercise` contract.** Every exercise in `warmup` / `exercises` / `cooldown` carries a
+`type` discriminator (the server stamps a derived one on pre-migration rows, so it is always
+present on reads). Which fields to expect per `type`:
+
+| `type` | Meaning | Type-specific fields |
+|---|---|---|
+| `reps` | Sets of reps, optionally weighted | `sets`, `reps` (display text), `reps_min`, `reps_max`, `target_weight` (0 = bodyweight), `weight_unit` |
+| `timed` | Held/timed work per set (plank, carry) | `sets` (= rounds), `duration_seconds` (per set), optional `target_weight`/`weight_unit` (carries), `reps` may hold display text |
+| `mobility` | Stretch / foam-roll hold — render gently, not as "working sets" | same shape as `timed` |
+| `cardio` | Distance/duration work (run, cycle, swim, row…) | `activity_kind` (`run\|cycle\|swim\|row\|walk\|hike\|other`), `distance_km` and/or `target_duration_minutes`, `target_hr_zone` (1–5), `cardio_format` (`steady`(default)`\|intervals`), `intervals` |
+| `class` | Attended class (spin, yoga, Body Pump) | `class_name` (falls back to `name`), `target_duration_minutes` |
+
+Shared optional fields on any type: `is_per_side` (unilateral moves — "each side"),
+`rest_seconds`, `notes`, `equipment`, plus the ExerciseDB enrichment fields (`exercise_id`,
+`target_muscle`, `body_part`, `cues`) on `reps`/`timed`/`mobility` only (cardio/class are never
+catalog-matched).
+
+`intervals` (when `cardio_format: "intervals"`):
+`{ rounds, work_seconds, recover_seconds, work_hr_zone?, recover_hr_zone? }` — e.g. 8 × 60 s hard
+(zone 4) / 90 s easy (zone 2).
+
+**Heart-rate zones**, not intensity labels: `target_hr_zone` is the 5-zone model
+(1 = very light … 5 = max). Suggested FE label mapping: zones 1–2 → "easy", 3 → "moderate",
+4–5 → "hard".
 
 **`completed_days` — authoritative workout completion for the current week.**
 Keyed by weekday name (`"monday"` … `"sunday"`), it contains one entry per day of the **current (Monday-start) week, in the user's timezone**, on which a workout was logged for the **active plan** (matched by `plan_id`). Days without a completed workout are simply absent, and the whole map is `{}` when there is no active plan or nothing has been logged this week. Use this instead of client-local storage so the "Completed 💪" badge is consistent across devices. Each entry:
@@ -922,6 +976,259 @@ Content-Type: application/json
 
 ---
 
+## Coach memory (`/api/profile/memory`)
+
+The coach keeps a **global memory** of the user: a list of atomic facts, written by
+the session-rollover consolidation pass and by the `rememberUserFact` tool, and
+pasted into the system instruction on every chat turn. These four endpoints are
+the user's window onto exactly that list — there is no separate user-facing copy,
+so an edit here changes what the coach believes on the very next message.
+
+Two flavours of fact:
+
+| `kind` | Meaning | `expires_at` |
+|--------|---------|--------------|
+| `permanent` | Durable truth ("has a home pull-up bar") | always `null` |
+| `temporary` | Current but fading ("recovering from a chest cold") | required; clamped server-side to **now+1d .. now+30d** (defaults to now+7d) |
+
+`origin` says who wrote it: `coach` (the AI) or `user` (typed on the profile
+screen). User-authored facts are tagged `[stated by the user]` in the prompt so
+the coach treats them as outranking its own inferences.
+
+Two limits apply, both of which exist to bound the prompt rather than storage:
+**500 characters** per fact and **100 active facts** per user.
+
+**The `UserMemoryItem` shape** (returned by all three read/write endpoints):
+
+```json
+{
+  "id": "3f0e…",
+  "kind": "permanent",
+  "category": "injury",
+  "content": "Left knee flares up on deep squats.",
+  "origin": "coach",
+  "expires_at": null,
+  "created_at": "2026-06-01T00:00:00+00:00",
+  "updated_at": "2026-06-01T00:00:00+00:00"
+}
+```
+
+Consolidation bookkeeping (`memory_key`, `status`, `superseded_by`,
+`source_session_id`, `confidence`) is deliberately **not** exposed — the rollover
+pass rewrites those on its own schedule.
+
+---
+
+### GET /api/profile/memory
+
+Lists every fact the coach currently holds about the caller: permanent facts plus
+temporary ones that have not expired, oldest first (the order the model sees).
+
+#### Request
+
+```http
+GET /api/profile/memory?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+```
+
+#### Response
+
+**Status: `200 OK`**
+
+```json
+{
+  "success": true,
+  "memory": [
+    {
+      "id": "3f0e…",
+      "kind": "permanent",
+      "category": "injury",
+      "content": "Left knee flares up on deep squats.",
+      "origin": "coach",
+      "expires_at": null,
+      "created_at": "2026-06-01T00:00:00+00:00",
+      "updated_at": "2026-06-01T00:00:00+00:00"
+    },
+    {
+      "id": "9ab1…",
+      "kind": "temporary",
+      "category": "logistics",
+      "content": "Travelling with no gym access this week.",
+      "origin": "user",
+      "expires_at": "2026-08-08T00:00:00+00:00",
+      "created_at": "2026-08-01T12:00:00+00:00",
+      "updated_at": "2026-08-01T12:00:00+00:00"
+    }
+  ]
+}
+```
+
+An empty list (`"memory": []`) is normal for a new user — memory only appears
+after the first session rollover.
+
+**Error responses:**
+
+| Status | Condition |
+|--------|-----------|
+| `401` | Invalid or missing Bearer token |
+| `500` | Unexpected server error |
+
+---
+
+### POST /api/profile/memory
+
+Adds a fact the user wants the coach to know.
+
+#### Request
+
+```http
+POST /api/profile/memory?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{
+  "content": "I train best before 7am.",
+  "kind": "permanent",
+  "category": "preference"
+}
+```
+
+| Field | Type | Required | Notes |
+|-------|------|----------|-------|
+| `content` | string | ✅ | 1–500 characters; trimmed |
+| `kind` | `"permanent"` \| `"temporary"` | ❌ | Defaults to `permanent` |
+| `category` | string \| null | ❌ | Loose grouping (`injury`, `preference`, `goal`, `logistics`, …), ≤ 60 chars |
+| `expires_at` | ISO 8601 date-time | ❌ | `temporary` only; clamped to now+1d..now+30d. Ignored for `permanent` |
+
+Stored with `origin: "user"` and **no** `memory_key`, so the consolidation pass
+will never silently rewrite it.
+
+#### Response
+
+**Status: `201 Created`** — `{ "success": true, "memory": { …UserMemoryItem } }`
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `400` | — | `content` missing, empty, or not a string |
+| `400` | — | `kind` not one of `permanent` / `temporary` |
+| `400` | — | `expires_at` is not a parseable date-time |
+| `400` | `memory_limit_reached` | The user already has 100 active facts |
+| `401` | — | Invalid or missing Bearer token |
+| `413` | `memory_content_too_long` | `content` exceeds 500 characters |
+| `413` | `memory_category_too_long` | `category` exceeds 60 characters |
+| `413` | `body_too_large` | Request body exceeds 256 KB |
+
+---
+
+### PATCH /api/profile/memory/{memoryId}
+
+Rewrites one of the caller's active facts. Works on **coach-written** facts too —
+correcting what the AI concluded is the main reason this endpoint exists.
+
+#### Request
+
+```http
+PATCH /api/profile/memory/3f0e…?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{ "content": "Left knee is fully recovered — deep squats are fine now." }
+```
+
+At least one of `content`, `kind`, `category`, `expires_at` is required; the
+validation rules match `POST`.
+
+Changing `kind` also resets `expires_at` (permanent → `null`, temporary → the
+supplied or default expiry) because the two are one decision. A coach-written
+fact keeps its internal `memory_key` through an edit, so consolidation can still
+supersede it later — the user is correcting the current wording, not detaching
+the fact from the memory it belongs to.
+
+#### Response
+
+**Status: `200 OK`** — `{ "success": true, "memory": { …UserMemoryItem } }`
+
+**Error responses:**
+
+| Status | Code | Condition |
+|--------|------|-----------|
+| `400` | — | No updatable field supplied, or a field failed validation |
+| `401` | — | Invalid or missing Bearer token |
+| `404` | — | No **active** memory with that id belongs to the caller |
+| `413` | `memory_content_too_long` | `content` exceeds 500 characters |
+
+---
+
+### DELETE /api/profile/memory/{memoryId}
+
+Makes the coach forget one fact.
+
+Soft delete: the row is marked `expired`, so it leaves the prompt immediately
+while the audit trail and any supersede chain stay intact. Note the coach can
+legitimately re-learn a deleted fact from a later conversation — this forgets
+what is stored, it does not blacklist the subject.
+
+#### Request
+
+```http
+DELETE /api/profile/memory/3f0e…?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+```
+
+No body.
+
+#### Response
+
+**Status: `200 OK`** — `{ "success": true }`
+
+**Error responses:**
+
+| Status | Condition |
+|--------|-----------|
+| `401` | Invalid or missing Bearer token |
+| `404` | No **active** memory with that id belongs to the caller |
+| `500` | Unexpected server error |
+
+---
+
+### DELETE /api/account
+
+Permanently deletes the authenticated user's account and **all** of their data. Required for Google Play's account-deletion policy; the app should call this from a confirm dialog, then sign the user out locally.
+
+The backend deletes the Supabase **auth** user; every application row (profile, chat history & sessions, memory, workout plans & sessions, health/nutrition/activity logs, cached insights, AI usage telemetry) is removed via `ON DELETE CASCADE` foreign keys. Deletion is immediate and irreversible — there is no recovery window.
+
+#### Request
+
+```http
+DELETE /api/account?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+```
+
+No body. A user can only delete themselves (the target is taken from the JWT).
+
+#### Response
+
+**Status: `200 OK`**
+
+```json
+{ "success": true }
+```
+
+**Error responses:**
+
+| Status | Condition |
+|--------|-----------|
+| `401` | Invalid or missing Bearer token |
+| `500` | Deletion failed server-side (safe to retry) |
+
+---
+
 ### POST /api/health/pulse
 
 Records a quick "Pulse Check" stress reading from the mobile home screen. Performs an **upsert** — repeated submissions for the same date update the existing record rather than creating a duplicate.
@@ -1023,6 +1330,14 @@ Content-Type: application/json
 
 Any AI coaching insights generated by the threshold evaluation are stored in `pending_insights` and surfaced to the user on the next call to `GET /api/dashboard`.
 
+**Error responses:**
+
+| Status | Condition |
+|--------|-----------|
+| `400` | Body is not valid JSON |
+| `401` | Invalid or missing Bearer token |
+| `413` | `notes` exceeds 1000 characters (`code: "notes_too_long"`), or the body exceeds 256 KB (`code: "body_too_large"`). `notes` is capped because it is serialized into the proactive-insight prompt, not merely stored. |
+
 ---
 
 ### GET /api/health/logs
@@ -1088,13 +1403,16 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 
 ### POST /api/activity/log
 
-Records a completed workout session or micro-win, awards XP to the user, and returns the updated gamification state.
+Records a completed workout session, cardio, class, or micro-win, awards XP to the user, and returns the updated gamification state.
 
-**XP rewards by activity type:**
+**XP rewards by activity type** (all values centrally tunable in
+`src/services/gamification.service.ts` → `XP_CONFIG`):
 
 | Activity type | XP earned |
 |---------------|-----------|
-| `full_workout` | 100 |
+| `full_workout` | 100 (flat fallback — the guided player's `POST /api/workouts/log` awards effort-based XP instead) |
+| `class` | 75 |
+| `cardio` | proportional: `clamp(max(10 × distance_km, 2 × duration_minutes), 15, 150)` |
 | `walk` | 50 |
 | `other` | 30 |
 | `micro_win` | 25 |
@@ -1111,8 +1429,9 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `activity_type` | `string` | Yes | One of `"full_workout"`, `"micro_win"`, `"walk"`, `"other"` |
-| `duration_minutes` | `number` | No | Duration in minutes (positive number) |
+| `activity_type` | `string` | Yes | One of `"full_workout"`, `"micro_win"`, `"walk"`, `"cardio"`, `"class"`, `"other"` |
+| `duration_minutes` | `number` | No | Duration in minutes (positive number; drives cardio XP) |
+| `distance_km` | `number` | No | Distance covered in km (positive; cardio only, drives cardio XP) |
 | `notes` | `string` | No | Optional free-text note |
 
 ```json
@@ -1162,6 +1481,7 @@ Content-Type: application/json
 |--------|-----------|
 | `400` | `activity_type` is missing or not one of the allowed values |
 | `400` | `duration_minutes` is provided but is not a positive number |
+| `413` | `notes` exceeds 1000 characters (`code: "notes_too_long"`), or the body exceeds 256 KB (`code: "body_too_large"`) |
 
 ---
 
@@ -1226,6 +1546,7 @@ Content-Type: application/json
 | Status | Condition |
 |--------|-----------|
 | `400` | `image_base64` field is missing or empty |
+| `413` | `image_base64` exceeds 7,000,000 characters ≈ 5 MB decoded (`code: "image_too_large"`), `context` exceeds 500 characters (`code: "context_too_long"`), or the body exceeds 8 MB (`code: "body_too_large"`). **Downscale photos client-side** — this is a backstop, not the target size. |
 
 ---
 
@@ -1338,11 +1659,26 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 
 ### POST /api/workouts/log
 
-Persists a completed **guided workout** with per-set actuals (reps/weight/time), awards XP, and
-returns the gamification state for the completion screen. XP is awarded through the same path as
-`POST /api/activity/log` (a flat `full_workout` = 100), so `GET /api/progress` totals stay
-consistent. Use `activity/log` for quick wins (`walk`, `micro_win`, `other`); use this endpoint
-for full workouts.
+Persists a completed **guided workout** with per-set actuals (reps/weight/time), awards
+**effort-based XP**, and returns the gamification state for the completion screen. XP is awarded
+through the same path as `POST /api/activity/log`, so `GET /api/progress` totals stay consistent.
+Use `activity/log` for quick wins (`walk`, `micro_win`, `cardio`, `class`, `other`); use this
+endpoint for full workouts.
+
+**Effort-based XP** — tallied per exercise with at least one completed set (values live in
+`XP_CONFIG`, `src/services/gamification.service.ts`):
+
+| Exercise `type` | Base XP |
+|---|---|
+| `mobility` | 5 |
+| `reps` / `timed` | 10 |
+| `cardio` | `clamp(max(10 × distance_km, 2 × duration_minutes), 15, 150)` |
+| `class` | 75 |
+
+Plus **+5 improvement bonus** per exercise when the best completed set beats the user's previous
+best for the same exercise (matched by `exercise_id`, falling back to a case-insensitive name
+match): higher weight — or same weight and more reps — for `reps`; a longer hold for
+timed/mobility/cardio. Skipped exercises earn 0.
 
 #### Request
 
@@ -1363,8 +1699,12 @@ Content-Type: application/json
 | `duration_seconds` | `number` | Yes | Active workout duration |
 | `exercises` | `LoggedExercise[]` | Yes | Per-exercise, per-set actuals |
 
-`LoggedExercise`: `{ exercise_id?, name, section: "warmup"|"main"|"cooldown", swapped_from?, skipped?, sets: LoggedSet[] }`
+`LoggedExercise`: `{ exercise_id?, name, section: "warmup"|"main"|"cooldown", type?, distance_km?, swapped_from?, skipped?, sets: LoggedSet[] }`
 `LoggedSet`: `{ set_number, reps?, weight?, weight_unit?: "kg"|"lb", duration_seconds?, completed }`
+
+> **`type`** (optional, recommended): `"reps" | "timed" | "cardio" | "class" | "mobility"` — drives
+> the effort-XP tier. When absent, the server derives it (any set with a positive
+> `duration_seconds` → `timed`, else `reps`). `distance_km` (optional) feeds cardio XP.
 
 > **Units** are stored exactly as sent — no conversion.
 
@@ -1398,12 +1738,19 @@ Content-Type: application/json
 ```json
 {
   "success": true,
-  "xp_earned": 100,
-  "new_total_xp": 1950,
+  "xp_earned": 25,
+  "new_total_xp": 1875,
   "leveled_up": false,
+  "xp_breakdown": [
+    { "name": "Push-Ups", "type": "reps", "xp": 15, "improved": true },
+    { "name": "Plank", "type": "timed", "xp": 10 }
+  ],
   "summary": { "total_sets": 3, "duration_seconds": 1820 }
 }
 ```
+
+> `xp_breakdown` is additive: one entry per completed exercise, with `improved: true` when the
+> +5 previous-best bonus applied. `xp_earned` is now variable — do **not** assume a flat 100.
 
 **Error responses:**
 
@@ -1662,6 +2009,72 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 | Status | Condition |
 |--------|-----------|
 | `400` | `exercise_id` query param is missing |
+
+---
+
+### POST /api/maintenance/exercise-catalog/sync
+
+**Operator endpoint — not called by the apps.** Snapshots the ExerciseDB catalog into
+`exercise_catalog` and backfills the `name_embedding` values that semantic exercise-name
+matching depends on. Run it once to seed the snapshot, then whenever the provider's catalog
+changes.
+
+Access requires the function key **and** a Supabase JWT whose user id is listed in the
+`CATALOG_ADMIN_USER_IDS` environment variable. That variable is unset by default, so the
+endpoint is closed to everyone until it is configured.
+
+#### Request
+
+```http
+POST /api/maintenance/exercise-catalog/sync?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+Content-Type: application/json
+
+{
+  "embeddingsOnly": false,
+  "maxPages": 100,
+  "maxBatches": 20,
+  "cursor": null
+}
+```
+
+All body fields are optional:
+
+| Field | Type | Meaning |
+|-------|------|---------|
+| `embeddingsOnly` | boolean | Skip the provider snapshot; only embed names that lack a vector. |
+| `maxPages` | int > 0 | Cap on provider pages fetched this run (default 100 × 100 rows). |
+| `maxBatches` | int > 0 | Cap on Gemini embedding batches this run (default 20 × 100 names). |
+| `cursor` | string | Resume a truncated snapshot from a prior response's `sync.nextCursor`. |
+
+#### Response
+
+**`200 OK`**
+
+```json
+{
+  "success": true,
+  "sync": {
+    "pages": 14, "upserted": 1324, "providerTotal": 1324, "localTotal": 1324,
+    "complete": true, "nextCursor": null, "stoppedBecause": null
+  },
+  "embeddings": {
+    "embedded": 1324, "failed": 0, "batches": 14, "remaining": 0,
+    "complete": true, "stoppedBecause": null
+  }
+}
+```
+
+Both phases are bounded, idempotent and resumable. A run that hits its budget (or a provider
+failure) returns `complete: false` with a `stoppedBecause` reason — call again, passing
+`sync.nextCursor` as `cursor`, until both phases report `complete: true`.
+
+**Error responses:**
+
+| Status | Condition |
+|--------|-----------|
+| `401` | Missing/invalid Supabase Bearer token |
+| `403` | Authenticated, but the user id is not in `CATALOG_ADMIN_USER_IDS` |
 
 ---
 

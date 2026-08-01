@@ -9,7 +9,7 @@ import {
   type PropsWithChildren,
 } from 'react';
 
-import { getProfile, type UserProfileData } from '@/lib/api';
+import { deleteAccount as deleteAccountRequest, getProfile, type UserProfileData } from '@/lib/api';
 import { env } from '@/lib/env';
 import { getOnboardingStorageKey, supabase } from '@/lib/supabase';
 import { INITIAL_PROFILE, useAppStore, type UserProfile } from '@/store/useAppStore';
@@ -40,6 +40,22 @@ function persistProfile(userId: string, profile: Partial<UserProfile>): void {
 function clearPersistedProfile(userId: string): void {
   try {
     localStorage.removeItem(getProfileStorageKey(userId));
+  } catch {
+    // Non-critical
+  }
+}
+
+/**
+ * Removes every app-owned cache keyed `forma:` — manual health captures, the
+ * in-progress workout session, completed-workout markers, seen-note flags.
+ * Sign-out leaves these alone (the same user usually comes back on this device);
+ * account deletion must not, or a deleted user's data outlives their account.
+ * The theme preference (`forma_theme`, no colon) is device chrome and survives.
+ */
+function clearAppLocalData(): void {
+  try {
+    const keys = Object.keys(localStorage).filter((key) => key.startsWith('forma:'));
+    keys.forEach((key) => localStorage.removeItem(key));
   } catch {
     // Non-critical
   }
@@ -96,6 +112,11 @@ interface AuthContextValue {
   signIn: (credentials: Credentials) => Promise<void>;
   signUp: (credentials: Credentials) => Promise<void>;
   signOut: () => Promise<void>;
+  /**
+   * Permanently deletes the account server-side, then drops the local session.
+   * Irreversible; callers must confirm with the user first.
+   */
+  deleteAccount: () => Promise<void>;
   markOnboardingComplete: () => Promise<void>;
   /** Applies a freshly-saved backend profile to the store + cache (used by the profile editor). */
   applyProfileUpdate: (profile: UserProfileData) => void;
@@ -182,11 +203,8 @@ export function AuthProvider({ children }: PropsWithChildren) {
     [assertSupabaseConfig],
   );
 
-  const signOut = useCallback(async () => {
-    const userId = session?.user.id;
-    const { error } = await supabase.auth.signOut();
-    if (error) throw error;
-
+  /** Resets the in-memory + per-user persisted state that a session leaves behind. */
+  const resetLocalUserState = useCallback((userId: string | undefined) => {
     if (userId) {
       localStorage.removeItem(getOnboardingStorageKey(userId));
       clearPersistedProfile(userId);
@@ -195,7 +213,32 @@ export function AuthProvider({ children }: PropsWithChildren) {
     useAppStore.getState().setProfile({ ...INITIAL_PROFILE });
     useAppStore.getState().clearChat();
     setHasCompletedOnboarding(false);
-  }, [session?.user.id]);
+  }, []);
+
+  const signOut = useCallback(async () => {
+    const userId = session?.user.id;
+    const { error } = await supabase.auth.signOut();
+    if (error) throw error;
+
+    resetLocalUserState(userId);
+  }, [resetLocalUserState, session?.user.id]);
+
+  const deleteAccount = useCallback(async () => {
+    if (!session?.access_token) {
+      throw new Error('Your session has expired. Sign in again, then retry the deletion.');
+    }
+    const userId = session.user.id;
+
+    // Server first: if this throws, nothing local is touched and the user can retry.
+    await deleteAccountRequest(session.access_token);
+
+    // The auth user no longer exists, so a server-side sign-out would fail on a
+    // dead token — drop the session locally instead. The JWT is void either way.
+    await supabase.auth.signOut({ scope: 'local' });
+    resetLocalUserState(userId);
+    useAppStore.getState().clearUserData();
+    clearAppLocalData();
+  }, [resetLocalUserState, session]);
 
   const applyProfileUpdate = useCallback(
     (apiProfile: UserProfileData) => {
@@ -229,11 +272,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
       signIn,
       signUp,
       signOut,
+      deleteAccount,
       markOnboardingComplete,
       applyProfileUpdate,
     }),
     [
       applyProfileUpdate,
+      deleteAccount,
       hasCompletedOnboarding,
       initialized,
       markOnboardingComplete,

@@ -19,6 +19,14 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **`UserMenu.tsx`** — avatar button + dropdown (edit profile, theme toggle, sign out). Primarily
   the mobile account entry point (`md:hidden` in Home's `ScreenHeader`), since the sidebar/rail
   are hidden `<768`. Desktop keeps the sidebar footer + rail (Settings icon → `/profile`).
+- **`DeleteAccountDialog.tsx`** — the type-`DELETE`-to-confirm modal for the irreversible account
+  wipe, plus `DELETED_DATA`, the shared wording for what deletion removes. Used by **both** the
+  Profile Danger zone and the public `/delete-account` page — Google Play requires the in-app
+  flow and the web deletion URL to describe the same thing, so keep the list in this one place.
+- **`CoachMemory.tsx`** — the "What your coach remembers" card on `/profile`. The one exception
+  to "data-fetching belongs in pages": it owns its own `getUserMemory` load and per-row
+  `PATCH`/`DELETE`, because memory changes independently of the cached profile and each row
+  saves on its own rather than joining the profile form's submit.
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.

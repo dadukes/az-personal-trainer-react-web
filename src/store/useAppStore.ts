@@ -150,12 +150,24 @@ interface PlanDraftSlice {
   clearPlanDraft: () => void;
 }
 
+interface AccountSlice {
+  /**
+   * Resets every user-owned slice to its initial value. Used by **account
+   * deletion**: the SPA does not reload afterwards, so without this the deleted
+   * account's XP, completions and week plan would still be in memory for whoever
+   * signs in next in the same tab. Sign-out doesn't need it — the same user
+   * usually comes straight back.
+   */
+  clearUserData: () => void;
+}
+
 type AppStore = ProfileSlice &
   ChatSlice &
   GamificationSlice &
   HealthSlice &
   WorkoutCompletionSlice &
-  PlanDraftSlice;
+  PlanDraftSlice &
+  AccountSlice;
 
 const COMPLETIONS_KEY = 'forma:completed-workouts';
 
@@ -338,4 +350,18 @@ export const useAppStore = create<AppStore>((set) => ({
   markPlanSaved: (dayPlan) =>
     set((state) => (state.planDraft ? { planDraft: { ...state.planDraft, dayPlan, dirty: false } } : {})),
   clearPlanDraft: () => set({ planDraft: null }),
+
+  // ── Account ──────────────────────────────────────────────────────────────
+  clearUserData: () =>
+    set({
+      profile: { ...INITIAL_PROFILE },
+      messages: [],
+      isStreaming: false,
+      chatError: null,
+      gamification: { ...INITIAL_GAMIFICATION },
+      healthSnapshot: { ...INITIAL_HEALTH },
+      weekPlan: [],
+      completedWorkouts: {},
+      planDraft: null,
+    }),
 }));

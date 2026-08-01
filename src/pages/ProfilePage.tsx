@@ -1,7 +1,9 @@
-import { ArrowLeft, Check } from 'lucide-react';
+import { ArrowLeft, Check, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import CoachMemory from '@/components/CoachMemory';
+import DeleteAccountDialog from '@/components/DeleteAccountDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
 import {
@@ -86,7 +88,7 @@ function formFromProfile(p: UserProfile): FormState {
 
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { session, applyProfileUpdate } = useAuth();
+  const { session, user, applyProfileUpdate, deleteAccount } = useAuth();
   const profile = useAppStore((s) => s.profile);
 
   const [form, setForm] = useState<FormState>(() => formFromProfile(profile));
@@ -94,6 +96,9 @@ export default function ProfilePage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Re-seed from the store until the user starts editing, so a background profile
   // hydration (stale-while-revalidate) doesn't get lost behind an untouched form.
@@ -149,6 +154,19 @@ export default function ProfilePage() {
       setError(err instanceof Error ? err.message : 'Unable to save your profile.');
     } finally {
       setSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setDeleteError(null);
+    setDeleting(true);
+    try {
+      await deleteAccount();
+      // The session is gone, so the guard would bounce us anyway — go there directly.
+      navigate('/login', { replace: true });
+    } catch (err) {
+      setDeleteError(err instanceof Error ? err.message : 'Unable to delete your account.');
+      setDeleting(false);
     }
   };
 
@@ -312,6 +330,9 @@ export default function ProfilePage() {
         </div>
       </Card>
 
+      {/* Coach memory — saves per-item, deliberately outside the form's Save. */}
+      <CoachMemory accessToken={session?.access_token} />
+
       {error ? (
         <div className="text-[13px] font-semibold" style={{ color: 'var(--forma-danger)' }}>
           {error}
@@ -329,6 +350,43 @@ export default function ProfilePage() {
           {submitting ? 'Saving…' : 'Save changes'}
         </Button>
       </div>
+
+      {/* Danger zone — deliberately last, visually separated, never a one-tap action. */}
+      <Card padding="24px" style={{ borderColor: 'var(--forma-danger)' }}>
+        <Eyebrow className="mb-4">Danger zone</Eyebrow>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
+              Delete account
+            </div>
+            <p className="mt-1 text-[13px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
+              Permanently erases your profile, coach history, workouts and health logs. Immediate
+              and irreversible — we keep no backup copy.
+            </p>
+          </div>
+          <Button
+            variant="secondary"
+            leftIcon={<Trash2 size={16} color="var(--forma-danger)" />}
+            style={{ color: 'var(--forma-danger)', borderColor: 'var(--forma-danger)' }}
+            onClick={() => {
+              setDeleteError(null);
+              setDeleteOpen(true);
+            }}
+          >
+            Delete account
+          </Button>
+        </div>
+      </Card>
+
+      {deleteOpen ? (
+        <DeleteAccountDialog
+          email={user?.email ?? undefined}
+          submitting={deleting}
+          error={deleteError}
+          onConfirm={() => void handleDelete()}
+          onClose={() => setDeleteOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }
