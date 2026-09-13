@@ -6,6 +6,7 @@ import Confetti from '@/components/Confetti';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
 import { getDashboard, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
+import { useHoldRepeat } from '@/lib/useHoldRepeat';
 import { dateForDayKey } from '@/lib/workout';
 import {
   blockTargetText,
@@ -505,8 +506,8 @@ export default function WorkoutSessionPage() {
           block.isPerSide && !isCountdownBlock(block) && !isSingleCaptureBlock(block);
         return (
         <Card key={block.key} padding="18px">
-          <div className="mb-3 flex items-center justify-between">
-            <div>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <div className="min-w-0">
               <div className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>
                 {block.name}
               </div>
@@ -520,7 +521,7 @@ export default function WorkoutSessionPage() {
                 </div>
               ) : null}
             </div>
-            <Badge tone="neutral">{sectionLabel(block.section)}</Badge>
+            <Badge tone="neutral" className="flex-shrink-0 whitespace-nowrap">{sectionLabel(block.section)}</Badge>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -544,32 +545,36 @@ export default function WorkoutSessionPage() {
                   onComplete={() => mutateSet(bi, si, { completed: true })}
                 />
               ) : (
+                // Below `sm` a phone row can't fit the label, both steppers and the check
+                // on one line, so the steppers wrap onto a second line of their own.
                 <div
                   key={si}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+                  className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2.5"
                   style={{
                     background: set.completed ? 'var(--bg-selected)' : 'var(--bg-subtle)',
                     border: `1px solid ${set.completed ? 'var(--accent)' : 'var(--border-base)'}`,
                   }}
                 >
                   <span
-                    className="tabular w-12 text-[12px] font-bold"
+                    className="tabular text-[12px] font-bold sm:w-12"
                     style={{ color: set.completed ? 'var(--text-on-mint)' : 'var(--text-muted)' }}
                   >
                     {`Set ${si + 1}`}
                   </span>
 
-                  <div className="flex flex-1 items-center gap-4">
+                  <div className="order-last grid w-full grid-cols-1 gap-x-5 gap-y-2 min-[340px]:grid-cols-2 sm:order-none sm:flex sm:w-auto sm:flex-1 sm:items-center sm:gap-4">
                     <Stepper
                       label={perSideOnDial ? 'reps/side' : 'reps'}
                       value={set.reps}
                       step={1}
+                      onMint={set.completed}
                       onDelta={(d) => mutateSet(bi, si, { reps: Math.max(0, Math.round(set.reps + d)) })}
                     />
                     <Stepper
                       label={block.weightUnit}
                       value={set.weight}
-                      step={block.weightUnit === 'kg' ? 2.5 : 5}
+                      step={1}
+                      onMint={set.completed}
                       onDelta={(d) => mutateSet(bi, si, { weight: Math.max(0, Math.round((set.weight + d) * 10) / 10) })}
                     />
                   </div>
@@ -577,7 +582,7 @@ export default function WorkoutSessionPage() {
                   <button
                     onClick={() => mutateSet(bi, si, { completed: !set.completed })}
                     aria-label={set.completed ? 'Mark set incomplete' : 'Mark set complete'}
-                    className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90"
+                    className="ml-auto flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-90 sm:ml-0"
                     style={{
                       background: set.completed ? 'var(--accent)' : 'transparent',
                       border: set.completed ? 'none' : '1.5px solid var(--border-strong)',
@@ -873,13 +878,23 @@ function TimedSetRow({
         </button>
 
         <div className="min-w-0 flex-1">
+          {/* A completed row sits on the mint fill, which the theme text tokens can't read on. */}
           <div
             className="tabular text-[15px] font-extrabold"
-            style={{ color: status === 'paused' ? 'var(--text-muted)' : 'var(--text-primary)' }}
+            style={{
+              color: completed
+                ? 'var(--text-on-mint)'
+                : status === 'paused'
+                  ? 'var(--text-muted)'
+                  : 'var(--text-primary)',
+            }}
           >
             {formatClock(displaySeconds)}
           </div>
-          <div className="mt-0.5 h-1 overflow-hidden rounded-full" style={{ background: 'var(--border-base)' }}>
+          <div
+            className="mt-0.5 h-1 overflow-hidden rounded-full"
+            style={{ background: completed ? 'var(--border-on-mint)' : 'var(--border-base)' }}
+          >
             <div className="h-full rounded-full" style={{ width: `${progress * 100}%`, background: 'var(--accent)' }} />
           </div>
         </div>
@@ -889,9 +904,13 @@ function TimedSetRow({
             onClick={reset}
             aria-label="Reset timer"
             className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-lg"
-            style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+            style={
+              completed
+                ? { background: 'var(--bg-on-mint)', border: '1px solid var(--border-on-mint)' }
+                : { background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }
+            }
           >
-            <RotateCcw size={13} color="var(--text-secondary)" />
+            <RotateCcw size={13} color={completed ? 'var(--text-on-mint)' : 'var(--text-secondary)'} />
           </button>
         ) : null}
       </div>
@@ -945,13 +964,15 @@ function CaptureRow({
             label="km"
             value={distanceKm}
             step={0.5}
+            onMint={completed}
             onDelta={(d) => onCapture({ distanceKm: Math.max(0, Math.round((distanceKm + d) * 10) / 10) })}
           />
         ) : null}
         <Stepper
           label="min"
           value={minutes}
-          step={5}
+          step={1}
+          onMint={completed}
           onDelta={(d) => onCapture({ durationSeconds: Math.max(0, minutes + d) * 60 })}
         />
       </div>
@@ -971,40 +992,56 @@ function CaptureRow({
   );
 }
 
+/**
+ * Compact ± stepper for the list rows. `onMint` is for a completed row: the mint fill is
+ * the same in both themes, so it reads from the on-mint tokens instead of the theme ones.
+ */
 function Stepper({
   label,
   value,
   step = 1,
+  onMint = false,
   onDelta,
 }: {
   label: string;
   value: number;
   step?: number;
+  onMint?: boolean;
   onDelta: (delta: number) => void;
 }) {
+  const dec = useHoldRepeat(() => onDelta(-step));
+  const inc = useHoldRepeat(() => onDelta(step));
+  const buttonStyle = onMint
+    ? { background: 'var(--bg-on-mint)', border: '1px solid var(--border-on-mint)' }
+    : { background: 'var(--bg-surface)', border: '1px solid var(--border-base)' };
+  const iconColor = onMint ? 'var(--text-on-mint)' : 'var(--text-secondary)';
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex min-w-0 items-center justify-between gap-1 sm:justify-start sm:gap-1.5">
       <button
-        onClick={() => onDelta(-step)}
-        className="flex h-7 w-7 items-center justify-center rounded-lg"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+        {...dec}
+        aria-label={`Decrease ${label}`}
+        className="flex h-7 w-7 flex-shrink-0 select-none items-center justify-center rounded-lg"
+        style={buttonStyle}
       >
-        <Minus size={13} color="var(--text-secondary)" />
+        <Minus size={13} color={iconColor} />
       </button>
-      <div className="min-w-[52px] text-center">
-        <span className="tabular text-[15px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+      {/* Half a phone row is too narrow for "107.5 kg" inline, so the unit drops under
+          the number below `sm`. */}
+      <div className="flex min-w-0 flex-1 flex-col items-center whitespace-nowrap text-center sm:block sm:min-w-[52px] sm:flex-none">
+        <span className="tabular text-[14px] font-extrabold leading-tight min-[380px]:text-[15px]" style={{ color: onMint ? 'var(--text-on-mint)' : 'var(--text-primary)' }}>
           {value}
         </span>
-        <span className="ml-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+        <span className="text-[10.5px] leading-tight sm:ml-1 sm:text-[11px]" style={{ color: onMint ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}>
           {label}
         </span>
       </div>
       <button
-        onClick={() => onDelta(step)}
-        className="flex h-7 w-7 items-center justify-center rounded-lg"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+        {...inc}
+        aria-label={`Increase ${label}`}
+        className="flex h-7 w-7 flex-shrink-0 select-none items-center justify-center rounded-lg"
+        style={buttonStyle}
       >
-        <Plus size={13} color="var(--text-secondary)" />
+        <Plus size={13} color={iconColor} />
       </button>
     </div>
   );

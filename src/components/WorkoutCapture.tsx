@@ -17,6 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType } from 're
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import type { CardioActivityKind } from '@/lib/api';
 import { cardioKindLabel, formatDistanceKm, hrZoneHelper, hrZoneText } from '@/lib/exercise';
+import { useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import { formatClock, type Block } from '@/lib/workoutSession';
 
@@ -60,7 +61,26 @@ function TargetChips({ block }: { block: Block }) {
   );
 }
 
-/** A big number field the user types into, flanked by coarse steppers. */
+function CaptureStep({ kind, label, onStep, className }: { kind: 'inc' | 'dec'; label: string; onStep: () => void; className: string }) {
+  const hold = useHoldRepeat(onStep);
+  return (
+    <button
+      {...hold}
+      aria-label={`${kind === 'inc' ? 'Increase' : 'Decrease'} ${label}`}
+      className={`flex h-9 w-9 flex-shrink-0 select-none items-center justify-center rounded-full text-[18px] font-bold transition-transform active:scale-90 ${className}`}
+      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', color: 'var(--accent-text)' }}
+    >
+      {kind === 'inc' ? '+' : '−'}
+    </button>
+  );
+}
+
+/**
+ * A big number field the user types into, with ± steppers (hold to repeat).
+ *
+ * Two of these share a phone-width row, too narrow for "− 12.5 +" on one line, so below
+ * `sm` the number takes its own row with the ± pair underneath.
+ */
 function CaptureField({
   label,
   unit,
@@ -81,21 +101,14 @@ function CaptureField({
   const clamp = (n: number) => Math.max(min, Math.round(n * 10 ** decimals) / 10 ** decimals);
   return (
     <div
-      className="flex flex-1 flex-col items-center gap-2 rounded-[20px] px-2.5 py-4"
+      className="flex min-w-0 flex-1 flex-col items-center gap-2 rounded-[20px] px-2.5 py-4"
       style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
     >
-      <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--text-muted)' }}>
+      <span className="text-center text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--text-muted)' }}>
         {label}
       </span>
-      <div className="flex items-center gap-2">
-        <button
-          onClick={() => onChange(clamp(value - step))}
-          aria-label={`Decrease ${label}`}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[18px] font-bold transition-transform active:scale-90"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', color: 'var(--accent-text)' }}
-        >
-          −
-        </button>
+      <div className="flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:gap-x-2">
+        <CaptureStep kind="dec" label={label} onStep={() => onChange(clamp(value - step))} className="order-3 sm:order-1" />
         <input
           type="number"
           inputMode="decimal"
@@ -104,21 +117,14 @@ function CaptureField({
           step={step}
           onChange={(e) => onChange(clamp(Number(e.target.value)))}
           aria-label={`${label} in ${unit}`}
-          className="tabular w-[92px] bg-transparent text-center text-[34px] font-extrabold leading-none outline-none"
+          className="tabular order-1 w-full min-w-0 basis-full bg-transparent text-center text-[32px] font-extrabold leading-none outline-none min-[380px]:text-[34px] sm:order-2 sm:w-[92px] sm:basis-auto"
           style={{ color: 'var(--text-primary)' }}
         />
-        <button
-          onClick={() => onChange(clamp(value + step))}
-          aria-label={`Increase ${label}`}
-          className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full text-[18px] font-bold transition-transform active:scale-90"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', color: 'var(--accent-text)' }}
-        >
-          +
-        </button>
+        <CaptureStep kind="inc" label={label} onStep={() => onChange(clamp(value + step))} className="order-4 sm:order-3" />
+        <span className="order-2 basis-full text-center text-[11px] sm:order-4" style={{ color: 'var(--text-muted)' }}>
+          {unit}
+        </span>
       </div>
-      <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        {unit}
-      </span>
     </div>
   );
 }
@@ -233,7 +239,7 @@ export function CardioCaptureCard({ block, onCapture }: CaptureProps) {
             label="Time"
             unit="minutes"
             value={minutes}
-            step={5}
+            step={1}
             onChange={(next) => onCapture({ durationSeconds: next * 60 })}
           />
         </div>
@@ -313,7 +319,7 @@ export function ClassCaptureCard({ block, onCapture }: CaptureProps) {
           label="How long"
           unit="minutes"
           value={minutes}
-          step={5}
+          step={1}
           onChange={(next) => onCapture({ durationSeconds: next * 60 })}
         />
       </div>

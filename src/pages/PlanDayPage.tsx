@@ -252,9 +252,11 @@ export default function PlanDayPage() {
                     onClick={() => navigate(`/workout/${dayKey}`)}
                     aria-label="Start workout"
                     className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-                    style={{ background: 'var(--bg-surface)' }}
+                    // The hero is navy in both themes, so the button can't use a surface
+                    // token — in dark that is near-black on navy. Same aqua as Home's CTA.
+                    style={{ background: 'var(--forma-aqua)', boxShadow: '0 6px 18px rgba(52,210,193,0.35)' }}
                   >
-                    <Play size={22} color="#06224D" fill="#06224D" />
+                    <Play size={22} color="var(--forma-navy)" fill="var(--forma-navy)" style={{ marginLeft: 2 }} />
                   </button>
                 ) : null}
               </div>

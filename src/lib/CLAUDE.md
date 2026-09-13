@@ -66,3 +66,13 @@ for project-wide rules.
   browser revokes the lock whenever the tab is hidden (the hook re-requests on re-show). Every
   failure is swallowed. This is safe *because* all the timers derive their remaining time from a
   wall-clock deadline, so losing the lock costs a screen tap and never accuracy — keep it that way.
+
+## useHoldRepeat.ts — press-and-hold ± steppers
+
+- Every numeric stepper (workout dials + list rows, run/class capture, the plan exercise editor)
+  moves in **single units** — 1 kg/lb, 1 min, 1 s — so any real value is reachable exactly. Don't
+  reintroduce coarse steps (2.5 kg, 5 min, 15 s); users asked for this explicitly. Distance keeps
+  its 0.5 km step, and the guided hold's ± stays at 5 s.
+- `useHoldRepeat(onStep)` makes that bearable: spread its handlers on the button. A tap steps once
+  via the normal `click` (so a scroll gesture starting on the button changes nothing); holding
+  repeats after 400 ms and speeds up. `onStep` is read through a ref, so repeats see fresh values.

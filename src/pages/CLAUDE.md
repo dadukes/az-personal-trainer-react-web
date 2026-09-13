@@ -38,7 +38,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
 | `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link/alternatives, remove |
 | `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → `logWorkout` |
-| `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts) |
+| `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts). Open session is `?session=<id>`: two screens below `lg` (list → transcript, Back returns to list), side by side from `lg` |
 
 `:day` accepts a backend day key (`monday`…`sunday`) or `today` (resolved to the current weekday).
 
@@ -76,6 +76,10 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   leave the user signed in and able to retry. Deletion is immediate and irreversible
   server-side, so keep the type-`DELETE`-to-confirm step and keep both surfaces describing
   the same data (`DELETED_DATA`); Play requires the in-app flow and the web URL to agree.
+- **Phone widths**: screens must fit a 320–390px portrait viewport with no horizontal scroll.
+  Where two dials/steppers share a row (workout guided + list view, run capture), the number
+  stacks above its ± buttons below `sm` — `107.5` or `12.5` inline with ± does not fit half a phone.
+  Anything on a navy hero (Home, plan day) uses aqua controls, never a surface token (near-black in dark).
 - **Coach**: consume the `streamChat` SSE helper; render incremental chunks; keep the
   stop/retry/new-session affordances and the "scroll to latest" button.
 - **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads

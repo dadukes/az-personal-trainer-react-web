@@ -1,6 +1,6 @@
 import { ChevronLeft, MessageSquare, Zap } from 'lucide-react';
-import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import ChatMarkdown from '@/components/ChatMarkdown';
 import { Badge, Card, Eyebrow } from '@/components/ui';
@@ -18,57 +18,108 @@ function formatSessionDate(dateStr: string): string {
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+/** Set when a session was opened by tapping the list, so Back can pop to it. */
+interface OpenedFromList {
+  fromList: true;
+}
+
 export default function ChatHistoryPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { session } = useAuth();
+  // The open session lives in the URL (`?session=<id>`). Below `lg` the list and the
+  // transcript are two screens, and a real history entry is what makes the browser's
+  // (and Android's) Back return to the list instead of leaving the page.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const openId = searchParams.get('session');
 
   const [sessions, setSessions] = useState<ChatSession[]>([]);
   const [loadingSessions, setLoadingSessions] = useState(true);
-  const [selected, setSelected] = useState<ChatSession | null>(null);
   const [messages, setMessages] = useState<ChatHistoryMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Below md the document is the scroller, so the list's position survives a trip into
+  // a transcript only if we put it back.
+  const listScrollRef = useRef(0);
+
+  useEffect(() => {
+    window.scrollTo(0, openId ? 0 : listScrollRef.current);
+  }, [openId]);
 
   useEffect(() => {
     if (!session?.access_token) return;
     const token = session.access_token;
+    let active = true;
     void (async () => {
       try {
         const { sessions: list } = await getChatSessions(token, 50, 0);
-        setSessions(list);
-        const firstClosed = list.find((s) => s.status === 'closed') ?? list[0];
-        if (firstClosed) setSelected(firstClosed);
+        if (active) setSessions(list);
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not load your chat history.');
+        if (active) setError(err instanceof Error ? err.message : 'Could not load your chat history.');
       } finally {
-        setLoadingSessions(false);
+        if (active) setLoadingSessions(false);
       }
     })();
+    return () => {
+      active = false;
+    };
   }, [session]);
 
+  // Side by side (lg+) there is always room for a transcript, so with nothing opened
+  // explicitly it shows the most recent closed session. On a phone that fallback stays
+  // hidden until a session is tapped.
+  const selected =
+    sessions.find((s) => s.id === openId) ??
+    (openId ? undefined : (sessions.find((s) => s.status === 'closed') ?? sessions[0]));
+  const selectedId = selected?.id;
+
   useEffect(() => {
-    if (!selected || !session?.access_token) return;
+    if (!selectedId || !session?.access_token) return;
     const token = session.access_token;
+    let active = true;
+    setMessages([]);
     setLoadingMessages(true);
     void (async () => {
       try {
-        const result = await getChatHistory(token, 200, 0, selected.id);
-        setMessages(result.messages);
+        const result = await getChatHistory(token, 200, 0, selectedId);
+        if (active) setMessages(result.messages);
       } catch {
-        setMessages([]);
+        if (active) setMessages([]);
       } finally {
-        setLoadingMessages(false);
+        if (active) setLoadingMessages(false);
       }
     })();
-  }, [selected, session]);
+    return () => {
+      active = false;
+    };
+  }, [selectedId, session]);
+
+  const openSession = (id: string) => {
+    if (id === openId) return;
+    // Switching sessions from the transcript-side list (lg+) replaces the entry, so Back
+    // leaves the page rather than stepping through every session that was clicked.
+    const state: OpenedFromList | undefined = openId ? undefined : { fromList: true };
+    if (!openId) listScrollRef.current = window.scrollY;
+    setSearchParams({ session: id }, { replace: Boolean(openId), state });
+  };
+
+  const handleBack = () => {
+    if (!openId) {
+      navigate('/coach');
+      return;
+    }
+    // Pop back to the list when we pushed the transcript; a deep link has nothing to pop.
+    if ((location.state as OpenedFromList | null)?.fromList) navigate(-1);
+    else setSearchParams({}, { replace: true });
+  };
 
   return (
     <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 p-5 sm:p-8">
       <div className="flex items-center gap-3">
         <button
-          onClick={() => navigate('/coach')}
-          aria-label="Back to coach"
-          className="flex h-10 w-10 items-center justify-center rounded-xl"
+          onClick={handleBack}
+          aria-label={openId ? 'Back to chat history' : 'Back to coach'}
+          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
         >
           <ChevronLeft size={20} color="var(--text-secondary)" />
@@ -89,8 +140,8 @@ export default function ChatHistoryPage() {
         </Card>
       ) : (
         <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          {/* Session list */}
-          <div className="flex flex-col gap-2.5 lg:w-[340px] lg:min-w-[340px]">
+          {/* Session list — its own screen below lg, a sidebar from lg */}
+          <div className={`${openId ? 'hidden lg:flex' : 'flex'} flex-col gap-2.5 lg:w-[340px] lg:min-w-[340px]`}>
             {loadingSessions ? (
               <div className="flex justify-center py-10">
                 <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
@@ -107,7 +158,7 @@ export default function ChatHistoryPage() {
                 return (
                   <button
                     key={s.id}
-                    onClick={() => setSelected(s)}
+                    onClick={() => openSession(s.id)}
                     className="rounded-2xl p-4 text-left transition-transform active:scale-[0.99]"
                     style={{
                       background: active ? 'var(--bg-selected)' : 'var(--bg-surface)',
@@ -125,14 +176,14 @@ export default function ChatHistoryPage() {
                     </div>
                     <div
                       className="mt-1 text-[12px]"
-                      style={{ color: active ? 'rgba(14,76,69,.75)' : 'var(--text-muted)' }}
+                      style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
                     >
                       {formatSessionDate(s.session_date)} · {s.message_count} messages
                     </div>
                     {s.summary_json?.one_line || s.summary ? (
                       <p
                         className="mt-2 line-clamp-2 text-[12.5px] leading-[1.45]"
-                        style={{ color: active ? 'rgba(14,76,69,.85)' : 'var(--text-secondary)' }}
+                        style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-secondary)' }}
                       >
                         {s.summary_json?.one_line ?? s.summary}
                       </p>
@@ -143,13 +194,15 @@ export default function ChatHistoryPage() {
             )}
           </div>
 
-          {/* Selected transcript (read-only) */}
-          <Card className="flex-1" padding="0">
+          {/* Selected transcript (read-only) — only shown below lg once a session is opened */}
+          <Card className={`${openId ? 'block' : 'hidden lg:block'} min-w-0 flex-1`} padding="0">
             {!selected ? (
               <div className="flex flex-col items-center justify-center gap-2 p-16 text-center">
                 <MessageSquare size={24} color="var(--text-muted)" />
                 <p className="text-[13.5px]" style={{ color: 'var(--text-muted)' }}>
-                  Select a session to read the conversation.
+                  {openId && !loadingSessions
+                    ? 'This conversation is no longer available.'
+                    : 'Select a session to read the conversation.'}
                 </p>
               </div>
             ) : (
@@ -159,10 +212,12 @@ export default function ChatHistoryPage() {
                     {selected.title ?? formatSessionDate(selected.session_date)}
                   </div>
                   <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                    {formatSessionDate(selected.session_date)}
+                    {formatSessionDate(selected.session_date)} · {selected.message_count} messages
                   </div>
                 </div>
-                <div className="flex max-h-[70vh] flex-col gap-3.5 overflow-y-auto p-5">
+                {/* Mobile scrolls the document (so the URL bar can hide); only the
+                    side-by-side layout needs its own scroll region. */}
+                <div className="flex flex-col gap-3.5 p-4 sm:p-5 lg:max-h-[70vh] lg:overflow-y-auto">
                   {loadingMessages ? (
                     <div className="flex justify-center py-10">
                       <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
@@ -185,7 +240,7 @@ export default function ChatHistoryPage() {
                             </div>
                           ) : null}
                           <div
-                            className={`max-w-[82%] rounded-2xl px-4 py-3 md:max-w-[560px] ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
+                            className={`min-w-0 max-w-[82%] break-words rounded-2xl px-4 py-3 md:max-w-[560px] ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
                             style={{
                               background: isUser ? 'var(--accent)' : 'var(--bg-subtle)',
                               color: isUser ? 'var(--text-on-accent)' : 'var(--text-secondary)',

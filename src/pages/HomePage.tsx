@@ -273,7 +273,7 @@ export default function HomePage() {
 
   const metrics = [
     {
-      icon: <Moon size={18} color="var(--forma-sleep)" />,
+      icon: <Moon size={18} color="var(--icon-sleep)" />,
       value: sleepLabel,
       label:
         healthSnapshot.sleep_hours == null

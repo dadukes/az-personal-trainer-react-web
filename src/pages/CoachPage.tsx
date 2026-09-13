@@ -431,7 +431,7 @@ export default function CoachPage() {
             onClick={() => navigate('/')}
             className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2.5 text-left hover:bg-[var(--bg-surface)]"
           >
-            <Calendar size={16} color="var(--forma-sleep)" />
+            <Calendar size={16} color="var(--icon-sleep)" />
             <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
               View this week&rsquo;s plan
             </span>
@@ -440,7 +440,7 @@ export default function CoachPage() {
             onClick={() => navigate('/')}
             className="flex w-full items-center gap-2.5 rounded-xl px-2 py-2.5 text-left hover:bg-[var(--bg-surface)]"
           >
-            <Activity size={16} color="var(--forma-sleep)" />
+            <Activity size={16} color="var(--icon-sleep)" />
             <span className="text-[13px] font-semibold" style={{ color: 'var(--text-primary)' }}>
               Log a pulse check
             </span>

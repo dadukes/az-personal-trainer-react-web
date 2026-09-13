@@ -6,6 +6,7 @@ import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/component
 import { Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail } from '@/lib/api';
 import { cardioKindVerb, isCatalogExercise } from '@/lib/exercise';
+import { useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import {
   blockTargetText,
@@ -799,7 +800,6 @@ function RepWeightDials({
   onRepDelta: (delta: number) => void;
   onWeightDelta: (delta: number) => void;
 }) {
-  const weightStep = weightUnit === 'kg' ? 2.5 : 5;
   return (
     <div className="flex flex-col items-center gap-3">
       <span className="text-[12px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--text-muted)' }}>
@@ -814,7 +814,8 @@ function RepWeightDials({
           onDec={() => onRepDelta(-1)}
           onInc={() => onRepDelta(1)}
         />
-        <Dial label="Weight" value={String(weight)} caption={weightUnit} onDec={() => onWeightDelta(-weightStep)} onInc={() => onWeightDelta(weightStep)} />
+        {/* Single units, so any load actually lifted is reachable exactly; hold ± for big jumps. */}
+        <Dial label="Weight" value={String(weight)} caption={weightUnit} onDec={() => onWeightDelta(-1)} onInc={() => onWeightDelta(1)} />
       </div>
       <SetPips total={completed.length} currentIndex={currentIndex} completed={completed} />
     </div>
@@ -834,35 +835,52 @@ function Dial({
   onDec: () => void;
   onInc: () => void;
 }) {
+  // Two dials share a phone-width row, which leaves each too narrow for "− 107.5 +" on
+  // one line. Below `sm` the number and caption take their own rows and the ± pair sits
+  // underneath; from `sm` up the buttons flank the number again.
   return (
     <div
-      className="flex flex-1 flex-col items-center gap-2.5 rounded-[20px] px-2.5 py-4"
+      className="flex min-w-0 flex-1 flex-col items-center gap-2.5 rounded-[20px] px-2.5 py-4"
       style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
     >
-      <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--text-muted)' }}>
+      <span className="text-center text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--text-muted)' }}>
         {label}
       </span>
-      <div className="flex items-center gap-3">
-        <RoundStep kind="dec" onClick={onDec} label={`Decrease ${label}`} />
-        <span className="tabular min-w-[56px] text-center text-[38px] font-extrabold leading-none" style={{ color: 'var(--text-primary)' }}>
+      <div className="flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:gap-x-3">
+        <RoundStep kind="dec" onClick={onDec} label={`Decrease ${label}`} className="order-3 sm:order-1" />
+        <span
+          className="tabular order-1 basis-full text-center text-[34px] font-extrabold leading-none min-[380px]:text-[38px] sm:order-2 sm:min-w-[56px] sm:basis-auto"
+          style={{ color: 'var(--text-primary)' }}
+        >
           {value}
         </span>
-        <RoundStep kind="inc" onClick={onInc} label={`Increase ${label}`} />
+        <RoundStep kind="inc" onClick={onInc} label={`Increase ${label}`} className="order-4 sm:order-3" />
+        <span className="order-2 basis-full text-center text-[11px] sm:order-4" style={{ color: 'var(--text-muted)' }}>
+          {caption}
+        </span>
       </div>
-      <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        {caption}
-      </span>
     </div>
   );
 }
 
-function RoundStep({ kind, onClick, label }: { kind: 'inc' | 'dec'; onClick: () => void; label: string }) {
+function RoundStep({
+  kind,
+  onClick,
+  label,
+  className = '',
+}: {
+  kind: 'inc' | 'dec';
+  onClick: () => void;
+  label: string;
+  className?: string;
+}) {
   const Icon = kind === 'inc' ? Plus : Minus;
+  const hold = useHoldRepeat(onClick);
   return (
     <button
-      onClick={onClick}
+      {...hold}
       aria-label={label}
-      className="flex h-10 w-10 items-center justify-center rounded-full transition-transform active:scale-90"
+      className={`flex h-10 w-10 flex-shrink-0 select-none items-center justify-center rounded-full transition-transform active:scale-90 ${className}`}
       style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)' }}
     >
       <Icon size={17} color="var(--accent-text)" />

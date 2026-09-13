@@ -28,6 +28,7 @@ import {
   resolveExerciseType,
   usesCountdown,
 } from '@/lib/exercise';
+import { useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type PlanSection } from '@/store/useAppStore';
 
@@ -122,17 +123,21 @@ function Stepper({
   min?: number;
   onDelta: (delta: number) => void;
 }) {
+  // Every target moves in single units (hold ± to run), so the plan can say exactly
+  // 22 kg or 40 s rather than whatever a coarse step happens to land on.
+  const dec = useHoldRepeat(() => onDelta(-step));
+  const inc = useHoldRepeat(() => onDelta(step));
   return (
-    <div className="flex items-center justify-between rounded-xl px-3 py-2.5" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}>
-      <span className="text-[12px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--text-label)' }}>
+    <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}>
+      <span className="min-w-0 text-[12px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--text-label)' }}>
         {label}
       </span>
-      <div className="flex items-center gap-2.5">
+      <div className="flex flex-shrink-0 items-center gap-2.5">
         <button
-          onClick={() => onDelta(-step)}
+          {...dec}
           disabled={value <= min}
           aria-label={`Decrease ${label}`}
-          className="flex h-7 w-7 items-center justify-center rounded-lg disabled:opacity-30"
+          className="flex h-7 w-7 select-none items-center justify-center rounded-lg disabled:opacity-30"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
         >
           <Minus size={13} color="var(--text-secondary)" />
@@ -141,9 +146,9 @@ function Stepper({
           {value}
         </span>
         <button
-          onClick={() => onDelta(step)}
+          {...inc}
           aria-label={`Increase ${label}`}
-          className="flex h-7 w-7 items-center justify-center rounded-lg"
+          className="flex h-7 w-7 select-none items-center justify-center rounded-lg"
           style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
         >
           <Plus size={13} color="var(--text-secondary)" />
@@ -806,16 +811,14 @@ export default function ExerciseDetailPage() {
                   <Stepper
                     label="Work (sec)"
                     value={ex.intervals.work_seconds}
-                    step={15}
-                    min={5}
+                    min={1}
                     onDelta={(d) =>
-                      patchIntervals({ work_seconds: Math.max(5, ex.intervals!.work_seconds + d) })
+                      patchIntervals({ work_seconds: Math.max(1, ex.intervals!.work_seconds + d) })
                     }
                   />
                   <Stepper
                     label="Recover (sec)"
                     value={ex.intervals.recover_seconds}
-                    step={15}
                     min={0}
                     onDelta={(d) =>
                       patchIntervals({ recover_seconds: Math.max(0, ex.intervals!.recover_seconds + d) })
@@ -845,7 +848,6 @@ export default function ExerciseDetailPage() {
                   <Stepper
                     label="Duration (min)"
                     value={ex.target_duration_minutes ?? 0}
-                    step={5}
                     onDelta={(d) =>
                       patch({ target_duration_minutes: Math.max(0, (ex.target_duration_minutes ?? 0) + d) })
                     }
@@ -869,10 +871,9 @@ export default function ExerciseDetailPage() {
               <Stepper
                 label="Duration (min)"
                 value={ex.target_duration_minutes ?? 45}
-                step={5}
-                min={5}
+                min={1}
                 onDelta={(d) =>
-                  patch({ target_duration_minutes: Math.max(5, (ex.target_duration_minutes ?? 45) + d) })
+                  patch({ target_duration_minutes: Math.max(1, (ex.target_duration_minutes ?? 45) + d) })
                 }
               />
             </>
@@ -889,9 +890,8 @@ export default function ExerciseDetailPage() {
                 <Stepper
                   label="Duration (sec)"
                   value={ex.duration_seconds ?? 30}
-                  step={5}
-                  min={5}
-                  onDelta={(d) => patch({ duration_seconds: Math.max(5, (ex.duration_seconds ?? 30) + d) })}
+                  min={1}
+                  onDelta={(d) => patch({ duration_seconds: Math.max(1, (ex.duration_seconds ?? 30) + d) })}
                 />
               ) : (
                 <>
@@ -905,7 +905,6 @@ export default function ExerciseDetailPage() {
                       <Stepper
                         label={`Weight (${unit})`}
                         value={ex.target_weight ?? 0}
-                        step={unit === 'kg' ? 2.5 : 5}
                         onDelta={(d) =>
                           patch({
                             target_weight: Math.max(0, Math.round(((ex.target_weight ?? 0) + d) * 10) / 10),
@@ -947,7 +946,6 @@ export default function ExerciseDetailPage() {
             <Stepper
               label="Rest (sec)"
               value={ex.rest_seconds ?? 0}
-              step={15}
               onDelta={(d) => patch({ rest_seconds: Math.max(0, (ex.rest_seconds ?? 0) + d) })}
             />
           ) : null}

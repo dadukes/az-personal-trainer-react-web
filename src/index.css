@@ -48,10 +48,15 @@
   /* Body copy on the mint fill. The mint is identical in both themes, so this is too —
      the theme-flipping text tokens would go white-on-mint in dark. */
   --text-on-mint-soft: #2d6259;
+  /* Controls sitting on the mint fill (e.g. the steppers on a completed set row). */
+  --bg-on-mint: rgba(255, 255, 255, 0.6);
+  --border-on-mint: rgba(14, 76, 69, 0.22);
 
   --accent: var(--forma-aqua);
   --accent-text: #0e4c45;
   --accent-secondary: var(--forma-sky);
+  /* Sleep reads as a deep blue on light surfaces; dark surfaces need the lighter tint. */
+  --icon-sleep: var(--forma-sleep);
 
   --tab-active: var(--forma-aqua);
   --tab-inactive: #6e8094;
@@ -94,10 +99,15 @@
   /* Body copy on the mint fill. The mint is identical in both themes, so this is too —
      the theme-flipping text tokens would go white-on-mint in dark. */
   --text-on-mint-soft: #2d6259;
+  /* Controls sitting on the mint fill (e.g. the steppers on a completed set row). */
+  --bg-on-mint: rgba(255, 255, 255, 0.6);
+  --border-on-mint: rgba(14, 76, 69, 0.22);
 
   --accent: var(--forma-aqua);
   --accent-text: #34d2c1;
   --accent-secondary: var(--forma-sky);
+  /* Sleep reads as a deep blue on light surfaces; dark surfaces need the lighter tint. */
+  --icon-sleep: var(--forma-sleep-dark);
 
   --tab-active: var(--forma-aqua);
   --tab-inactive: #91a99e;

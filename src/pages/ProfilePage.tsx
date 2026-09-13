@@ -269,7 +269,8 @@ export default function ProfilePage() {
 
         <div className="mt-6">
           <Eyebrow className="mb-2.5">Experience level</Eyebrow>
-          <div className="flex gap-2.5">
+          {/* Wraps like the session-length row: three nowrap chips overflow a phone-width card. */}
+          <div className="flex flex-wrap gap-2.5">
             {FITNESS_LEVELS.map((lvl) => (
               <Chip
                 key={lvl}
