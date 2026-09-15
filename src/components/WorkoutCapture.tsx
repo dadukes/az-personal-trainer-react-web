@@ -12,11 +12,13 @@ import {
   Users,
   Waves,
 } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState, type ComponentType } from 'react';
+import { useCallback, useEffect, useRef, useState, type ComponentType, type ReactNode } from 'react';
 
+import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import type { CardioActivityKind } from '@/lib/api';
 import { cardioKindLabel, formatDistanceKm, hrZoneHelper, hrZoneText } from '@/lib/exercise';
+import { roundTo } from '@/lib/numberEntry';
 import { useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import { formatClock, type Block } from '@/lib/workoutSession';
@@ -61,12 +63,24 @@ function TargetChips({ block }: { block: Block }) {
   );
 }
 
-function CaptureStep({ kind, label, onStep, className }: { kind: 'inc' | 'dec'; label: string; onStep: () => void; className: string }) {
-  const hold = useHoldRepeat(onStep);
+function CaptureStep({
+  kind,
+  label,
+  onStep,
+  bigStep,
+  className,
+}: {
+  kind: 'inc' | 'dec';
+  label: string;
+  onStep: (scale: number) => void;
+  bigStep?: number;
+  className: string;
+}) {
+  const hold = useHoldRepeat(onStep, { bigStep });
   return (
     <button
       {...hold}
-      aria-label={`${kind === 'inc' ? 'Increase' : 'Decrease'} ${label}`}
+      aria-label={label}
       className={`flex h-9 w-9 flex-shrink-0 select-none items-center justify-center rounded-full text-[18px] font-bold transition-transform active:scale-90 ${className}`}
       style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-strong)', color: 'var(--accent-text)' }}
     >
@@ -76,29 +90,30 @@ function CaptureStep({ kind, label, onStep, className }: { kind: 'inc' | 'dec'; 
 }
 
 /**
- * A big number field the user types into, with ± steppers (hold to repeat).
+ * The frame both capture fields share: label on top, then the value with ± steppers.
  *
  * Two of these share a phone-width row, too narrow for "− 12.5 +" on one line, so below
- * `sm` the number takes its own row with the ± pair underneath.
+ * `sm` the value takes its own row with the ± pair underneath.
  */
-function CaptureField({
+function CaptureFrame({
   label,
   unit,
-  value,
-  step,
-  min = 0,
-  decimals = 0,
-  onChange,
+  decLabel,
+  incLabel,
+  bigStep,
+  onDec,
+  onInc,
+  children,
 }: {
   label: string;
   unit: string;
-  value: number;
-  step: number;
-  min?: number;
-  decimals?: number;
-  onChange: (next: number) => void;
+  decLabel: string;
+  incLabel: string;
+  bigStep?: number;
+  onDec: (scale: number) => void;
+  onInc: (scale: number) => void;
+  children: ReactNode;
 }) {
-  const clamp = (n: number) => Math.max(min, Math.round(n * 10 ** decimals) / 10 ** decimals);
   return (
     <div
       className="flex min-w-0 flex-1 flex-col items-center gap-2 rounded-[20px] px-2.5 py-4"
@@ -108,24 +123,85 @@ function CaptureField({
         {label}
       </span>
       <div className="flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:gap-x-2">
-        <CaptureStep kind="dec" label={label} onStep={() => onChange(clamp(value - step))} className="order-3 sm:order-1" />
-        <input
-          type="number"
-          inputMode="decimal"
-          value={value}
-          min={min}
-          step={step}
-          onChange={(e) => onChange(clamp(Number(e.target.value)))}
-          aria-label={`${label} in ${unit}`}
-          className="tabular order-1 w-full min-w-0 basis-full bg-transparent text-center text-[32px] font-extrabold leading-none outline-none min-[380px]:text-[34px] sm:order-2 sm:w-[92px] sm:basis-auto"
-          style={{ color: 'var(--text-primary)' }}
-        />
-        <CaptureStep kind="inc" label={label} onStep={() => onChange(clamp(value + step))} className="order-4 sm:order-3" />
+        <CaptureStep kind="dec" label={decLabel} bigStep={bigStep} onStep={onDec} className="order-3 sm:order-1" />
+        <div className="order-1 flex basis-full justify-center sm:order-2 sm:basis-auto">{children}</div>
+        <CaptureStep kind="inc" label={incLabel} bigStep={bigStep} onStep={onInc} className="order-4 sm:order-3" />
         <span className="order-2 basis-full text-center text-[11px] sm:order-4" style={{ color: 'var(--text-muted)' }}>
           {unit}
         </span>
       </div>
     </div>
+  );
+}
+
+/** A big number the user types into (tap it), with ± steppers (hold to repeat). */
+function CaptureField({
+  label,
+  unit,
+  value,
+  step,
+  decimals = 0,
+  onChange,
+}: {
+  label: string;
+  unit: string;
+  value: number;
+  step: number;
+  decimals?: number;
+  onChange: (next: number) => void;
+}) {
+  const stepBy = (delta: number) => onChange(Math.max(0, roundTo(value + delta, decimals)));
+  return (
+    <CaptureFrame
+      label={label}
+      unit={unit}
+      decLabel={`Decrease ${label}`}
+      incLabel={`Increase ${label}`}
+      onDec={() => stepBy(-step)}
+      onInc={() => stepBy(step)}
+    >
+      <NumberEntry
+        value={value}
+        decimals={decimals}
+        onCommit={onChange}
+        label={`${label} in ${unit}`}
+        className="py-0.5 text-[32px] leading-none min-[380px]:text-[34px]"
+      />
+    </CaptureFrame>
+  );
+}
+
+/**
+ * Elapsed time as a clock ("32:45"): ± whole minutes (in 5s on a long hold), or tap the
+ * time to type exactly what the watch said — seconds included.
+ */
+function CaptureTimeField({
+  label,
+  seconds,
+  onChange,
+}: {
+  label: string;
+  seconds: number;
+  onChange: (seconds: number) => void;
+}) {
+  return (
+    <CaptureFrame
+      label={label}
+      unit={seconds >= 3600 ? 'h:mm:ss' : 'min:sec'}
+      decLabel={`Decrease ${label.toLowerCase()} by a minute`}
+      incLabel={`Increase ${label.toLowerCase()} by a minute`}
+      bigStep={5}
+      onDec={(scale) => onChange(Math.max(0, seconds - 60 * scale))}
+      onInc={(scale) => onChange(seconds + 60 * scale)}
+    >
+      <DurationEntry
+        label={label}
+        seconds={seconds}
+        onCommit={onChange}
+        // "1:05:30" is two characters wider than "32:45" — step down so it still fits half a phone.
+        className={`py-0.5 leading-none ${seconds >= 3600 ? 'text-[24px] min-[380px]:text-[28px]' : 'text-[32px] min-[380px]:text-[34px]'}`}
+      />
+    </CaptureFrame>
   );
 }
 
@@ -200,7 +276,7 @@ export function CardioCaptureCard({ block, onCapture }: CaptureProps) {
   const set = block.sets[0];
   const Icon = KIND_ICONS[block.activityKind ?? 'other'];
   const distanceKm = set?.distanceKm ?? 0;
-  const minutes = Math.round((set?.durationSeconds ?? 0) / 60);
+  const seconds = set?.durationSeconds ?? 0;
 
   const stopwatch = useStopwatch((seconds) => onCapture({ durationSeconds: seconds }));
 
@@ -232,15 +308,13 @@ export function CardioCaptureCard({ block, onCapture }: CaptureProps) {
             unit="km"
             value={distanceKm}
             step={0.5}
-            decimals={1}
+            decimals={2}
             onChange={(next) => onCapture({ distanceKm: next })}
           />
-          <CaptureField
+          <CaptureTimeField
             label="Time"
-            unit="minutes"
-            value={minutes}
-            step={1}
-            onChange={(next) => onCapture({ durationSeconds: next * 60 })}
+            seconds={seconds}
+            onChange={(next) => onCapture({ durationSeconds: next })}
           />
         </div>
 

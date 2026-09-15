@@ -1,14 +1,19 @@
-import { AlertTriangle, Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Sparkles, TrendingUp, X } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Shuffle, Sparkles, TrendingUp, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import Confetti from '@/components/Confetti';
+import FindAlternativeDialog from '@/components/FindAlternativeDialog';
+import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
-import { useHoldRepeat } from '@/lib/useHoldRepeat';
+import { getDashboard, getLastPerformance, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
+import { isCatalogExercise, type ExercisePick } from '@/lib/exercise';
+import { roundTo } from '@/lib/numberEntry';
+import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { dateForDayKey } from '@/lib/workout';
 import {
+  applyBlockSwap,
   blockTargetText,
   buildBlocks,
   formatClock,
@@ -17,8 +22,10 @@ import {
   isSingleCaptureBlock,
   sectionLabel,
   signatureOf,
+  swapBlock,
   toLoggedExercises,
   type Block,
+  type BlockSwap,
   type SetActual,
 } from '@/lib/workoutSession';
 import { useAuth } from '@/providers/AuthProvider';
@@ -44,6 +51,8 @@ interface PersistedSession {
   startedAt: string;
   signature: string;
   sets: SetActual[][];
+  /** Mid-session exercise swaps, by block key. The plan itself is never changed. */
+  swaps?: Record<string, BlockSwap>;
 }
 
 function readPersisted(): PersistedSession | null {
@@ -132,6 +141,8 @@ export default function WorkoutSessionPage() {
             if (savedSets) {
               b.sets = b.sets.map((s, si) => savedSets[si] ?? s);
             }
+            const swap = persisted.swaps?.[b.key];
+            if (swap) fresh[bi] = applyBlockSwap(b, swap);
           });
           setStartedAt(new Date(persisted.startedAt));
         } else {
@@ -177,6 +188,20 @@ export default function WorkoutSessionPage() {
       startedAt: startedAt.toISOString(),
       signature: signatureOf(blocks),
       sets: blocks.map((b) => b.sets),
+      swaps: Object.fromEntries(
+        blocks
+          .filter((b) => b.swappedFrom)
+          .map((b) => [
+            b.key,
+            {
+              name: b.name,
+              exercise_id: b.exercise_id,
+              swappedFrom: b.swappedFrom,
+              targetMuscle: b.targetMuscle,
+              bodyPart: b.bodyPart,
+            },
+          ]),
+      ),
     };
     try {
       localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
@@ -268,7 +293,67 @@ export default function WorkoutSessionPage() {
   // Guided-view callbacks operate on the same shared block state as the list view,
   // so progress (and the single finish/log path) survives toggling between views.
   const setReps = useCallback((bi: number, si: number, reps: number) => mutateSet(bi, si, { reps }), [mutateSet]);
-  const setWeight = useCallback((bi: number, si: number, weight: number) => mutateSet(bi, si, { weight }), [mutateSet]);
+  /**
+   * Sets a set's weight and carries it forward, since the same load is the likely next
+   * set. The carry stops at the first later set that is already done or that the user gave
+   * its own weight (a drop set, a pyramid) — matching on "still had the old weight" would
+   * sweep those up as a held ± passes through their value.
+   */
+  const setWeight = useCallback((bi: number, si: number, weight: number) => {
+    setBlocks((prev) =>
+      prev.map((b, i) => {
+        if (i !== bi || !b.sets[si]) return b;
+        const sets = b.sets.slice();
+        sets[si] = { ...sets[si], weight, weightEdited: true };
+        for (let j = si + 1; j < sets.length; j += 1) {
+          if (sets[j].completed || sets[j].weightEdited) break;
+          sets[j] = { ...sets[j], weight };
+        }
+        return { ...b, sets };
+      }),
+    );
+  }, []);
+
+  // Swap state: which block's "Find an alternative" dialog is open (list view — the
+  // guided view opens its own), and a counter so a slow last-performance lookup for an
+  // earlier swap can't pre-fill a later one.
+  const [swapIndex, setSwapIndex] = useState<number | null>(null);
+  const swapReqRef = useRef(0);
+
+  /**
+   * Replaces a block's exercise for this session. Sets still to do lose the old load, then
+   * get the new exercise's last logged weight if there is one — a better starting number
+   * than either zero or the weight of a different movement.
+   */
+  const swapExercise = useCallback(
+    (bi: number, pick: ExercisePick) => {
+      setBlocks((prev) => prev.map((b, i) => (i === bi ? swapBlock(b, pick).block : b)));
+      const reqId = ++swapReqRef.current;
+      const token = session?.access_token;
+      if (!pick.exerciseId || !token) return;
+      void (async () => {
+        try {
+          const { last } = await getLastPerformance(token, pick.exerciseId!);
+          if (reqId !== swapReqRef.current || last?.weight == null || last.weight <= 0) return;
+          const lastWeight = last.weight;
+          setBlocks((prev) =>
+            prev.map((b, i) => {
+              if (i !== bi || b.exercise_id !== pick.exerciseId) return b;
+              if (last.weight_unit && last.weight_unit !== b.weightUnit) return b;
+              return {
+                ...b,
+                // Only sets the user hasn't dialled in since the swap.
+                sets: b.sets.map((s) => (!s.completed && !s.weightEdited ? { ...s, weight: lastWeight } : s)),
+              };
+            }),
+          );
+        } catch {
+          // No history is fine — the dial just starts empty.
+        }
+      })();
+    },
+    [session],
+  );
   const completeSet = useCallback((bi: number, si: number) => mutateSet(bi, si, { completed: true }), [mutateSet]);
   /** Cardio/class report what actually happened rather than being tracked live. */
   const setCapture = useCallback(
@@ -493,6 +578,7 @@ export default function WorkoutSessionPage() {
           accessToken={session?.access_token}
           onSetReps={setReps}
           onSetWeight={setWeight}
+          onSwapExercise={swapExercise}
           onSetCapture={setCapture}
           onCompleteSet={completeSet}
           onFinish={finish}
@@ -515,13 +601,30 @@ export default function WorkoutSessionPage() {
                 {blockTargetText(block)}
                 {block.isPerSide && !perSideOnDial ? ' · each side' : ''}
               </div>
+              {block.swappedFrom ? (
+                <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                  Swapped from {block.swappedFrom}
+                </div>
+              ) : null}
               {block.notes ? (
                 <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
                   {block.notes}
                 </div>
               ) : null}
             </div>
-            <Badge tone="neutral" className="flex-shrink-0 whitespace-nowrap">{sectionLabel(block.section)}</Badge>
+            <div className="flex flex-shrink-0 items-center gap-2">
+              <Badge tone="neutral" className="whitespace-nowrap">{sectionLabel(block.section)}</Badge>
+              {isCatalogExercise(block.type) ? (
+                <button
+                  onClick={() => setSwapIndex(bi)}
+                  aria-label={`Find an alternative to ${block.name}`}
+                  className="flex h-8 w-8 items-center justify-center rounded-lg transition-transform active:scale-90"
+                  style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+                >
+                  <Shuffle size={15} color="var(--accent-text)" />
+                </button>
+              ) : null}
+            </div>
           </div>
 
           <div className="flex flex-col gap-2">
@@ -565,17 +668,21 @@ export default function WorkoutSessionPage() {
                   <div className="order-last grid w-full grid-cols-1 gap-x-5 gap-y-2 min-[340px]:grid-cols-2 sm:order-none sm:flex sm:w-auto sm:flex-1 sm:items-center sm:gap-4">
                     <Stepper
                       label={perSideOnDial ? 'reps/side' : 'reps'}
+                      entryLabel={`Set ${si + 1} reps`}
                       value={set.reps}
-                      step={1}
                       onMint={set.completed}
-                      onDelta={(d) => mutateSet(bi, si, { reps: Math.max(0, Math.round(set.reps + d)) })}
+                      onStep={(dir) => setReps(bi, si, Math.max(0, Math.round(set.reps + dir)))}
+                      onSet={(reps) => setReps(bi, si, reps)}
                     />
                     <Stepper
                       label={block.weightUnit}
+                      entryLabel={`Set ${si + 1} weight in ${block.weightUnit}`}
                       value={set.weight}
-                      step={1}
+                      decimals={2}
+                      bigStep={5}
                       onMint={set.completed}
-                      onDelta={(d) => mutateSet(bi, si, { weight: Math.max(0, Math.round((set.weight + d) * 10) / 10) })}
+                      onStep={(dir, scale) => setWeight(bi, si, stepValue(set.weight, dir, scale))}
+                      onSet={(weight) => setWeight(bi, si, weight)}
                     />
                   </div>
 
@@ -622,6 +729,19 @@ export default function WorkoutSessionPage() {
 
       {noteOpen && dayNotes ? (
         <SessionNoteDialog text={dayNotes} onClose={() => setNoteOpen(false)} />
+      ) : null}
+
+      {swapIndex != null && blocks[swapIndex] ? (
+        <FindAlternativeDialog
+          accessToken={session?.access_token}
+          name={blocks[swapIndex].name}
+          exerciseId={blocks[swapIndex].exercise_id}
+          onClose={() => setSwapIndex(null)}
+          onPick={(pick) => {
+            swapExercise(swapIndex, pick);
+            setSwapIndex(null);
+          }}
+        />
       ) : null}
 
       {exitOpen ? (
@@ -947,7 +1067,7 @@ function CaptureRow({
 }) {
   const set = block.sets[0];
   const completed = set?.completed ?? false;
-  const minutes = Math.round((set?.durationSeconds ?? 0) / 60);
+  const seconds = set?.durationSeconds ?? 0;
   const distanceKm = set?.distanceKm ?? 0;
 
   return (
@@ -962,19 +1082,31 @@ function CaptureRow({
         {block.type === 'cardio' ? (
           <Stepper
             label="km"
+            entryLabel="Distance in km"
             value={distanceKm}
-            step={0.5}
+            decimals={2}
             onMint={completed}
-            onDelta={(d) => onCapture({ distanceKm: Math.max(0, Math.round((distanceKm + d) * 10) / 10) })}
+            onStep={(dir) => onCapture({ distanceKm: Math.max(0, roundTo(distanceKm + dir * 0.5, 2)) })}
+            onSet={(km) => onCapture({ distanceKm: km })}
           />
         ) : null}
-        <Stepper
-          label="min"
-          value={minutes}
-          step={1}
-          onMint={completed}
-          onDelta={(d) => onCapture({ durationSeconds: Math.max(0, minutes + d) * 60 })}
-        />
+        {block.type === 'cardio' ? (
+          // A run's time is exact (32:45), so it is typed as a clock time, not minutes.
+          <TimeStepper
+            seconds={seconds}
+            onMint={completed}
+            onChange={(next) => onCapture({ durationSeconds: next })}
+          />
+        ) : (
+          <Stepper
+            label="min"
+            entryLabel="Class length in minutes"
+            value={Math.round(seconds / 60)}
+            onMint={completed}
+            onStep={(dir, scale) => onCapture({ durationSeconds: stepValue(Math.round(seconds / 60), dir, scale) * 60 })}
+            onSet={(mins) => onCapture({ durationSeconds: mins * 60 })}
+          />
+        )}
       </div>
 
       <button
@@ -993,24 +1125,97 @@ function CaptureRow({
 }
 
 /**
- * Compact ± stepper for the list rows. `onMint` is for a completed row: the mint fill is
- * the same in both themes, so it reads from the on-mint tokens instead of the theme ones.
+ * Compact ± stepper for the list rows. The number itself is typeable (tap it); ± taps
+ * step once and hold to repeat. `onMint` is for a completed row: the mint fill is the
+ * same in both themes, so it reads from the on-mint tokens instead of the theme ones.
  */
 function Stepper({
   label,
+  entryLabel,
   value,
-  step = 1,
+  decimals = 0,
+  bigStep,
   onMint = false,
-  onDelta,
+  onStep,
+  onSet,
 }: {
   label: string;
+  /** Accessible name for the typed field, e.g. "Set 2 weight in kg". */
+  entryLabel: string;
   value: number;
-  step?: number;
+  decimals?: number;
+  /** Step size once a hold runs long (weights: 5). */
+  bigStep?: number;
   onMint?: boolean;
-  onDelta: (delta: number) => void;
+  onStep: (direction: 1 | -1, scale: number) => void;
+  onSet: (value: number) => void;
 }) {
-  const dec = useHoldRepeat(() => onDelta(-step));
-  const inc = useHoldRepeat(() => onDelta(step));
+  const dec = useHoldRepeat((scale) => onStep(-1, scale), { bigStep });
+  const inc = useHoldRepeat((scale) => onStep(1, scale), { bigStep });
+  return (
+    <StepperFrame
+      label={label}
+      decLabel={`Decrease ${label}`}
+      incLabel={`Increase ${label}`}
+      dec={dec}
+      inc={inc}
+      onMint={onMint}
+    >
+      <NumberEntry
+        value={value}
+        decimals={decimals}
+        onCommit={onSet}
+        label={entryLabel}
+        fill
+        className="text-[16px] leading-tight"
+        color={onMint ? 'var(--text-on-mint)' : 'var(--text-primary)'}
+      />
+    </StepperFrame>
+  );
+}
+
+/** A clock-time capture (run/walk/ride): ± whole minutes, tap the time to type it exactly. */
+function TimeStepper({
+  seconds,
+  onMint = false,
+  onChange,
+}: {
+  seconds: number;
+  onMint?: boolean;
+  onChange: (seconds: number) => void;
+}) {
+  const dec = useHoldRepeat((scale) => onChange(Math.max(0, seconds - 60 * scale)), { bigStep: 5 });
+  const inc = useHoldRepeat((scale) => onChange(seconds + 60 * scale), { bigStep: 5 });
+  return (
+    <StepperFrame label="time" decLabel="Decrease time by a minute" incLabel="Increase time by a minute" dec={dec} inc={inc} onMint={onMint}>
+      <DurationEntry
+        label="Time"
+        seconds={seconds}
+        onCommit={onChange}
+        className="text-[15px] leading-tight"
+        style={onMint ? { color: 'var(--text-on-mint)' } : undefined}
+      />
+    </StepperFrame>
+  );
+}
+
+function StepperFrame({
+  label,
+  decLabel,
+  incLabel,
+  dec,
+  inc,
+  onMint,
+  children,
+}: {
+  label: string;
+  decLabel: string;
+  incLabel: string;
+  dec: ReturnType<typeof useHoldRepeat>;
+  inc: ReturnType<typeof useHoldRepeat>;
+  onMint: boolean;
+  children: ReactNode;
+}) {
   const buttonStyle = onMint
     ? { background: 'var(--bg-on-mint)', border: '1px solid var(--border-on-mint)' }
     : { background: 'var(--bg-surface)', border: '1px solid var(--border-base)' };
@@ -1019,7 +1224,7 @@ function Stepper({
     <div className="flex min-w-0 items-center justify-between gap-1 sm:justify-start sm:gap-1.5">
       <button
         {...dec}
-        aria-label={`Decrease ${label}`}
+        aria-label={decLabel}
         className="flex h-7 w-7 flex-shrink-0 select-none items-center justify-center rounded-lg"
         style={buttonStyle}
       >
@@ -1027,17 +1232,15 @@ function Stepper({
       </button>
       {/* Half a phone row is too narrow for "107.5 kg" inline, so the unit drops under
           the number below `sm`. */}
-      <div className="flex min-w-0 flex-1 flex-col items-center whitespace-nowrap text-center sm:block sm:min-w-[52px] sm:flex-none">
-        <span className="tabular text-[14px] font-extrabold leading-tight min-[380px]:text-[15px]" style={{ color: onMint ? 'var(--text-on-mint)' : 'var(--text-primary)' }}>
-          {value}
-        </span>
-        <span className="text-[10.5px] leading-tight sm:ml-1 sm:text-[11px]" style={{ color: onMint ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}>
+      <div className="flex min-w-0 flex-1 flex-col items-center whitespace-nowrap text-center sm:flex-row sm:items-baseline sm:gap-1 sm:min-w-[60px] sm:flex-none">
+        {children}
+        <span className="text-[10.5px] leading-tight sm:text-[11px]" style={{ color: onMint ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}>
           {label}
         </span>
       </div>
       <button
         {...inc}
-        aria-label={`Increase ${label}`}
+        aria-label={incLabel}
         className="flex h-7 w-7 flex-shrink-0 select-none items-center justify-center rounded-lg"
         style={buttonStyle}
       >

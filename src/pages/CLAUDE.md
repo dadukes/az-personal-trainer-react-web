@@ -36,7 +36,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
 | `/delete-account` | `DeleteAccountPage` | **Public** (no auth guard, no shell): Play-required deletion URL; signs the user in, then deletes |
 | `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
-| `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link/alternatives, remove |
+| `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link via `FindAlternativeDialog`, remove |
 | `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → `logWorkout` |
 | `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts). Open session is `?session=<id>`: two screens below `lg` (list → transcript, Back returns to list), side by side from `lg` |
 
@@ -62,6 +62,14 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   timed hold runs the clock twice with a tap-to-continue **"Switch side"** stop in between, and
   logs both sides' seconds. The planned hold time is owned by `WorkoutGuided` (not the ring) so a
   ± adjustment carries across the block's sets and is what `logWorkout` receives.
+  **Weight carries forward**: `setWeight` applies a set's new weight to later sets until it hits one
+  that is completed or has `weightEdited` (the user dialled it themselves). Don't "simplify" it to
+  "later sets still on the old value" — a held ± sweeps up a pyramid/drop set as it passes through
+  that value. Reps deliberately don't carry (they're the outcome, not the plan).
+  **Find an alternative** swaps a catalog-type block **for this session only** (`swapBlock`): the
+  block key stays the plan's so the persisted signature still matches, swaps persist in
+  `forma:workout-session` (`swaps`), not-done sets reset their weight (then pre-fill from
+  `getLastPerformance`), and `swapped_from` is sent to `logWorkout`. The plan is never changed.
 - **Profile / coach memory**: the `CoachMemory` card sits between Personalization and the save
   row and shows the AI's global memory — the same `user_memory` rows the backend pastes into the
   coach's system instruction — with edit / add / forget. It is deliberately **outside** the
@@ -99,6 +107,9 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   the backend fuzzy-matches any `name`-without-`exercise_id` and stamps the canonical id, so a
   manually typed exercise self-links on save; the detail page's search just lets the user pick the
   exact match instead. `main` section ↔ the plan's `exercises` array.
+  Swaps from a day row (shuffle button) and from the detail page both open `FindAlternativeDialog`
+  and write through `swapPlanExercise` as ordinary draft edits (saved with `Save changes`). Below
+  `sm` the row's target text sits under the name, leaving room for the swap button.
 
 ## UI & branding
 

@@ -1,19 +1,17 @@
-import { ChevronDown, ChevronLeft, ChevronUp, Dumbbell, History, Info, Link2, Minus, Plus, Search, Shuffle, Sparkles, Trash2, Unlink } from 'lucide-react';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { ChevronDown, ChevronLeft, ChevronUp, History, Info, Link2, Minus, Plus, Shuffle, Sparkles, Trash2, Unlink } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ExerciseLookup } from '@/components/ExerciseLookup';
+import FindAlternativeDialog from '@/components/FindAlternativeDialog';
+import { NumberEntry } from '@/components/NumberEntry';
 import { Badge, Button, Card, Chip, Eyebrow, Input, SegmentedToggle } from '@/components/ui';
 import {
-  getExerciseAlternatives,
   getExerciseDetail,
   getLastPerformance,
   getWorkoutPlan,
-  searchExercises,
   type CardioActivityKind,
-  type CatalogExerciseSummary,
   type DashboardExercise,
-  type ExerciseAlternative,
   type ExerciseDetail,
   type ExerciseIntervals,
   type ExerciseType,
@@ -26,9 +24,12 @@ import {
   hrZoneLabel,
   isCatalogExercise,
   resolveExerciseType,
+  swapPlanExercise,
   usesCountdown,
+  type ExercisePick,
 } from '@/lib/exercise';
-import { useHoldRepeat } from '@/lib/useHoldRepeat';
+import { roundTo } from '@/lib/numberEntry';
+import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type PlanSection } from '@/store/useAppStore';
 
@@ -115,18 +116,27 @@ function Stepper({
   value,
   step = 1,
   min = 0,
+  bigStep,
+  decimals = 0,
   onDelta,
+  onSet,
 }: {
   label: string;
   value: number;
   step?: number;
   min?: number;
-  onDelta: (delta: number) => void;
+  /** Step size once a hold runs long; passed to `onDelta` as `scale`. */
+  bigStep?: number;
+  decimals?: number;
+  /** `delta` is ±`step`; `scale` is 1, or `bigStep` once a hold has run long. */
+  onDelta: (delta: number, scale: number) => void;
+  /** Makes the number typeable (tap it). */
+  onSet?: (value: number) => void;
 }) {
   // Every target moves in single units (hold ± to run), so the plan can say exactly
   // 22 kg or 40 s rather than whatever a coarse step happens to land on.
-  const dec = useHoldRepeat(() => onDelta(-step));
-  const inc = useHoldRepeat(() => onDelta(step));
+  const dec = useHoldRepeat((scale) => onDelta(-step, scale), { bigStep });
+  const inc = useHoldRepeat((scale) => onDelta(step, scale), { bigStep });
   return (
     <div className="flex items-center justify-between gap-2 rounded-xl px-3 py-2.5" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}>
       <span className="min-w-0 text-[12px] font-semibold uppercase tracking-[0.06em]" style={{ color: 'var(--text-label)' }}>
@@ -142,9 +152,20 @@ function Stepper({
         >
           <Minus size={13} color="var(--text-secondary)" />
         </button>
-        <span className="tabular min-w-[40px] text-center text-[16px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-          {value}
-        </span>
+        {onSet ? (
+          <NumberEntry
+            value={value}
+            decimals={decimals}
+            min={min}
+            onCommit={onSet}
+            label={label}
+            className="min-w-[40px] text-[16px]"
+          />
+        ) : (
+          <span className="tabular min-w-[40px] text-center text-[16px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+            {value}
+          </span>
+        )}
         <button
           {...inc}
           aria-label={`Increase ${label}`}
@@ -371,43 +392,6 @@ function LastPerformanceCard({
   );
 }
 
-// ─── Search / alternatives result row ─────────────────────────────────────────
-
-function CatalogRow({
-  item,
-  why,
-  onPick,
-}: {
-  item: CatalogExerciseSummary;
-  why?: string;
-  onPick: () => void;
-}) {
-  return (
-    <button
-      onClick={onPick}
-      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-transform active:scale-[0.99]"
-      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
-    >
-      <div className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg" style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}>
-        {item.image_url ? (
-          <img src={item.image_url} alt="" className="h-full w-full object-contain" />
-        ) : (
-          <Dumbbell size={18} color="var(--text-muted)" />
-        )}
-      </div>
-      <div className="min-w-0 flex-1">
-        <div className="truncate text-[13.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-          {item.name}
-        </div>
-        <div className="truncate text-[12px] capitalize" style={{ color: 'var(--text-muted)' }}>
-          {why ?? [item.target, item.equipment].filter(Boolean).join(' · ')}
-        </div>
-      </div>
-      <Plus size={16} color="var(--accent-text)" className="flex-shrink-0" />
-    </button>
-  );
-}
-
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function ExerciseDetailPage() {
@@ -538,117 +522,14 @@ export default function ExerciseDetailPage() {
   );
 
   const pick = useCallback(
-    (item: CatalogExerciseSummary) => {
+    (item: ExercisePick) => {
       if (!ex) return;
-      const swapped = ex.exercise_id && ex.exercise_id !== item.id ? ex.name : ex.swapped_from;
-      replaceDraftExercise(section, index, {
-        ...ex,
-        name: item.name,
-        exercise_id: item.id,
-        target_muscle: item.target ?? undefined,
-        body_part: item.body_part ?? undefined,
-        swapped_from: swapped,
-        last_performance: undefined,
-      });
+      replaceDraftExercise(section, index, swapPlanExercise(ex, item));
     },
     [ex, replaceDraftExercise, section, index],
   );
 
-  // ── Search state (name-search mode: offset-paginated within a bounded set) ──
-  // The provider's name search returns a small bounded window (~10 max), so keep the page
-  // size below it — otherwise page one grabs everything and "Load more" never shows.
-  const SEARCH_PAGE_SIZE = 8;
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<CatalogExerciseSummary[]>([]);
-  const [total, setTotal] = useState(0);
-  const [searching, setSearching] = useState(false);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const reqIdRef = useRef(0);
-
-  const clearSearch = useCallback(() => {
-    setQuery('');
-    setResults([]);
-    setTotal(0);
-    setLoadingMore(false);
-  }, []);
-
-  // First page: (re)runs whenever the debounced term changes.
-  useEffect(() => {
-    const term = query.trim();
-    if (term.length < 2 || !session?.access_token) {
-      setResults([]);
-      setTotal(0);
-      setSearching(false);
-      setLoadingMore(false);
-      return;
-    }
-    setSearching(true);
-    const reqId = ++reqIdRef.current;
-    const handle = setTimeout(async () => {
-      try {
-        const res = await searchExercises(session.access_token, {
-          search: term,
-          limit: SEARCH_PAGE_SIZE,
-          offset: 0,
-        });
-        if (reqId === reqIdRef.current) {
-          setResults(res.exercises);
-          setTotal(res.total);
-        }
-      } catch {
-        if (reqId === reqIdRef.current) {
-          setResults([]);
-          setTotal(0);
-        }
-      } finally {
-        if (reqId === reqIdRef.current) setSearching(false);
-      }
-    }, 350);
-    return () => clearTimeout(handle);
-  }, [query, session]);
-
-  // Next page: append the following offset slice, keyed to the live search request
-  // so a fresh query started meanwhile discards this stale page.
-  const loadMore = useCallback(async () => {
-    const term = query.trim();
-    if (!session?.access_token || term.length < 2) return;
-    const reqId = reqIdRef.current;
-    setLoadingMore(true);
-    try {
-      const res = await searchExercises(session.access_token, {
-        search: term,
-        limit: SEARCH_PAGE_SIZE,
-        offset: results.length,
-      });
-      if (reqId === reqIdRef.current) {
-        setResults((prev) => [...prev, ...res.exercises]);
-        setTotal(res.total);
-      }
-    } catch {
-      /* keep the pages we already have */
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [query, session, results.length]);
-
-  const hasMoreResults = results.length < total;
-
-  // ── Alternatives state ──
-  const [alts, setAlts] = useState<ExerciseAlternative[] | null>(null);
-  const [altsLoading, setAltsLoading] = useState(false);
-
-  const loadAlternatives = useCallback(async () => {
-    if (!session?.access_token || !ex?.exercise_id) return;
-    setAltsLoading(true);
-    try {
-      const res = await getExerciseAlternatives(session.access_token, ex.exercise_id);
-      setAlts(res.alternatives);
-    } catch {
-      setAlts([]);
-    } finally {
-      setAltsLoading(false);
-    }
-  }, [session, ex?.exercise_id]);
+  const [swapOpen, setSwapOpen] = useState(false);
 
   if (loading) {
     return (
@@ -812,17 +693,21 @@ export default function ExerciseDetailPage() {
                     label="Work (sec)"
                     value={ex.intervals.work_seconds}
                     min={1}
-                    onDelta={(d) =>
-                      patchIntervals({ work_seconds: Math.max(1, ex.intervals!.work_seconds + d) })
+                    bigStep={5}
+                    onDelta={(d, scale) =>
+                      patchIntervals({ work_seconds: stepValue(ex.intervals!.work_seconds, d > 0 ? 1 : -1, scale, 1) })
                     }
+                    onSet={(v) => patchIntervals({ work_seconds: v })}
                   />
                   <Stepper
                     label="Recover (sec)"
                     value={ex.intervals.recover_seconds}
                     min={0}
-                    onDelta={(d) =>
-                      patchIntervals({ recover_seconds: Math.max(0, ex.intervals!.recover_seconds + d) })
+                    bigStep={5}
+                    onDelta={(d, scale) =>
+                      patchIntervals({ recover_seconds: stepValue(ex.intervals!.recover_seconds, d > 0 ? 1 : -1, scale) })
                     }
+                    onSet={(v) => patchIntervals({ recover_seconds: v })}
                   />
                   <ZonePicker
                     label="Work zone"
@@ -841,16 +726,21 @@ export default function ExerciseDetailPage() {
                     label="Distance (km)"
                     value={ex.distance_km ?? 0}
                     step={0.5}
+                    decimals={2}
                     onDelta={(d) =>
-                      patch({ distance_km: Math.max(0, Math.round(((ex.distance_km ?? 0) + d) * 10) / 10) })
+                      // Two decimals, so a typed 5.23 km steps to 5.73 rather than rounding to 5.7.
+                      patch({ distance_km: Math.max(0, roundTo((ex.distance_km ?? 0) + d, 2)) })
                     }
+                    onSet={(v) => patch({ distance_km: v })}
                   />
                   <Stepper
                     label="Duration (min)"
                     value={ex.target_duration_minutes ?? 0}
-                    onDelta={(d) =>
-                      patch({ target_duration_minutes: Math.max(0, (ex.target_duration_minutes ?? 0) + d) })
+                    bigStep={5}
+                    onDelta={(d, scale) =>
+                      patch({ target_duration_minutes: stepValue(ex.target_duration_minutes ?? 0, d > 0 ? 1 : -1, scale) })
                     }
+                    onSet={(v) => patch({ target_duration_minutes: v })}
                   />
                   <ZonePicker
                     label="Target zone"
@@ -872,9 +762,11 @@ export default function ExerciseDetailPage() {
                 label="Duration (min)"
                 value={ex.target_duration_minutes ?? 45}
                 min={1}
-                onDelta={(d) =>
-                  patch({ target_duration_minutes: Math.max(1, (ex.target_duration_minutes ?? 45) + d) })
+                bigStep={5}
+                onDelta={(d, scale) =>
+                  patch({ target_duration_minutes: stepValue(ex.target_duration_minutes ?? 45, d > 0 ? 1 : -1, scale, 1) })
                 }
+                onSet={(v) => patch({ target_duration_minutes: v })}
               />
             </>
           ) : (
@@ -891,7 +783,11 @@ export default function ExerciseDetailPage() {
                   label="Duration (sec)"
                   value={ex.duration_seconds ?? 30}
                   min={1}
-                  onDelta={(d) => patch({ duration_seconds: Math.max(1, (ex.duration_seconds ?? 30) + d) })}
+                  bigStep={5}
+                  onDelta={(d, scale) =>
+                    patch({ duration_seconds: stepValue(ex.duration_seconds ?? 30, d > 0 ? 1 : -1, scale, 1) })
+                  }
+                  onSet={(v) => patch({ duration_seconds: v })}
                 />
               ) : (
                 <>
@@ -900,17 +796,21 @@ export default function ExerciseDetailPage() {
                     value={ex.reps ?? ''}
                     onChange={(e) => patch({ reps: e.target.value })}
                   />
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1">
+                  {/* The unit toggle wraps under the stepper when a phone can't fit both. */}
+                  <div className="flex flex-wrap items-center justify-end gap-3">
+                    <div className="min-w-[220px] flex-1">
                       <Stepper
                         label={`Weight (${unit})`}
                         value={ex.target_weight ?? 0}
-                        onDelta={(d) =>
+                        decimals={2}
+                        bigStep={5}
+                        onDelta={(d, scale) =>
                           patch({
-                            target_weight: Math.max(0, Math.round(((ex.target_weight ?? 0) + d) * 10) / 10),
+                            target_weight: stepValue(ex.target_weight ?? 0, d > 0 ? 1 : -1, scale),
                             weight_unit: unit,
                           })
                         }
+                        onSet={(w) => patch({ target_weight: w, weight_unit: unit })}
                       />
                     </div>
                     <div className="w-24">
@@ -946,7 +846,9 @@ export default function ExerciseDetailPage() {
             <Stepper
               label="Rest (sec)"
               value={ex.rest_seconds ?? 0}
-              onDelta={(d) => patch({ rest_seconds: Math.max(0, (ex.rest_seconds ?? 0) + d) })}
+              bigStep={5}
+              onDelta={(d, scale) => patch({ rest_seconds: stepValue(ex.rest_seconds ?? 0, d > 0 ? 1 : -1, scale) })}
+              onSet={(v) => patch({ rest_seconds: v })}
             />
           ) : null}
 
@@ -964,92 +866,31 @@ export default function ExerciseDetailPage() {
       <Card>
         <Eyebrow className="mb-3">Change or link exercise</Eyebrow>
 
-        {ex.exercise_id ? (
-          <div className="mb-3 flex flex-wrap items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={loadAlternatives} disabled={altsLoading} leftIcon={<Shuffle size={14} />}>
-              {altsLoading ? 'Finding…' : 'Suggest alternatives'}
-            </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button variant="secondary" size="sm" onClick={() => setSwapOpen(true)} leftIcon={<Shuffle size={14} />}>
+            {ex.exercise_id ? 'Find alternative' : 'Search the catalog'}
+          </Button>
+          {ex.exercise_id ? (
             <Button variant="ghost" size="sm" onClick={() => patch({ exercise_id: undefined })} leftIcon={<Unlink size={14} />}>
               Unlink
             </Button>
-          </div>
-        ) : null}
-
-        {alts ? (
-          <div className="mb-3 flex flex-col gap-2">
-            {alts.length === 0 ? (
-              <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
-                No alternatives found.
-              </p>
-            ) : (
-              alts.map((a) => (
-                <CatalogRow
-                  key={a.id}
-                  item={a}
-                  why={a.why}
-                  onPick={() => {
-                    pick(a);
-                    setAlts(null);
-                  }}
-                />
-              ))
-            )}
-          </div>
-        ) : null}
-
-        <div className="relative">
-          <Search size={16} color="var(--text-muted)" className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2" />
-          <Input
-            value={query}
-            placeholder="Search ExerciseDB…"
-            onChange={(e) => setQuery(e.target.value)}
-            style={{ paddingLeft: 40 }}
-          />
+          ) : null}
         </div>
-
-        {searching ? (
-          <p className="mt-2 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-            Searching…
-          </p>
-        ) : results.length > 0 ? (
-          <>
-            <div className="mb-2 mt-3 text-[11.5px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
-              Showing {results.length}
-              {total > results.length ? ` of ${total}` : ''} — matches are loose, scroll for more
-            </div>
-            <div
-              className="flex max-h-[340px] flex-col gap-2 overflow-y-auto pr-1"
-              style={{ overscrollBehavior: 'contain' }}
-            >
-              {results.map((r) => (
-                <CatalogRow
-                  key={r.id}
-                  item={r}
-                  onPick={() => {
-                    pick(r);
-                    clearSearch();
-                  }}
-                />
-              ))}
-              {hasMoreResults ? (
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  fullWidth
-                  onClick={loadMore}
-                  disabled={loadingMore}
-                >
-                  {loadingMore ? 'Loading…' : 'Load more results'}
-                </Button>
-              ) : null}
-            </div>
-          </>
-        ) : query.trim().length >= 2 ? (
-          <p className="mt-2 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-            No matches — you can also keep the typed name and we&rsquo;ll match it on save.
-          </p>
-        ) : null}
       </Card>
+      ) : null}
+
+      {swapOpen ? (
+        <FindAlternativeDialog
+          accessToken={session?.access_token}
+          name={ex.name}
+          exerciseId={ex.exercise_id}
+          title={ex.exercise_id ? 'Find an alternative' : 'Link or swap exercise'}
+          onClose={() => setSwapOpen(false)}
+          onPick={(item) => {
+            pick(item);
+            setSwapOpen(false);
+          }}
+        />
       ) : null}
 
       {/* Danger */}

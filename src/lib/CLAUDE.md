@@ -73,6 +73,12 @@ for project-wide rules.
   moves in **single units** — 1 kg/lb, 1 min, 1 s — so any real value is reachable exactly. Don't
   reintroduce coarse steps (2.5 kg, 5 min, 15 s); users asked for this explicitly. Distance keeps
   its 0.5 km step, and the guided hold's ± stays at 5 s.
-- `useHoldRepeat(onStep)` makes that bearable: spread its handlers on the button. A tap steps once
-  via the normal `click` (so a scroll gesture starting on the button changes nothing); holding
-  repeats after 400 ms and speeds up. `onStep` is read through a ref, so repeats see fresh values.
+- `useHoldRepeat(onStep, { bigStep })` makes that bearable: spread its handlers on the button. A tap
+  steps once via the normal `click` (so a scroll gesture starting on the button changes nothing);
+  holding repeats after 400 ms and speeds up. `onStep(scale)` is read through a ref, so repeats see
+  fresh values. With `bigStep` (weights: 5 kg; minutes: 5 min; plan-editor seconds: 5 s) a hold switches to that size
+  ~1.4 s in — pair it with `stepValue`, which keeps single-unit taps additive (12.5 → 13.5) and snaps
+  big steps to multiples (12.5 → 15 → 20). Taps are never coarse.
+- Steppers are not the only way in: the number itself is typeable (`NumberEntry` / `DurationEntry`
+  in `src/components/NumberEntry.tsx`, rules in `numberEntry.ts`). Weights and distances keep 2
+  decimals and accept a comma decimal separator; cardio time is typed as h / min / sec.

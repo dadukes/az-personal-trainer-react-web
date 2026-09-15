@@ -12,6 +12,7 @@ import {
 } from '@/lib/api';
 import {
   cardioKindLabel,
+  type ExercisePick,
   formatDistanceKm,
   formatIntervalPair,
   formatSeconds,
@@ -25,6 +26,11 @@ import {
 export interface SetActual {
   reps: number;
   weight: number;
+  /**
+   * The user set this set's weight themselves (rather than it following an earlier set).
+   * A weight change carries forward to later sets only up to the first one that has this.
+   */
+  weightEdited?: boolean;
   completed: boolean;
   /**
    * Captured seconds. Holds use the planned duration; cardio/class capture what the user
@@ -54,6 +60,8 @@ export interface Block {
   cues?: string[];
   targetMuscle?: string;
   bodyPart?: string;
+  /** Set when the user swapped the planned exercise mid-session; the plan's name. */
+  swappedFrom?: string;
   // ── cardio ──
   activityKind?: CardioActivityKind;
   cardioFormat?: CardioFormat;
@@ -94,6 +102,56 @@ export function intervalTotalSeconds(block: Block): number {
 }
 
 export { parseRepTarget } from '@/lib/exercise';
+
+/** The identity a mid-session swap changes — persisted so a reload keeps the swap. */
+export interface BlockSwap {
+  name: string;
+  exercise_id?: string;
+  swappedFrom?: string;
+  targetMuscle?: string;
+  bodyPart?: string;
+}
+
+/**
+ * Swaps the exercise a block performs, for this session only (the plan is untouched).
+ *
+ * The block's `key` deliberately stays the plan's, so the persisted-session signature
+ * still matches and completed sets stay where they are. Sets not yet done lose their
+ * weight — a different movement rarely shares a load, and a stale 60 kg pre-filled on a
+ * dumbbell swap is worse than an empty dial (the caller may pre-fill last performance).
+ */
+export function swapBlock(block: Block, pick: ExercisePick): { block: Block; swap: BlockSwap } {
+  const planned = block.swappedFrom ?? block.name;
+  const swap: BlockSwap = {
+    name: pick.name,
+    exercise_id: pick.exerciseId,
+    // Swapping back to what the plan said is not a swap any more.
+    swappedFrom: pick.name.trim().toLowerCase() === planned.trim().toLowerCase() ? undefined : planned,
+    targetMuscle: pick.targetMuscle,
+    bodyPart: pick.bodyPart,
+  };
+  return {
+    swap,
+    block: {
+      ...applyBlockSwap(block, swap),
+      sets: block.sets.map((s) => (s.completed ? s : { ...s, weight: 0, weightEdited: false })),
+    },
+  };
+}
+
+/** Re-applies a persisted swap onto a freshly built block (identity only, not sets). */
+export function applyBlockSwap(block: Block, swap: BlockSwap): Block {
+  return {
+    ...block,
+    name: swap.name,
+    exercise_id: swap.exercise_id,
+    swappedFrom: swap.swappedFrom,
+    targetMuscle: swap.targetMuscle,
+    bodyPart: swap.bodyPart,
+    // Cues are the plan's cues for the old movement; the demo loads the new one's.
+    cues: undefined,
+  };
+}
 
 /** The at-a-glance target for a block — the session-side twin of `exerciseMeta`. */
 export function blockTargetText(block: Block): string {
@@ -255,6 +313,7 @@ export function toLoggedExercises(blocks: Block[]): LoggedExercise[] {
       section: b.section,
       type: b.type,
       ...(distanceKm && distanceKm > 0 ? { distance_km: distanceKm } : {}),
+      ...(b.swappedFrom ? { swapped_from: b.swappedFrom } : {}),
       skipped: !b.sets.some((s) => s.completed),
       sets: b.sets.map((s, i) => ({
         set_number: i + 1,

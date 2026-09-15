@@ -211,6 +211,38 @@ export function exerciseMeta(ex: DashboardExercise): string {
   }
 }
 
+// ─── Swapping ─────────────────────────────────────────────────────────────────
+
+/**
+ * What the "Find an alternative" dialog hands back: a catalog exercise, or a name the
+ * user typed that the catalog doesn't have (no `exerciseId`).
+ */
+export interface ExercisePick {
+  name: string;
+  exerciseId?: string;
+  targetMuscle?: string;
+  bodyPart?: string;
+}
+
+/**
+ * A plan exercise with `pick` swapped in. Linking an unlinked exercise is not a swap, so
+ * `swapped_from` is only stamped when a catalog-linked exercise is replaced by another.
+ * Cues and the last-performance cache describe the old movement and are dropped.
+ */
+export function swapPlanExercise(ex: DashboardExercise, pick: ExercisePick): DashboardExercise {
+  const swapped = Boolean(ex.exercise_id) && ex.exercise_id !== pick.exerciseId;
+  return {
+    ...ex,
+    name: pick.name,
+    exercise_id: pick.exerciseId,
+    target_muscle: pick.targetMuscle,
+    body_part: pick.bodyPart,
+    swapped_from: swapped ? ex.name : ex.swapped_from,
+    cues: swapped ? undefined : ex.cues,
+    last_performance: undefined,
+  };
+}
+
 /**
  * Whether a plan exercise is a timed / hold movement (uses a countdown) rather than
  * a reps-and-weight movement.

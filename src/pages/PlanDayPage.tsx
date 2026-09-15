@@ -11,6 +11,7 @@ import {
   Play,
   Plus,
   Sailboat,
+  Shuffle,
   StretchHorizontal,
   Timer,
   Users,
@@ -20,6 +21,7 @@ import {
 import { useEffect, useState, type ComponentType } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import { getWorkoutPlan, updatePlanDay, type DashboardExercise } from '@/lib/api';
 import {
@@ -27,6 +29,7 @@ import {
   exerciseMeta,
   isCatalogExercise,
   resolveExerciseType,
+  swapPlanExercise,
   type ExerciseIconKey,
 } from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
@@ -66,12 +69,14 @@ function ExerciseRow({
   count,
   onOpen,
   onMove,
+  onSwap,
 }: {
   ex: DashboardExercise;
   index: number;
   count: number;
   onOpen: () => void;
   onMove: (direction: -1 | 1) => void;
+  onSwap: () => void;
 }) {
   const type = resolveExerciseType(ex);
   const subtitle = ex.target_muscle ?? ex.body_part;
@@ -121,17 +126,33 @@ function ExerciseRow({
               <Link2 size={13} color="var(--forma-danger)" aria-label="Not linked to ExerciseDB" />
             ) : null}
           </div>
-          {subtitle ? (
-            <div className="mt-0.5 truncate text-[12px] capitalize" style={{ color: 'var(--text-muted)' }}>
-              {subtitle}
-            </div>
-          ) : null}
+          {/* Below `sm` the target rides under the name: with the swap button in the row,
+              an inline "30s hold each side" left no room for the name at all. */}
+          <div className="mt-0.5 truncate text-[12px]" style={{ color: 'var(--text-muted)' }}>
+            <span className="tabular font-semibold sm:hidden" style={{ color: 'var(--text-secondary)' }}>
+              {exerciseMeta(ex)}
+              {subtitle ? ' · ' : ''}
+            </span>
+            {subtitle ? <span className="capitalize">{subtitle}</span> : null}
+          </div>
         </div>
-        <span className="tabular flex-shrink-0 text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
+        <span className="tabular hidden flex-shrink-0 text-[13px] font-semibold sm:inline" style={{ color: 'var(--text-secondary)' }}>
           {exerciseMeta(ex)}
         </span>
         <ChevronRight size={18} color="var(--text-muted)" className="flex-shrink-0" />
       </button>
+
+      {/* Swapping is the most common edit, so it doesn't need a trip into the detail page. */}
+      {isCatalogExercise(type) ? (
+        <button
+          onClick={onSwap}
+          aria-label={`Find an alternative to ${ex.name}`}
+          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-transform active:scale-90"
+          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+        >
+          <Shuffle size={15} color="var(--accent-text)" />
+        </button>
+      ) : null}
     </div>
   );
 }
@@ -141,12 +162,14 @@ export default function PlanDayPage() {
   const navigate = useNavigate();
   const { session } = useAuth();
   const dayKey = resolveDayKey(day);
-  const { planDraft, initPlanDraft, addDraftExercise, moveDraftExercise, markPlanSaved } = useAppStore();
+  const { planDraft, initPlanDraft, addDraftExercise, moveDraftExercise, replaceDraftExercise, markPlanSaved } =
+    useAppStore();
 
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [swapTarget, setSwapTarget] = useState<{ section: PlanSection; index: number } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -177,6 +200,9 @@ export default function PlanDayPage() {
   const isRest = !dayPlan || dayPlan.is_rest_day;
   const dirty = planDraft?.dirty ?? false;
   const canSave = Boolean(planDraft?.planId);
+  const swapExercise = swapTarget
+    ? dayPlan?.[SECTIONS.find((s) => s.key === swapTarget.section)!.field]?.[swapTarget.index]
+    : undefined;
 
   const handleAdd = (section: PlanSection) => {
     const field = SECTIONS.find((s) => s.key === section)!.field;
@@ -295,6 +321,7 @@ export default function PlanDayPage() {
                       count={items.length}
                       onOpen={() => navigate(`/plan/${dayKey}/exercise/${key}/${i}`)}
                       onMove={(dir) => moveDraftExercise(key, i, dir)}
+                      onSwap={() => setSwapTarget({ section: key, index: i })}
                     />
                   ))}
                   <button
@@ -328,6 +355,20 @@ export default function PlanDayPage() {
           ) : null}
         </>
       )}
+
+      {swapTarget && swapExercise ? (
+        <FindAlternativeDialog
+          accessToken={session?.access_token}
+          name={swapExercise.name}
+          exerciseId={swapExercise.exercise_id}
+          onClose={() => setSwapTarget(null)}
+          onPick={(pick) => {
+            // A draft edit like any other — it persists with "Save changes".
+            replaceDraftExercise(swapTarget.section, swapTarget.index, swapPlanExercise(swapExercise, pick));
+            setSwapTarget(null);
+          }}
+        />
+      ) : null}
 
       {/* Sticky save bar — appears when there are unsaved edits. */}
       {dirty && canSave ? (

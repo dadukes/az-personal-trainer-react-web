@@ -27,6 +27,17 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   to "data-fetching belongs in pages": it owns its own `getUserMemory` load and per-row
   `PATCH`/`DELETE`, because memory changes independently of the cached profile and each row
   saves on its own rather than joining the profile form's submit.
+- **`NumberEntry.tsx`** — typed entry for stepper values. `NumberEntry` is the number itself as a
+  text field (dashed underline = tappable): edits a string draft while focused so "12," survives,
+  commits on blur/Enter, Escape or an empty field reverts. `DurationEntry` shows "32:45"/"1:05:30"
+  and opens an h/min/sec sheet (a numeric keypad has no ":"). Input font must stay **≥16px** or
+  iOS zooms on focus. The sheet is portalled.
+- **`FindAlternativeDialog.tsx`** — "Find an alternative": suggestions on open
+  (`GET /exercises/{id}/alternatives`; an unlinked exercise first borrows its nearest name match's
+  id, which is offered too) plus a search with a "use as typed" escape hatch. Returns an
+  `ExercisePick`; the caller decides what a pick means (session swap vs plan draft edit). Like
+  `CoachMemory` it owns its fetching. Full-screen below `sm` (a bottom sheet sits under the
+  keyboard once search is focused), centred dialog above; portalled; search is not auto-focused.
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.

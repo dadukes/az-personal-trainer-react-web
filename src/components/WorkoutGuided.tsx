@@ -1,12 +1,14 @@
-import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Sparkles, X } from 'lucide-react';
+import { ArrowLeftRight, Check, ChevronDown, ChevronRight, ChevronUp, Dumbbell, Minus, Play, Plus, Shuffle, Sparkles, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ExerciseLookup } from '@/components/ExerciseLookup';
+import FindAlternativeDialog from '@/components/FindAlternativeDialog';
+import { NumberEntry } from '@/components/NumberEntry';
 import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
 import { Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail } from '@/lib/api';
-import { cardioKindVerb, isCatalogExercise } from '@/lib/exercise';
-import { useHoldRepeat } from '@/lib/useHoldRepeat';
+import { cardioKindVerb, isCatalogExercise, type ExercisePick } from '@/lib/exercise';
+import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import {
   blockTargetText,
@@ -23,7 +25,10 @@ interface GuidedWorkoutProps {
   blocks: Block[];
   accessToken?: string;
   onSetReps: (blockIndex: number, setIndex: number, reps: number) => void;
+  /** Also carries the weight forward to later sets still on the old weight (parent-owned rule). */
   onSetWeight: (blockIndex: number, setIndex: number, weight: number) => void;
+  /** Replaces the block's exercise for this session ("Find an alternative"). */
+  onSwapExercise: (blockIndex: number, pick: ExercisePick) => void;
   onSetCapture: (
     blockIndex: number,
     setIndex: number,
@@ -63,6 +68,7 @@ export default function WorkoutGuided({
   accessToken,
   onSetReps,
   onSetWeight,
+  onSwapExercise,
   onSetCapture,
   onCompleteSet,
   onFinish,
@@ -89,6 +95,7 @@ export default function WorkoutGuided({
   // Form-tip text is long — collapsed by default so the demo media keeps the screen.
   // Deliberately not reset per exercise: opting in means "show tips for this session".
   const [showCues, setShowCues] = useState(false);
+  const [swapOpen, setSwapOpen] = useState(false);
 
   const totalSets = useMemo(() => blocks.reduce((n, b) => n + b.sets.length, 0), [blocks]);
   const completedSets = useMemo(
@@ -104,10 +111,11 @@ export default function WorkoutGuided({
   const isLastPosition =
     !!block && setIndex + 1 >= block.sets.length && blockIndex + 1 >= blocks.length;
 
-  // Reset catalog-provided cues when the exercise changes.
+  // Reset catalog-provided cues when the exercise changes — moving on, or swapping it.
+  const currentExerciseId = blocks[blockIndex]?.exercise_id;
   useEffect(() => {
     setDetailCues([]);
-  }, [blockIndex]);
+  }, [blockIndex, currentExerciseId]);
 
   /**
    * Planned seconds for the current timed exercise. Owned here rather than inside the
@@ -246,18 +254,35 @@ export default function WorkoutGuided({
   return (
     <>
       <div className="flex flex-col gap-4">
-        {/* Section eyebrow + progress */}
-        <div className="flex items-center justify-between">
-          <Eyebrow>{sectionLabel(block.section)}</Eyebrow>
-          <span className="tabular text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-            {Math.min(completedSets + 1, totalSets)} / {totalSets}
-          </span>
+        {/* Section eyebrow + progress, and the way out of an exercise the user can't do —
+            up top, where it is found before the set rather than after. */}
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex min-w-0 items-baseline gap-2">
+            <Eyebrow>{sectionLabel(block.section)}</Eyebrow>
+            <span className="tabular text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+              {Math.min(completedSets + 1, totalSets)} / {totalSets}
+            </span>
+          </div>
+          {showDemo ? (
+            <button
+              onClick={() => setSwapOpen(true)}
+              className="flex h-9 flex-shrink-0 items-center gap-1.5 rounded-full px-3.5 text-[12.5px] font-bold transition-transform active:scale-95"
+              style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)', color: 'var(--accent-text)' }}
+            >
+              <Shuffle size={14} /> Find alternative
+            </button>
+          ) : null}
         </div>
 
         {showDemo ? (
           <div className="flex flex-col gap-2.5">
+            {block.swappedFrom ? (
+              <p className="-mt-1.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                Swapped from {block.swappedFrom} for today
+              </p>
+            ) : null}
             <ExerciseDemo
-              key={block.key}
+              key={`${block.key}-${block.exercise_id ?? 'unlinked'}`}
               exerciseId={block.exercise_id}
               name={block.name}
               accessToken={accessToken}
@@ -332,10 +357,10 @@ export default function WorkoutGuided({
             setLabel={setLabel}
             completed={completedFlags}
             currentIndex={setIndex}
-            onRepDelta={(d) => onSetReps(blockIndex, setIndex, Math.max(0, Math.round(set.reps + d)))}
-            onWeightDelta={(d) =>
-              onSetWeight(blockIndex, setIndex, Math.max(0, Math.round((set.weight + d) * 10) / 10))
-            }
+            onRepStep={(dir) => onSetReps(blockIndex, setIndex, Math.max(0, Math.round(set.reps + dir)))}
+            onRepSet={(reps) => onSetReps(blockIndex, setIndex, reps)}
+            onWeightStep={(dir, scale) => onSetWeight(blockIndex, setIndex, stepValue(set.weight, dir, scale))}
+            onWeightSet={(weight) => onSetWeight(blockIndex, setIndex, weight)}
           />
         )}
 
@@ -404,6 +429,19 @@ export default function WorkoutGuided({
           seconds={block.restSeconds}
           nextLabel={restNextLabel}
           onDone={endRest}
+        />
+      ) : null}
+
+      {swapOpen ? (
+        <FindAlternativeDialog
+          accessToken={accessToken}
+          name={block.name}
+          exerciseId={block.exercise_id}
+          onClose={() => setSwapOpen(false)}
+          onPick={(pick) => {
+            onSwapExercise(blockIndex, pick);
+            setSwapOpen(false);
+          }}
         />
       ) : null}
 
@@ -786,8 +824,10 @@ function RepWeightDials({
   setLabel,
   completed,
   currentIndex,
-  onRepDelta,
-  onWeightDelta,
+  onRepStep,
+  onRepSet,
+  onWeightStep,
+  onWeightSet,
 }: {
   reps: number;
   weight: number;
@@ -797,8 +837,10 @@ function RepWeightDials({
   setLabel: string;
   completed: boolean[];
   currentIndex: number;
-  onRepDelta: (delta: number) => void;
-  onWeightDelta: (delta: number) => void;
+  onRepStep: (direction: 1 | -1) => void;
+  onRepSet: (reps: number) => void;
+  onWeightStep: (direction: 1 | -1, scale: number) => void;
+  onWeightSet: (weight: number) => void;
 }) {
   return (
     <div className="flex flex-col items-center gap-3">
@@ -809,13 +851,22 @@ function RepWeightDials({
         {/* "per side" qualifies the rep count, so it belongs on the rep dial. */}
         <Dial
           label={isPerSide ? 'Reps per side' : 'Reps'}
-          value={String(reps)}
+          value={reps}
           caption={repTarget ? `target ${repTarget}` : 'reps'}
-          onDec={() => onRepDelta(-1)}
-          onInc={() => onRepDelta(1)}
+          onStep={(dir) => onRepStep(dir)}
+          onSet={onRepSet}
         />
-        {/* Single units, so any load actually lifted is reachable exactly; hold ± for big jumps. */}
-        <Dial label="Weight" value={String(weight)} caption={weightUnit} onDec={() => onWeightDelta(-1)} onInc={() => onWeightDelta(1)} />
+        {/* Single-unit taps so any load is reachable; hold ± to run (in 5s after a moment),
+            or tap the number to type an exact weight like 22.5. */}
+        <Dial
+          label="Weight"
+          value={weight}
+          decimals={2}
+          bigStep={5}
+          caption={weightUnit}
+          onStep={onWeightStep}
+          onSet={onWeightSet}
+        />
       </div>
       <SetPips total={completed.length} currentIndex={currentIndex} completed={completed} />
     </div>
@@ -825,15 +876,19 @@ function RepWeightDials({
 function Dial({
   label,
   value,
+  decimals = 0,
+  bigStep,
   caption,
-  onDec,
-  onInc,
+  onStep,
+  onSet,
 }: {
   label: string;
-  value: string;
+  value: number;
+  decimals?: number;
+  bigStep?: number;
   caption: string;
-  onDec: () => void;
-  onInc: () => void;
+  onStep: (direction: 1 | -1, scale: number) => void;
+  onSet: (value: number) => void;
 }) {
   // Two dials share a phone-width row, which leaves each too narrow for "− 107.5 +" on
   // one line. Below `sm` the number and caption take their own rows and the ± pair sits
@@ -847,14 +902,17 @@ function Dial({
         {label}
       </span>
       <div className="flex w-full flex-wrap items-center justify-center gap-x-4 gap-y-2 sm:gap-x-3">
-        <RoundStep kind="dec" onClick={onDec} label={`Decrease ${label}`} className="order-3 sm:order-1" />
-        <span
-          className="tabular order-1 basis-full text-center text-[34px] font-extrabold leading-none min-[380px]:text-[38px] sm:order-2 sm:min-w-[56px] sm:basis-auto"
-          style={{ color: 'var(--text-primary)' }}
-        >
-          {value}
-        </span>
-        <RoundStep kind="inc" onClick={onInc} label={`Increase ${label}`} className="order-4 sm:order-3" />
+        <RoundStep kind="dec" onClick={(scale) => onStep(-1, scale)} bigStep={bigStep} label={`Decrease ${label}`} className="order-3 sm:order-1" />
+        <div className="order-1 flex basis-full justify-center sm:order-2 sm:min-w-[56px] sm:basis-auto">
+          <NumberEntry
+            value={value}
+            decimals={decimals}
+            onCommit={onSet}
+            label={`${label}${caption ? ` (${caption})` : ''}`}
+            className="py-0.5 text-[34px] leading-none min-[380px]:text-[38px]"
+          />
+        </div>
+        <RoundStep kind="inc" onClick={(scale) => onStep(1, scale)} bigStep={bigStep} label={`Increase ${label}`} className="order-4 sm:order-3" />
         <span className="order-2 basis-full text-center text-[11px] sm:order-4" style={{ color: 'var(--text-muted)' }}>
           {caption}
         </span>
@@ -866,16 +924,18 @@ function Dial({
 function RoundStep({
   kind,
   onClick,
+  bigStep,
   label,
   className = '',
 }: {
   kind: 'inc' | 'dec';
-  onClick: () => void;
+  onClick: (scale: number) => void;
+  bigStep?: number;
   label: string;
   className?: string;
 }) {
   const Icon = kind === 'inc' ? Plus : Minus;
-  const hold = useHoldRepeat(onClick);
+  const hold = useHoldRepeat(onClick, { bigStep });
   return (
     <button
       {...hold}
