@@ -8,7 +8,7 @@ import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
 import { getDashboard, getLastPerformance, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
-import { isCatalogExercise, type ExercisePick } from '@/lib/exercise';
+import { isCatalogExercise, usesWeight, type ExercisePick } from '@/lib/exercise';
 import { roundTo } from '@/lib/numberEntry';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { dateForDayKey } from '@/lib/workout';
@@ -599,7 +599,8 @@ export default function WorkoutSessionPage() {
               </div>
               <div className="mt-0.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
                 {blockTargetText(block)}
-                {block.isPerSide && !perSideOnDial ? ' · each side' : ''}
+                {/* Countdown blocks carry their own "each side" (ahead of the load). */}
+                {block.isPerSide && !perSideOnDial && !isCountdownBlock(block) ? ' · each side' : ''}
               </div>
               {block.swappedFrom ? (
                 <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
@@ -644,6 +645,9 @@ export default function WorkoutSessionPage() {
                   label={isIntervalBlock(block) ? `R${si + 1}` : 'Hold'}
                   durationSeconds={block.durationSeconds ?? 30}
                   completed={set.completed}
+                  weight={set.weight}
+                  weightUnit={block.weightUnit}
+                  onSetWeight={usesWeight(block.type) ? (w) => setWeight(bi, si, w) : undefined}
                   onToggle={() => mutateSet(bi, si, { completed: !set.completed })}
                   onComplete={() => mutateSet(bi, si, { completed: true })}
                 />
@@ -893,6 +897,9 @@ function TimedSetRow({
   label = 'Hold',
   durationSeconds,
   completed,
+  weight,
+  weightUnit,
+  onSetWeight,
   onToggle,
   onComplete,
 }: {
@@ -900,6 +907,10 @@ function TimedSetRow({
   label?: string;
   durationSeconds: number;
   completed: boolean;
+  weight: number;
+  weightUnit: WeightUnit;
+  /** Omitted for the types that never carry a load (mobility, cardio intervals). */
+  onSetWeight?: (weight: number) => void;
   onToggle: () => void;
   onComplete: () => void;
 }) {
@@ -966,7 +977,7 @@ function TimedSetRow({
 
   return (
     <div
-      className="flex items-center gap-3 rounded-xl px-3 py-2.5"
+      className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-xl px-3 py-2.5"
       style={{
         background: completed ? 'var(--bg-selected)' : 'var(--bg-subtle)',
         border: `1px solid ${completed ? 'var(--accent)' : 'var(--border-base)'}`,
@@ -979,7 +990,7 @@ function TimedSetRow({
         {label}
       </span>
 
-      <div className="flex flex-1 items-center gap-3">
+      <div className="flex min-w-0 flex-1 items-center gap-3">
         <button
           onClick={toggleTimer}
           disabled={completed}
@@ -1034,6 +1045,20 @@ function TimedSetRow({
           </button>
         ) : null}
       </div>
+
+      {onSetWeight ? (
+        // Below `sm` the row can't fit the clock, a stepper and the check on one line,
+        // so the load takes a line of its own — the same wrap the rep/weight pair uses.
+        <div className="order-last w-full sm:order-none sm:w-auto sm:flex-shrink-0">
+          <LoadEntry
+            weight={weight}
+            weightUnit={weightUnit}
+            entryLabel={`Set ${index + 1} weight in ${weightUnit}`}
+            onMint={completed}
+            onSet={onSetWeight}
+          />
+        </div>
+      ) : null}
 
       <button
         onClick={onToggle}
@@ -1121,6 +1146,59 @@ function CaptureRow({
         {completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
       </button>
     </div>
+  );
+}
+
+/**
+ * The load on a timed set.
+ *
+ * A hold is weighted often enough to be worth tracking — a farmer's carry *is* the
+ * weight — but bodyweight often enough that a permanent "0 kg" dial on every plank
+ * would be noise. So an unloaded set offers a chip, and only becomes a stepper once
+ * there is a load to put in it (or the user asks for one). A weight set on set 1
+ * carries forward, so later sets open as steppers on their own.
+ */
+function LoadEntry({
+  weight,
+  weightUnit,
+  entryLabel,
+  onMint,
+  onSet,
+}: {
+  weight: number;
+  weightUnit: WeightUnit;
+  entryLabel: string;
+  onMint: boolean;
+  onSet: (weight: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (weight <= 0 && !expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="flex h-9 w-full items-center justify-center gap-1.5 rounded-xl px-3.5 text-[12.5px] font-bold transition-transform active:scale-95 sm:w-auto"
+        style={{
+          border: `1.5px dashed ${onMint ? 'var(--border-on-mint)' : 'var(--border-strong)'}`,
+          color: onMint ? 'var(--text-on-mint)' : 'var(--text-secondary)',
+        }}
+      >
+        <Plus size={13} /> Weight
+      </button>
+    );
+  }
+
+  return (
+    <Stepper
+      label={weightUnit}
+      entryLabel={entryLabel}
+      value={weight}
+      decimals={2}
+      bigStep={5}
+      onMint={onMint}
+      onStep={(dir, scale) => onSet(stepValue(weight, dir, scale))}
+      onSet={onSet}
+    />
   );
 }
 

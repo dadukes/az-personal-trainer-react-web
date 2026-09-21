@@ -3,6 +3,7 @@ import type {
   DashboardExercise,
   ExerciseType,
   HeartRateZone,
+  WeightUnit,
 } from '@/lib/api';
 
 /**
@@ -33,6 +34,16 @@ export function usesCountdown(type: ExerciseType): boolean {
 /** Types the guided player tracks as sets of work. Cardio/class are single captures. */
 export function usesSetTracking(type: ExerciseType): boolean {
   return type === 'reps' || type === 'timed' || type === 'mobility';
+}
+
+/**
+ * Types that can carry a load. A timed movement is not only a hold — a farmer's carry
+ * or a weighted plank is the load as much as the clock — so `timed` tracks weight even
+ * though the countdown, not a rep count, drives the set. Mobility is deliberately left
+ * out: a cool-down stretch is never loaded, and a dial on every one is clutter.
+ */
+export function usesWeight(type: ExerciseType): boolean {
+  return type === 'reps' || type === 'timed';
 }
 
 /**
@@ -90,6 +101,15 @@ export function formatIntervalPair(workSeconds: number, recoverSeconds: number):
   const both = [workSeconds, recoverSeconds];
   const asSeconds = both.every((s) => s < 120);
   return both.map((s) => (asSeconds ? `${Math.round(s)}s` : formatSeconds(s))).join('/');
+}
+
+/**
+ * "24 kg" · "22.5 kg" — the load suffix on a target line, or `null` when there is none.
+ * Zero means bodyweight, which is the absence of a load rather than a load of nothing.
+ */
+export function weightText(weight?: number | null, unit?: WeightUnit | null): string | null {
+  if (weight == null || weight <= 0) return null;
+  return `${Number(weight.toFixed(2))} ${unit ?? 'kg'}`;
 }
 
 /** "5 km" · "5.4 km" — one decimal, trailing zero stripped. */
@@ -203,7 +223,8 @@ export function exerciseMeta(ex: DashboardExercise): string {
 
     case 'timed': {
       const hold = ex.duration_seconds ? formatSeconds(ex.duration_seconds) : 'hold';
-      return `${sets > 1 ? `${sets} × ` : ''}${hold}${perSide}`;
+      const load = weightText(ex.target_weight, ex.weight_unit);
+      return `${sets > 1 ? `${sets} × ` : ''}${hold}${perSide}${load ? ` · ${load}` : ''}`;
     }
 
     default:
