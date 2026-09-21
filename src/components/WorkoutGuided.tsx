@@ -6,8 +6,8 @@ import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { NumberEntry } from '@/components/NumberEntry';
 import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
 import { Button, Card, Eyebrow } from '@/components/ui';
-import { getExerciseDetail, type ExerciseDetail } from '@/lib/api';
-import { cardioKindVerb, isCatalogExercise, type ExercisePick } from '@/lib/exercise';
+import { getExerciseDetail, type ExerciseDetail, type WeightUnit } from '@/lib/api';
+import { cardioKindVerb, isCatalogExercise, usesWeight, type ExercisePick } from '@/lib/exercise';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import {
@@ -346,6 +346,11 @@ export default function WorkoutGuided({
             completed={completedFlags}
             currentIndex={setIndex}
             onAutoComplete={advance}
+            weight={set.weight}
+            weightUnit={block.weightUnit}
+            onSetWeight={
+              usesWeight(block.type) ? (w) => onSetWeight(blockIndex, setIndex, w) : undefined
+            }
           />
         ) : (
           <RepWeightDials
@@ -603,6 +608,9 @@ function TimedRing({
   completed,
   currentIndex,
   onAutoComplete,
+  weight,
+  weightUnit,
+  onSetWeight,
 }: {
   durationSeconds: number;
   perSide?: boolean;
@@ -611,6 +619,10 @@ function TimedRing({
   completed: boolean[];
   currentIndex: number;
   onAutoComplete: () => void;
+  weight: number;
+  weightUnit: WeightUnit;
+  /** Omitted for the types that never carry a load (mobility). */
+  onSetWeight?: (weight: number) => void;
 }) {
   type Status = 'idle' | 'running' | 'paused' | 'switch' | 'done';
   const [status, setStatus] = useState<Status>('idle');
@@ -808,7 +820,87 @@ function TimedRing({
         </span>
       </div>
 
+      {onSetWeight ? (
+        <LoadControl weight={weight} weightUnit={weightUnit} perSide={perSide} onSet={onSetWeight} />
+      ) : null}
+
       <SetPips total={completed.length} currentIndex={currentIndex} completed={completed} />
+    </div>
+  );
+}
+
+/**
+ * The load on a timed hold, under the ring.
+ *
+ * Deliberately not a second `Dial`: the countdown is the hero of this screen and a
+ * matching pair of dials would read as two equal captures. This is one quiet row —
+ * same ± / hold-to-repeat / tap-to-type behaviour as the rep dials, a third of the
+ * height. Bodyweight holds show a chip instead, so a plank keeps its clean screen.
+ */
+function LoadControl({
+  weight,
+  weightUnit,
+  perSide,
+  onSet,
+}: {
+  weight: number;
+  weightUnit: WeightUnit;
+  perSide: boolean;
+  onSet: (weight: number) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (weight <= 0 && !expanded) {
+    return (
+      <button
+        onClick={() => setExpanded(true)}
+        className="flex h-11 items-center gap-2 rounded-2xl px-5 text-[13px] font-bold transition-transform active:scale-95"
+        style={{ border: '1.5px dashed var(--border-strong)', color: 'var(--text-secondary)' }}
+      >
+        <Plus size={15} /> Add weight
+      </button>
+    );
+  }
+
+  return (
+    <div
+      className="flex w-full max-w-[380px] flex-col gap-2 rounded-[20px] px-3.5 py-3"
+      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+    >
+      <div className="flex items-baseline justify-between gap-2">
+        <span className="text-[11px] font-bold uppercase tracking-[0.06em]" style={{ color: 'var(--text-muted)' }}>
+          Load
+        </span>
+        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+          {perSide ? 'per side · tap to type' : 'tap to type'}
+        </span>
+      </div>
+      <div className="flex items-center gap-3">
+        <RoundStep
+          kind="dec"
+          onClick={(scale) => onSet(stepValue(weight, -1, scale))}
+          bigStep={5}
+          label="Decrease weight"
+        />
+        <div className="flex min-w-0 flex-1 items-baseline justify-center gap-1.5">
+          <NumberEntry
+            value={weight}
+            decimals={2}
+            onCommit={onSet}
+            label={`Weight in ${weightUnit}`}
+            className="text-[28px] leading-none"
+          />
+          <span className="text-[13px] font-bold" style={{ color: 'var(--text-secondary)' }}>
+            {weightUnit}
+          </span>
+        </div>
+        <RoundStep
+          kind="inc"
+          onClick={(scale) => onSet(stepValue(weight, 1, scale))}
+          bigStep={5}
+          label="Increase weight"
+        />
+      </div>
     </div>
   );
 }

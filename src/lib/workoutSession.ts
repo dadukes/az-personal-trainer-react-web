@@ -20,6 +20,8 @@ import {
   repTargetFor,
   resolveExerciseType,
   usesCountdown,
+  usesWeight,
+  weightText,
 } from '@/lib/exercise';
 
 /** Mutable per-set capture, persisted across a backgrounded session. */
@@ -175,7 +177,12 @@ export function blockTargetText(block: Block): string {
       ? `${formatSeconds(block.durationSeconds)}${block.type === 'mobility' ? ' hold' : ''}`
       : 'hold';
     const sets = block.sets.length > 1 ? `${block.sets.length} × ` : '';
-    return `${sets}${hold}`;
+    // "each side" qualifies the hold, so it stays glued to it and the load trails —
+    // "45s each side · 24 kg", never "45s · 24 kg · each side". Callers must not append
+    // their own per-side suffix to a countdown block.
+    const perSide = block.isPerSide ? ' each side' : '';
+    const load = usesWeight(block.type) ? weightText(block.weight, block.weightUnit) : null;
+    return `${sets}${hold}${perSide}${load ? ` · ${load}` : ''}`;
   }
   const sets = block.sets.length > 1 ? `${block.sets.length} × ` : '';
   return `${sets}${block.repText ?? 'reps'}`;
@@ -189,7 +196,7 @@ function buildBlock(
 ): Block {
   const type = resolveExerciseType(ex);
   const repTarget = repTargetFor(ex);
-  const weight = ex.target_weight ?? ex.last_performance?.weight ?? 0;
+  const weight = usesWeight(type) ? (ex.target_weight ?? ex.last_performance?.weight ?? 0) : 0;
 
   const base = {
     key: `${section}-${index}-${ex.name}`,
@@ -300,12 +307,23 @@ export function buildBlocks(dayPlan: DashboardDayPlan, unit: WeightUnit): Block[
  * Serializes the session for `POST /workouts/log`. `type` is sent per exercise so the
  * server can pick the right effort-XP tier (it can only derive timed-vs-reps on its own),
  * and steady cardio reports the distance the user captured.
+ *
+ * A timed hold sends **both** its duration and its load when one was captured — the set
+ * log carries the two columns independently, and a farmer's carry is only half logged
+ * without the weight. Reps keep their existing contract (0 is sent, meaning bodyweight);
+ * a hold sends no weight at all rather than a zero, so an unweighted plank logs exactly
+ * as it always has.
  */
 export function toLoggedExercises(blocks: Block[]): LoggedExercise[] {
   return blocks.map((b) => {
     const countdown = isCountdownBlock(b);
     const cardioOrClass = b.type === 'cardio' || b.type === 'class';
+    const weighted = usesWeight(b.type);
     const distanceKm = b.type === 'cardio' ? b.sets[0]?.distanceKm : undefined;
+    const loadOf = (s: SetActual): number | null => {
+      if (!weighted) return null;
+      return countdown && s.weight <= 0 ? null : s.weight;
+    };
 
     return {
       exercise_id: b.exercise_id,
@@ -318,8 +336,8 @@ export function toLoggedExercises(blocks: Block[]): LoggedExercise[] {
       sets: b.sets.map((s, i) => ({
         set_number: i + 1,
         reps: countdown || cardioOrClass ? null : s.reps,
-        weight: countdown || cardioOrClass ? null : s.weight,
-        weight_unit: countdown || cardioOrClass ? null : b.weightUnit,
+        weight: loadOf(s),
+        weight_unit: loadOf(s) == null ? null : b.weightUnit,
         duration_seconds:
           countdown || cardioOrClass ? (s.durationSeconds ?? b.durationSeconds ?? null) : null,
         completed: s.completed,

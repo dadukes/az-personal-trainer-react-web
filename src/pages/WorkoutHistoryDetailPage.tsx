@@ -10,6 +10,7 @@ import {
   type WorkoutSessionSummary,
   type WorkoutSetLogEntry,
 } from '@/lib/api';
+import { weightText } from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
 
 const SECTION_LABELS: Record<WorkoutSection, string> = {
@@ -43,17 +44,24 @@ function capitalize(s: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-/** One set formatted as a compact human string, e.g. "10 × 20 kg", "0:45", "12 reps". */
+/**
+ * One set formatted as a compact human string, e.g. "10 × 20 kg", "0:45 · 24 kg",
+ * "0:45", "12 reps".
+ *
+ * A timed set carries its duration *and* its load independently, so a weighted carry
+ * shows both — dropping the weight here would hide the only number that moves between
+ * one carry and the next.
+ */
 function formatSet(set: WorkoutSetLogEntry): string {
+  const load = weightText(set.weight, set.weight_unit);
   if (set.duration_seconds != null && set.duration_seconds > 0) {
     const m = Math.floor(set.duration_seconds / 60);
     const s = set.duration_seconds % 60;
-    return `${m}:${String(s).padStart(2, '0')}`;
+    const clock = `${m}:${String(s).padStart(2, '0')}`;
+    return load ? `${clock} · ${load}` : clock;
   }
   const reps = set.reps != null ? `${set.reps}` : '—';
-  if (set.weight != null && set.weight > 0) {
-    return `${reps} × ${set.weight} ${set.weight_unit ?? 'kg'}`;
-  }
+  if (load) return `${reps} × ${load}`;
   return set.reps != null ? `${reps} reps` : '—';
 }
 

@@ -26,6 +26,7 @@ import {
   resolveExerciseType,
   swapPlanExercise,
   usesCountdown,
+  usesWeight,
   type ExercisePick,
 } from '@/lib/exercise';
 import { roundTo } from '@/lib/numberEntry';
@@ -462,6 +463,49 @@ export default function ExerciseDetailPage() {
   );
 
   /**
+   * Weight + unit. Shared by the two loaded types: a timed hold takes a load as
+   * readily as a lift does (a farmer's carry is the load), so it gets the same
+   * control rather than a second, subtly different one.
+   */
+  const renderWeightField = (hint?: string) => (
+    <div className="flex flex-col gap-2">
+      {/* The unit toggle wraps under the stepper when a phone can't fit both. */}
+      <div className="flex flex-wrap items-center justify-end gap-3">
+        <div className="min-w-[220px] flex-1">
+          <Stepper
+            label={`Weight (${unit})`}
+            value={ex?.target_weight ?? 0}
+            decimals={2}
+            bigStep={5}
+            onDelta={(d, scale) =>
+              patch({
+                target_weight: stepValue(ex?.target_weight ?? 0, d > 0 ? 1 : -1, scale),
+                weight_unit: unit,
+              })
+            }
+            onSet={(w) => patch({ target_weight: w, weight_unit: unit })}
+          />
+        </div>
+        <div className="w-24">
+          <SegmentedToggle
+            value={unit}
+            onChange={(v) => patch({ weight_unit: v as WeightUnit })}
+            options={[
+              { value: 'kg', label: 'kg' },
+              { value: 'lb', label: 'lb' },
+            ]}
+          />
+        </div>
+      </div>
+      {hint ? (
+        <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          {hint}
+        </span>
+      ) : null}
+    </div>
+  );
+
+  /**
    * Switching type clears the fields the new type cannot carry — leaving a stale
    * `duration_seconds` on a reps exercise (or an `exercise_id` on a run) would make the
    * plan lie about itself, and the backend strips cross-type fields on write anyway.
@@ -487,7 +531,20 @@ export default function ExerciseDetailPage() {
         patch({ ...cleared, reps: ex?.reps || '10', sets: ex?.sets ?? 3 });
         return;
       }
-      if (next === 'timed' || next === 'mobility') {
+      if (next === 'timed') {
+        // Reps and timed are the two loaded types, so a weight already dialled in
+        // survives the switch — re-entering 24 kg because a carry was filed as reps
+        // is busywork.
+        patch({
+          ...cleared,
+          duration_seconds: ex?.duration_seconds ?? 30,
+          sets: ex?.sets ?? 1,
+          target_weight: ex?.target_weight,
+          weight_unit: ex?.weight_unit,
+        });
+        return;
+      }
+      if (next === 'mobility') {
         patch({ ...cleared, duration_seconds: ex?.duration_seconds ?? 30, sets: ex?.sets ?? 1 });
         return;
       }
@@ -613,10 +670,11 @@ export default function ExerciseDetailPage() {
         <LastPerformanceCard
           exerciseId={ex.exercise_id}
           fallback={ex.last_performance}
-          canApply={!countdown}
+          canApply={usesWeight(type)}
           onApply={(last) =>
             patch({
-              ...(last.reps != null ? { reps: String(last.reps) } : {}),
+              // A hold has no rep count to restore — only the load carries over.
+              ...(last.reps != null && !countdown ? { reps: String(last.reps) } : {}),
               ...(last.weight != null
                 ? { target_weight: last.weight, weight_unit: last.weight_unit ?? unit }
                 : {}),
@@ -779,16 +837,21 @@ export default function ExerciseDetailPage() {
               />
 
               {countdown ? (
-                <Stepper
-                  label="Duration (sec)"
-                  value={ex.duration_seconds ?? 30}
-                  min={1}
-                  bigStep={5}
-                  onDelta={(d, scale) =>
-                    patch({ duration_seconds: stepValue(ex.duration_seconds ?? 30, d > 0 ? 1 : -1, scale, 1) })
-                  }
-                  onSet={(v) => patch({ duration_seconds: v })}
-                />
+                <>
+                  <Stepper
+                    label="Duration (sec)"
+                    value={ex.duration_seconds ?? 30}
+                    min={1}
+                    bigStep={5}
+                    onDelta={(d, scale) =>
+                      patch({ duration_seconds: stepValue(ex.duration_seconds ?? 30, d > 0 ? 1 : -1, scale, 1) })
+                    }
+                    onSet={(v) => patch({ duration_seconds: v })}
+                  />
+                  {type === 'timed'
+                    ? renderWeightField('Leave at 0 for a bodyweight hold.')
+                    : null}
+                </>
               ) : (
                 <>
                   <Input
@@ -796,34 +859,7 @@ export default function ExerciseDetailPage() {
                     value={ex.reps ?? ''}
                     onChange={(e) => patch({ reps: e.target.value })}
                   />
-                  {/* The unit toggle wraps under the stepper when a phone can't fit both. */}
-                  <div className="flex flex-wrap items-center justify-end gap-3">
-                    <div className="min-w-[220px] flex-1">
-                      <Stepper
-                        label={`Weight (${unit})`}
-                        value={ex.target_weight ?? 0}
-                        decimals={2}
-                        bigStep={5}
-                        onDelta={(d, scale) =>
-                          patch({
-                            target_weight: stepValue(ex.target_weight ?? 0, d > 0 ? 1 : -1, scale),
-                            weight_unit: unit,
-                          })
-                        }
-                        onSet={(w) => patch({ target_weight: w, weight_unit: unit })}
-                      />
-                    </div>
-                    <div className="w-24">
-                      <SegmentedToggle
-                        value={unit}
-                        onChange={(v) => patch({ weight_unit: v as WeightUnit })}
-                        options={[
-                          { value: 'kg', label: 'kg' },
-                          { value: 'lb', label: 'lb' },
-                        ]}
-                      />
-                    </div>
-                  </div>
+                  {renderWeightField()}
                 </>
               )}
             </>
