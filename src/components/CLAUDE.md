@@ -38,6 +38,12 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   `ExercisePick`; the caller decides what a pick means (session swap vs plan draft edit). Like
   `CoachMemory` it owns its fetching. Full-screen below `sm` (a bottom sheet sits under the
   keyboard once search is focused), centred dialog above; portalled; search is not auto-focused.
+- **`ProgressSnapshotSection.tsx`** — "Your progress" on `/progress` (strength, consistency,
+  body, fitness) from `progress_snapshot`, plus the body entries list. Presentational; the page
+  owns fetching. Mirrors the mobile `progress-snapshot-section`.
+- **`BodyMeasurementDialog.tsx`** — add or edit one body measurement (metric chips, value in the
+  user's units, date, note; delete in edit mode). Presentational like `HealthCaptureDialog`.
+  The web adds **editing**, which mobile doesn't have yet; device-imported rows never open it.
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.

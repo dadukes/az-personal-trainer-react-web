@@ -23,7 +23,15 @@ export interface ProfilePayload {
   available_days?: string[];
   limitations?: string[];
   equipment_available?: string[];
+  /** Body profile — all optional; `null` clears the stored value. */
+  birth_year?: number | null;
+  height_cm?: number | null;
+  sex?: BiologicalSex | null;
+  max_heart_rate?: number | null;
 }
+
+/** Used only for reference ranges (VO2 max norms etc.); `null` = sex-neutral. */
+export type BiologicalSex = 'female' | 'male';
 
 export interface HealthSyncPayload {
   logged_date?: string;
@@ -66,6 +74,12 @@ export interface UserProfileData {
   coach_personality: CoachPersonality;
   preferred_unit_system: 'metric' | 'imperial';
   timezone: string;
+  /** Body profile — every field is optional; `null` means "not provided". */
+  birth_year: number | null;
+  height_cm: number | null;
+  sex: BiologicalSex | null;
+  /** Override of the age-estimated max HR. Most users leave it `null`. */
+  max_heart_rate: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -328,7 +342,127 @@ export interface ProgressResponse {
     health_summary: HealthSummary;
     /** Always `[]` on this endpoint — insight cards now come from `getProgressInsights`. */
     health_insights: HealthInsight[];
+    /** Pre-computed progress signals; absent on an older backend. */
+    progress_snapshot?: ProgressSnapshot | null;
   };
+}
+
+// ─── Body measurements + progress snapshot ────────────────────────────────────
+
+/** A tracked body/fitness metric. The canonical unit is part of the name. */
+export type BodyMetric =
+  | 'weight_kg'
+  | 'body_fat_pct'
+  | 'lean_mass_kg'
+  | 'waist_cm'
+  | 'hip_cm'
+  | 'chest_cm'
+  | 'arm_cm'
+  | 'thigh_cm'
+  | 'vo2max_ml_kg_min';
+
+export type BodyMeasurementSource = 'manual' | 'coach' | 'health_connect' | 'apple_health';
+
+/** One stored value from `GET /body/measurements`. */
+export interface BodyMeasurement {
+  id: string;
+  metric: BodyMetric;
+  /** Always in the canonical unit named by `metric`. */
+  value: number;
+  measured_at: string;
+  source: BodyMeasurementSource;
+  /** Device data-origin package, e.g. `com.garmin.android.apps.connectmobile`. */
+  source_app: string | null;
+  note: string | null;
+  created_at: string;
+}
+
+export interface BodyMeasurementInput {
+  /** `height_cm` is device-only: it fills an empty profile height, never stored as a row. */
+  metric: BodyMetric | 'height_cm';
+  value: number;
+  measured_at: string;
+  /** Default `manual`. `coach` is reserved for the chat tool. */
+  source?: 'manual' | 'health_connect' | 'apple_health';
+  source_app?: string | null;
+  /** Required for device sources — the idempotency key. */
+  source_record_id?: string | null;
+  /** Manual rows only. */
+  note?: string | null;
+}
+
+export interface BodyMeasurementSaveResult {
+  index: number;
+  outcome: 'saved' | 'skipped';
+  id?: string;
+  reason?: string;
+}
+
+export interface BodyMeasurementsResponse {
+  success: boolean;
+  measurements: BodyMeasurement[];
+}
+
+export interface BodyMeasurementSaveResponse {
+  success: boolean;
+  /** In input order — a bad item is skipped, never fails the batch. */
+  results: BodyMeasurementSaveResult[];
+  height_cm_updated?: number;
+}
+
+export interface BodyMeasurementQuery {
+  metric?: BodyMetric;
+  /** ISO date or date-time; a bare date covers the whole UTC day. */
+  from?: string;
+  to?: string;
+  /** 1–500, default 200. */
+  limit?: number;
+}
+
+export type SignalTrend = 'up' | 'down' | 'flat';
+
+export interface StrengthGain {
+  name: string;
+  /** `e1rm_kg` for loaded lifts (always kg); `reps` for bodyweight moves. */
+  measure: 'e1rm_kg' | 'reps';
+  from: number;
+  to: number;
+}
+
+export interface MeasurementChange {
+  metric: Exclude<BodyMetric, 'weight_kg'>;
+  latest: number;
+  /** latest − earliest in 90 days; `null` with a single reading or < 7 days apart. */
+  change: number | null;
+  /** YYYY-MM-DD of the earliest reading the change is measured from. */
+  since: string;
+}
+
+/**
+ * Pre-computed progress signals (`GET /progress` → `progress_snapshot`) — the same object
+ * the coach is prompted with. **Every field is nullable and `null` means "not tracked"**:
+ * render nothing for it and never nag the user to fill it in.
+ */
+export interface ProgressSnapshot {
+  window_days: number;
+  consistency: { sessions_per_week: number; active_days: number; trend: SignalTrend | null } | null;
+  strength: { exercises_tracked: number; exercises_improved: number; top_gains: StrengthGain[] } | null;
+  weight: {
+    /** Mean of daily means over the latest 7 days with readings — the headline, never one weigh-in. */
+    latest_kg: number;
+    /** Least-squares slope; `null` with < 3 weigh-in days or < 10-day span. */
+    trend_kg_per_week: number | null;
+    change_kg: number | null;
+    span_days: number;
+    weigh_in_days: number;
+  } | null;
+  measurements: MeasurementChange[];
+  waist_to_height: number | null;
+  resting_hr: { avg_7d: number; change: number | null } | null;
+  sleep: { avg_hours_7d: number } | null;
+  steps: { avg_7d: number; change_pct: number | null } | null;
+  cardio: { minutes_per_week: number; sessions: number } | null;
+  nutrition: { days_logged: number; avg_protein_g: number | null } | null;
 }
 
 /** AI-generated insight cards, served separately + cached so the main screen never blocks. */
@@ -798,6 +932,57 @@ export async function getProgress(accessToken: string): Promise<ProgressResponse
  */
 export async function getProgressInsights(accessToken: string): Promise<ProgressInsightsResponse> {
   return apiFetch<ProgressInsightsResponse>('/progress/insights', accessToken);
+}
+
+// ─── Body measurements ────────────────────────────────────────────────────────
+
+export async function getBodyMeasurements(
+  accessToken: string,
+  q: BodyMeasurementQuery = {},
+): Promise<BodyMeasurementsResponse> {
+  const query = new URLSearchParams();
+  if (q.metric) query.set('metric', q.metric);
+  if (q.from) query.set('from', q.from);
+  if (q.to) query.set('to', q.to);
+  if (q.limit != null) query.set('limit', String(q.limit));
+  const qs = query.toString();
+  return apiFetch<BodyMeasurementsResponse>(`/body/measurements${qs ? `?${qs}` : ''}`, accessToken);
+}
+
+/** Batch save (1–200) — manual entry and device sync alike. Check each `results[i].outcome`. */
+export async function saveBodyMeasurements(
+  accessToken: string,
+  measurements: BodyMeasurementInput[],
+): Promise<BodyMeasurementSaveResponse> {
+  return apiFetch<BodyMeasurementSaveResponse>('/body/measurements', accessToken, {
+    method: 'POST',
+    body: JSON.stringify({ measurements }),
+  });
+}
+
+/** Edits a `manual`/`coach` row. Device rows are read-only (409). */
+export async function updateBodyMeasurement(
+  accessToken: string,
+  measurementId: string,
+  patch: { value?: number; measured_at?: string; note?: string | null },
+): Promise<{ success: boolean; measurement: BodyMeasurement }> {
+  return apiFetch<{ success: boolean; measurement: BodyMeasurement }>(
+    `/body/measurements/${encodeURIComponent(measurementId)}`,
+    accessToken,
+    { method: 'PATCH', body: JSON.stringify(patch) },
+  );
+}
+
+/** Hard-deletes a `manual`/`coach` row. Device rows are read-only (409). */
+export async function deleteBodyMeasurement(
+  accessToken: string,
+  measurementId: string,
+): Promise<{ success: boolean }> {
+  return apiFetch<{ success: boolean }>(
+    `/body/measurements/${encodeURIComponent(measurementId)}`,
+    accessToken,
+    { method: 'DELETE' },
+  );
 }
 
 export async function getChatHistory(

@@ -28,6 +28,16 @@ for project-wide rules.
   stable insight-icon enum, dashboard `completed_days`) are now backed and wired — see the
   resolved items in [../../backend-gaps.md](../../backend-gaps.md).
 
+## units.ts / body.ts — body data at the edges
+
+- Copied from the mobile app (`../ai-personal-trainer-expo-ui/lib/`); keep the two in step.
+- The backend stores and expects **canonical metric** (kg, cm; the unit is in the metric name,
+  e.g. `waist_cm`). Convert only at display/input, keyed off `profile.preferred_unit_system`.
+  Never send lb or inches.
+- `body.ts` has per-metric labels + plausibility ranges (mirroring the backend) and friendly
+  names for Health Connect data origins (`sourceAppLabel`; unknown packages read "your watch").
+  `isEditableSource` gates edit/delete: device imports are read-only.
+
 ## env.ts
 
 - Only `import.meta.env.VITE_*` vars are readable in the browser bundle. Add new config here

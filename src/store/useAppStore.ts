@@ -1,11 +1,13 @@
 import { create } from 'zustand';
 
 import type {
+  BiologicalSex,
   CoachPersonality,
   DashboardDayPlan,
   DashboardExercise,
   FitnessLevel,
   PrimaryGoal,
+  ProgressSnapshot,
 } from '@/lib/api';
 import { completionKey } from '@/lib/workout';
 
@@ -49,6 +51,11 @@ export interface UserProfile {
   equipment_available: string[] | null;
   preferred_unit_system: 'metric' | 'imperial';
   timezone: string;
+  /** Body profile — optional; `null` = not provided. */
+  birth_year: number | null;
+  height_cm: number | null;
+  sex: BiologicalSex | null;
+  max_heart_rate: number | null;
 }
 
 export interface ChatMessage {
@@ -126,6 +133,12 @@ interface HealthSlice {
   setWeekPlan: (plan: WorkoutDay[]) => void;
 }
 
+interface ProgressSlice {
+  /** From `GET /progress`; `null` until loaded or when the backend couldn't compute it. */
+  progressSnapshot: ProgressSnapshot | null;
+  setProgressSnapshot: (snapshot: ProgressSnapshot | null) => void;
+}
+
 interface WorkoutCompletionSlice {
   /** completionKey(planId, dateISO) -> completion meta. Mirrored to localStorage. */
   completedWorkouts: Record<string, WorkoutCompletion>;
@@ -165,6 +178,7 @@ type AppStore = ProfileSlice &
   ChatSlice &
   GamificationSlice &
   HealthSlice &
+  ProgressSlice &
   WorkoutCompletionSlice &
   PlanDraftSlice &
   AccountSlice;
@@ -200,6 +214,10 @@ export const INITIAL_PROFILE: UserProfile = {
   equipment_available: null,
   preferred_unit_system: 'metric',
   timezone: 'UTC',
+  birth_year: null,
+  height_cm: null,
+  sex: null,
+  max_heart_rate: null,
 };
 
 const INITIAL_GAMIFICATION: GamificationState = {
@@ -283,6 +301,10 @@ export const useAppStore = create<AppStore>((set) => ({
     set((state) => ({ healthSnapshot: { ...state.healthSnapshot, ...partial } })),
   setWeekPlan: (plan) => set({ weekPlan: plan }),
 
+  // Progress
+  progressSnapshot: null,
+  setProgressSnapshot: (snapshot) => set({ progressSnapshot: snapshot }),
+
   // Workout completion (client-side; see backend-gaps.md #6)
   completedWorkouts: loadCompletions(),
   markWorkoutCompleted: (planId, dateISO, xp) =>
@@ -361,6 +383,7 @@ export const useAppStore = create<AppStore>((set) => ({
       gamification: { ...INITIAL_GAMIFICATION },
       healthSnapshot: { ...INITIAL_HEALTH },
       weekPlan: [],
+      progressSnapshot: null,
       completedWorkouts: {},
       planDraft: null,
     }),

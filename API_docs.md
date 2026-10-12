@@ -28,6 +28,10 @@ This document describes every HTTP endpoint exposed by the Azure Functions backe
    - [PATCH /api/profile/memory/{memoryId}](#patch-apiprofilememorymemoryid)
    - [DELETE /api/profile/memory/{memoryId}](#delete-apiprofilememorymemoryid)
    - [DELETE /api/account](#delete-apiaccount)
+   - [GET /api/body/measurements](#get-apibodymeasurements)
+   - [POST /api/body/measurements](#post-apibodymeasurements)
+   - [PATCH /api/body/measurements/{measurementId}](#patch-apibodymeasurementsmeasurementid)
+   - [DELETE /api/body/measurements/{measurementId}](#delete-apibodymeasurementsmeasurementid)
    - [POST /api/health/pulse](#post-apihealthpulse)
    - [POST /api/health/sync](#post-apihealthsync)
    - [GET /api/health/logs](#get-apihealthlogs)
@@ -682,6 +686,28 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
         "active_calories": "flat"
       }
     },
+    "progress_snapshot": {
+      "window_days": 28,
+      "consistency": { "sessions_per_week": 3.3, "active_days": 15, "trend": "up" },
+      "strength": {
+        "exercises_tracked": 5,
+        "exercises_improved": 3,
+        "top_gains": [
+          { "name": "Goblet Squat", "measure": "e1rm_kg", "from": 21.3, "to": 30.4 },
+          { "name": "Push-up", "measure": "reps", "from": 8, "to": 15 }
+        ]
+      },
+      "weight": { "latest_kg": 82.8, "trend_kg_per_week": -0.38, "change_kg": -1.1, "span_days": 21, "weigh_in_days": 9 },
+      "measurements": [
+        { "metric": "waist_cm", "latest": 91, "change": -3, "since": "2026-08-08" }
+      ],
+      "waist_to_height": 0.51,
+      "resting_hr": { "avg_7d": 58, "change": -4 },
+      "sleep": { "avg_hours_7d": 7.1 },
+      "steps": { "avg_7d": 8400, "change_pct": 12 },
+      "cardio": { "minutes_per_week": 45, "sessions": 6 },
+      "nutrition": { "days_logged": 12, "avg_protein_g": 95 }
+    },
     "health_insights": []
   }
 }
@@ -704,6 +730,16 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
   - `avg_sleep_quality`, `avg_stress_level`, `avg_energy_level` are on the subjective 1–5 scale (rounded to 1 decimal).
   - `avg_sleep_hours` is rounded to 1 decimal; `avg_resting_heart_rate`, `avg_steps`, `avg_active_calories` are integers.
 - `trends` — per-field direction (`"up"` / `"down"` / `"flat"`) comparing the most-recent 7 days against the 7 days before them. `null` when either window lacks data for that field. Trends are purely directional (did the number rise or fall) — the client decides whether a direction is "good" for a given metric.
+
+**`progress_snapshot`** — pre-computed progress signals; the same object the AI coach is prompted with (it never sees raw rows). **Every field is nullable and `null` means "not tracked"** — render nothing for it, and never nag the user to fill it in. The whole object is `null` if it could not be computed (the endpoint itself never fails because of it).
+- `consistency` — non-micro-win sessions per week over the last 28 days; `active_days` counts every logged activity including micro-wins; `trend` compares the session count with the 28 days before (`null` with no prior data; within ±15% reads `"flat"`).
+- `strength` — per exercise logged in ≥ 2 sessions over the last 56 days, first vs latest session. Loaded lifts compare estimated 1RM (Epley, sets of ≤ 12 reps, normalized to **kg**; a rise under 2.5% is noise); bodyweight moves compare best reps. `top_gains` holds at most 3, biggest relative gain first.
+- `weight` — from `body_measurements` in the last 28 days, using **daily means** (several weigh-ins on one day are averaged). `latest_kg` averages the latest 7 days with readings. `trend_kg_per_week` is a least-squares slope and is `null` with fewer than 3 weigh-in days or less than a 10-day span — one noisy weigh-in barely moves it.
+- `measurements` — every other tracked metric over the last 90 days: latest value and `change` since the earliest reading (`null` with a single reading or < 7 days apart). Units are canonical (the suffix of `metric`).
+- `waist_to_height` — latest waist ÷ profile `height_cm`, when both are known.
+- `resting_hr` / `sleep` / `steps` — 7-day averages from `health_metrics` (need ≥ 3 logged days); changes compare with the same-length window 3–4 weeks earlier.
+- `cardio` — minutes per week and session count of `cardio` / `class` / `walk` activities in the last 28 days.
+- `nutrition` — days with a logged meal in the last 28 days and average protein per day that has protein data.
 
 **`health_insights`** — always an empty array `[]` on this endpoint. Retained only so existing clients that read the field keep working; **use [`GET /api/progress/insights`](#get-apiprogressinsights) for insight cards.**
 
@@ -830,6 +866,10 @@ Content-Type: application/json
 | `display_name` | `string` | Any string | User's preferred name for the coach to use |
 | `limitations` | `string[]` | Any strings | Physical limitations or injuries (e.g. `["bad knees", "lower back pain"]`) |
 | `equipment_available` | `string[]` | Any strings | Equipment the user has access to (e.g. `["dumbbells", "resistance bands"]`) |
+| `birth_year` | `integer \| null` | 1900 – (current year − 10) | Used for heart-rate zones and the coach's context. `null` clears it. |
+| `height_cm` | `number \| null` | 100 – 250 | Used for waist-to-height ratio. A Health Connect height only fills this when it is empty. `null` clears it. |
+| `sex` | `string \| null` | `"female"`, `"male"` | Used **only** for reference ranges (e.g. VO2 max norms). `null` = sex-neutral ranges. |
+| `max_heart_rate` | `integer \| null` | 100 – 240 | Optional override of the age-estimated max HR. Most users leave it `null`. |
 
 **Example — patching a single field:**
 
@@ -913,6 +953,10 @@ Content-Type: application/json
 | `display_name` | `string` | Any string | User's preferred name for the coach to use |
 | `limitations` | `string[]` | Any strings | Physical limitations or injuries (e.g. `["bad knees", "lower back pain"]`) |
 | `equipment_available` | `string[]` | Any strings | Equipment the user has access to (e.g. `["dumbbells", "resistance bands"]`) |
+| `birth_year` | `integer \| null` | 1900 – (current year − 10) | Used for heart-rate zones and the coach's context. `null` clears it. |
+| `height_cm` | `number \| null` | 100 – 250 | Used for waist-to-height ratio. A Health Connect height only fills this when it is empty. `null` clears it. |
+| `sex` | `string \| null` | `"female"`, `"male"` | Used **only** for reference ranges (e.g. VO2 max norms). `null` = sex-neutral ranges. |
+| `max_heart_rate` | `integer \| null` | 100 – 240 | Optional override of the age-estimated max HR. Most users leave it `null`. |
 
 **Example — full onboarding payload:**
 
@@ -1226,6 +1270,160 @@ No body. A user can only delete themselves (the target is taken from the JWT).
 |--------|-----------|
 | `401` | Invalid or missing Bearer token |
 | `500` | Deletion failed server-side (safe to retry) |
+
+---
+
+## Body measurements (`/api/body/measurements`)
+
+Weight, body composition, tape measurements and VO2 max — one row per measured value. Everything is optional; nothing here is required for any other feature.
+
+**Metrics** — values are always in the canonical unit named by the metric; convert for display using the profile's `preferred_unit_system`:
+
+| `metric` | Unit | Plausible range |
+|---|---|---|
+| `weight_kg` | kg | 25 – 350 |
+| `body_fat_pct` | % | 2 – 70 |
+| `lean_mass_kg` | kg | 15 – 200 |
+| `waist_cm`, `hip_cm`, `chest_cm` | cm | 40 – 250 |
+| `arm_cm` | cm | 15 – 80 |
+| `thigh_cm` | cm | 25 – 120 |
+| `vo2max_ml_kg_min` | ml/kg/min | 10 – 95 |
+
+**Sources** — `manual` (typed in the app), `coach` (captured from chat by the `recordBodyMeasurement` tool), `health_connect` / `apple_health` (device imports). Device rows are **read-only**: the next sync would restore the original value, so the user corrects them in the source app.
+
+---
+
+### GET /api/body/measurements
+
+The caller's measurements, newest first.
+
+#### Request
+
+```http
+GET /api/body/measurements?metric=weight_kg&from=2026-09-01&limit=100&code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+```
+
+| Query | Description |
+|---|---|
+| `metric` | Optional. One of the metrics above. |
+| `from` / `to` | Optional. ISO date or date-time, inclusive bounds on `measured_at`. A bare date (`YYYY-MM-DD`) covers the whole UTC day: `from` starts at 00:00, `to` runs to 23:59:59.999. |
+| `limit` | Optional. 1 – 500, default 200. |
+
+#### Response
+
+**`200 OK`**
+
+```json
+{
+  "success": true,
+  "measurements": [
+    {
+      "id": "bm-uuid",
+      "metric": "weight_kg",
+      "value": 82.4,
+      "measured_at": "2026-10-07T06:45:00.000Z",
+      "source": "health_connect",
+      "source_app": "com.garmin.android.apps.connectmobile",
+      "note": null,
+      "created_at": "2026-10-07T07:10:02.000Z"
+    }
+  ]
+}
+```
+
+**`400`** — invalid `metric`, date or `limit`.
+
+---
+
+### POST /api/body/measurements
+
+Batch save — used for manual entry and for Health Connect sync alike. **A bad item is skipped and reported; it never fails the batch.** Device items are upserted on `source_record_id`, so a client can re-send its whole sync window every time without creating duplicates.
+
+#### Request
+
+```http
+POST /api/body/measurements?code=<FUNCTION_KEY>
+Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
+Content-Type: application/json
+```
+
+```json
+{
+  "measurements": [
+    { "metric": "waist_cm", "value": 91, "measured_at": "2026-10-07T07:00:00Z", "note": "morning" },
+    {
+      "metric": "weight_kg",
+      "value": 82.4,
+      "measured_at": "2026-10-07T06:45:00Z",
+      "source": "health_connect",
+      "source_app": "com.garmin.android.apps.connectmobile",
+      "source_record_id": "8c1e2f6a-…"
+    },
+    {
+      "metric": "height_cm",
+      "value": 180,
+      "measured_at": "2025-01-01T00:00:00Z",
+      "source": "health_connect",
+      "source_record_id": "h-…"
+    }
+  ]
+}
+```
+
+| Field | Required | Notes |
+|---|---|---|
+| `metric` | yes | A metric from the table, or `"height_cm"` (device sources only — see below). |
+| `value` | yes | Number in the canonical unit; rounded to 2 decimals. |
+| `measured_at` | yes | ISO date-time. Not in the future (5 min skew allowed), not before 2000. |
+| `source` | no | `"manual"` (default), `"health_connect"` or `"apple_health"`. `"coach"` is reserved for the chat tool. |
+| `source_record_id` | device only | The device record id — the idempotency key. Required for device sources. |
+| `source_app` | no | Device data-origin package name. Ignored for manual rows. |
+| `note` | no | Manual rows only, ≤ 1000 chars. Device rows never carry free text. |
+
+1 – 200 items per request. **Height:** a device `height_cm` item is not stored as a measurement; it fills the profile's `height_cm` **only when that is empty** (a value the user typed always wins), and the response reports `height_cm_updated`. The height item's outcome is `saved` only when it was written; otherwise it is `skipped` with a `reason` (profile height already set, update failed, or superseded by a later height item — only the last height in a batch is applied).
+
+#### Response
+
+**`200 OK`** — `results` is in input order.
+
+```json
+{
+  "success": true,
+  "results": [
+    { "index": 0, "outcome": "saved", "id": "bm-uuid-1" },
+    { "index": 1, "outcome": "saved", "id": "bm-uuid-2" },
+    { "index": 2, "outcome": "saved" }
+  ],
+  "height_cm_updated": 180
+}
+```
+
+A rejected item reads `{ "index": 3, "outcome": "skipped", "reason": "weight_kg must be between 25 and 350." }`.
+
+**`400`** — body is not `{ measurements: [...] }`, or the array is empty / over 200. **`413`** — request body too large.
+
+---
+
+### PATCH /api/body/measurements/{measurementId}
+
+Edit a `manual` or `coach` measurement.
+
+```json
+{ "value": 90.5, "measured_at": "2026-10-06T07:00:00Z", "note": null }
+```
+
+At least one field. `value` is range-checked against the row's metric.
+
+**`200`** `{ "success": true, "measurement": { … } }` · **`400`** invalid field · **`404`** unknown id / not the caller's · **`409`** `{ "code": "measurement_imported" }` — device rows are read-only.
+
+---
+
+### DELETE /api/body/measurements/{measurementId}
+
+Hard-delete a `manual` or `coach` measurement.
+
+**`200`** `{ "success": true }` · **`404`** unknown id / not the caller's · **`409`** `{ "code": "measurement_imported" }`.
 
 ---
 
@@ -1916,10 +2114,21 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 
 ### GET /api/exercises/{exerciseId}/alternatives
 
-Heuristic (no-LLM) swap suggestions for the "Find an alternative" sheet. Candidates come from the
-exercise's cached `related_exercise_ids` (supplemented by a same-target search when thin), filtered
-by the user's `equipment_available` and avoiding their `limitations`, each with a short templated
-`why`.
+Heuristic (no-LLM) swap suggestions for the "Find an alternative" sheet, best first. Ranks the whole
+local catalog (both sources) by exercise-name similarity plus a shared target muscle; stretches only
+swap for stretches, and near-duplicate names are collapsed. Reads only the local catalog — no
+provider calls.
+
+Filters come from the user's profile and **fail open**:
+
+- `equipment_available` is free text mapped to catalog equipment (e.g. "Dumbbells" → `dumbbell`).
+  Body weight is always allowed. Gym access ("Fully equipped gym"), an empty list, or nothing
+  recognizable means **no equipment filter**.
+- `limitations` are matched against a fixed set of rules (lower back, knee, shoulder, wrist, elbow,
+  neck, hip, ankle) that hide specific movements (e.g. knee → jumps, lunges, pistols). A limitation
+  matching no rule hides nothing.
+
+An exercise id not in the catalog returns `200` with an empty list.
 
 #### Request
 
@@ -1931,8 +2140,8 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 | Query | Type | Description |
 |-------|------|-------------|
 | `limit` | `number` | Max suggestions (default 6, max 20) |
-| `equipment` | `string` | Override the equipment filter (else the user's available equipment) |
-| `body_part` | `string` | Override the target muscle used to source candidates |
+| `equipment` | `string` | Override the equipment filter (else the user's available equipment); free text, normalized like the profile |
+| `body_part` | `string` | Override the target muscle candidates are compared against (any vocabulary, e.g. `glutes` or `GLUTEUS MAXIMUS`) |
 
 #### Response
 
@@ -1942,10 +2151,15 @@ Authorization: Bearer <SUPABASE_ACCESS_TOKEN>
 {
   "success": true,
   "alternatives": [
-    { "id": "exr_0009", "name": "Incline Push-Ups", "why": "Targets pectorals like the original", "image_url": "https://cdn.exercisedb.dev/Incline-Push-Up-Chest.png", "target": "pectorals", "equipment": "BODY WEIGHT" }
+    { "id": "exr_0009", "name": "incline push-up", "why": "Works pectorals like the original — no equipment needed", "image_url": "https://cdn.exercisedb.dev/Incline-Push-Up-Chest.png", "target": "pectorals", "equipment": "body weight" }
   ]
 }
 ```
+
+`target` is a canonical muscle group shared by both catalog sources (`glutes`, not
+`GLUTEUS MAXIMUS`) and `equipment` is lowercased.
+
+**Error responses:** `400` missing id · `401` unauthenticated · `500` catalog query failed.
 
 ---
 

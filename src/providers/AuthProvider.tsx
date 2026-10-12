@@ -75,6 +75,10 @@ function mapApiProfileToStore(apiProfile: UserProfileData): Partial<UserProfile>
     equipment_available: apiProfile.equipment_available ?? null,
     preferred_unit_system: apiProfile.preferred_unit_system,
     timezone: apiProfile.timezone,
+    birth_year: apiProfile.birth_year ?? null,
+    height_cm: apiProfile.height_cm ?? null,
+    sex: apiProfile.sex ?? null,
+    max_heart_rate: apiProfile.max_heart_rate ?? null,
   };
 }
 

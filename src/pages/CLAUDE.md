@@ -30,10 +30,10 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/` | `HomePage` | Health snapshot + today's plan / CTA + week strip; both manual-capture dialogs hang off the `QuickActionsFab` |
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
-| `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **health trends chart** + AI health insights |
+| `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **Your progress** (`progress_snapshot` + body measurements) + health trends chart + AI health insights |
 | `/progress/workouts` | `WorkoutHistoryPage` | List of past completed sessions (`getWorkoutSessions`) |
 | `/progress/workouts/:id` | `WorkoutHistoryDetailPage` | One session's logged sets, grouped by section (`getWorkoutSession`) |
-| `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
+| `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) incl. the optional **Body & heart rate** fields + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
 | `/delete-account` | `DeleteAccountPage` | **Public** (no auth guard, no shell): Play-required deletion URL; signs the user in, then deletes |
 | `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
 | `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link via `FindAlternativeDialog`, remove |
@@ -100,6 +100,19 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   It is **not** a dual-axis chart — both series are min–max normalized to a shared 0–100 scale
   (the tooltip shows the real captured values), avoiding the spurious-correlation trap of two
   independent y-scales.
+- **Progress / Your progress**: `ProgressSnapshotSection` renders `GET /progress` →
+  `progress_snapshot` (store: `progressSnapshot`) — the web twin of the mobile section, same
+  rules: strength → consistency → body → fitness; a `null` field means "not tracked" (render
+  nothing, never nag); weight's headline is the 7-day average and the sparkline only shows once
+  the backend returns a trend; body changes are colour-neutral. Entries come from
+  `getBodyMeasurements` (90 days) and include rows the **mobile app imported from Health
+  Connect** — those show their source ("Fitdays", "Garmin Connect") and are **read-only** (the
+  server 409s; the next sync would restore them). `manual`/`coach` rows open
+  `BodyMeasurementDialog` in edit mode (PATCH, or delete with an inline confirm). Values are
+  typed in the user's units and converted to canonical (kg/cm) in the dialog.
+- **Profile / Body & heart rate**: birth year, height (cm, or ft + in for imperial), optional
+  sex ("Prefer not to say" = `null`), max-HR override under "Advanced". All optional, saved with
+  the form, never in onboarding. An untouched imperial height keeps the stored cm value.
 - **Plan / Exercise detail**: edits go to a shared `planDraft` slice in the Zustand store (both
   `/plan/:day` and the exercise route read/write it), not straight to the backend. `PlanDayPage`
   seeds the draft from `getWorkoutPlan` (without clobbering unsaved edits) and is the **only**

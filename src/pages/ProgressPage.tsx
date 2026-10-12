@@ -15,15 +15,23 @@ import {
   Trophy,
 } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import BodyMeasurementDialog, { type BodyMeasurementEntry } from '@/components/BodyMeasurementDialog';
+import ProgressSnapshotSection from '@/components/ProgressSnapshotSection';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Card, Eyebrow, ProgressBar, StatTile } from '@/components/ui';
 import {
+  deleteBodyMeasurement,
+  getBodyMeasurements,
   getHealthLogs,
   getProgress,
   getProgressInsights,
+  saveBodyMeasurements,
+  updateBodyMeasurement,
+  type BodyMeasurement,
+  type BodyMetric,
   type HealthInsight,
   type HealthLog,
   type HealthSummary,
@@ -108,6 +116,18 @@ function TrendPill({ direction, good }: { direction: HealthTrendDirection | null
   );
 }
 
+/** Body history window — enough for the 28-day sparkline plus the full entries list. */
+const BODY_HISTORY_DAYS = 90;
+
+function bodyHistoryFrom(): string {
+  const d = new Date();
+  d.setDate(d.getDate() - BODY_HISTORY_DAYS);
+  return d.toISOString();
+}
+
+/** Add (`editing` null) or edit an existing manual/coach row. */
+type BodyDialogState = { editing: BodyMeasurement | null; metric: BodyMetric | null } | null;
+
 function getLevelName(level: number): string {
   if (level <= 2) return 'Foundation';
   if (level <= 4) return 'Momentum';
@@ -132,6 +152,13 @@ export default function ProgressPage() {
   const navigate = useNavigate();
   const { session } = useAuth();
   const { gamification, setGamification } = useAppStore();
+  const progressSnapshot = useAppStore((s) => s.progressSnapshot);
+  const setProgressSnapshot = useAppStore((s) => s.setProgressSnapshot);
+  const unitSystem = useAppStore((s) => s.profile.preferred_unit_system);
+  const [bodyMeasurements, setBodyMeasurements] = useState<BodyMeasurement[]>([]);
+  const [bodyDialog, setBodyDialog] = useState<BodyDialogState>(null);
+  const [bodySaving, setBodySaving] = useState(false);
+  const [bodyError, setBodyError] = useState<string | null>(null);
   const [insights, setInsights] = useState<HealthInsight[]>([]);
   const [insightsLoading, setInsightsLoading] = useState(false);
   const [weekStats, setWeekStats] = useState<WeeklyActivityStats | null>(null);
@@ -156,6 +183,7 @@ export default function ProgressPage() {
         });
         setWeekStats(result.data.this_week ?? null);
         setHealthSummary(result.data.health_summary ?? null);
+        setProgressSnapshot(result.data.progress_snapshot ?? null);
       } catch {
         // Non-blocking
       } finally {
@@ -165,7 +193,95 @@ export default function ProgressPage() {
     return () => {
       mounted = false;
     };
-  }, [session, setGamification]);
+  }, [session, setGamification, setProgressSnapshot]);
+
+  // Body history (sparkline + entries) — independent, non-blocking. Includes rows the mobile
+  // app imported from Health Connect, which show their source and stay read-only here.
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const token = session.access_token;
+    let mounted = true;
+    void (async () => {
+      try {
+        const { measurements } = await getBodyMeasurements(token, { from: bodyHistoryFrom(), limit: 200 });
+        if (mounted) setBodyMeasurements(measurements);
+      } catch {
+        // Non-blocking: the Body card renders from the snapshot alone.
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [session]);
+
+  /** Re-reads what a body change affects: the snapshot and the entries list. */
+  const refreshBody = useCallback(
+    async (token: string) => {
+      const [progress, body] = await Promise.allSettled([
+        getProgress(token),
+        getBodyMeasurements(token, { from: bodyHistoryFrom(), limit: 200 }),
+      ]);
+      if (progress.status === 'fulfilled') setProgressSnapshot(progress.value.data.progress_snapshot ?? null);
+      if (body.status === 'fulfilled') setBodyMeasurements(body.value.measurements);
+    },
+    [setProgressSnapshot],
+  );
+
+  const openBodyDialog = (state: NonNullable<BodyDialogState>) => {
+    setBodyError(null);
+    setBodyDialog(state);
+  };
+
+  const handleSaveBody = async (entry: BodyMeasurementEntry) => {
+    const token = session?.access_token;
+    if (!token) {
+      setBodyError('Your session is missing. Sign in again and retry.');
+      return;
+    }
+    setBodySaving(true);
+    setBodyError(null);
+    try {
+      const editing = bodyDialog?.editing ?? null;
+      if (editing) {
+        await updateBodyMeasurement(token, editing.id, {
+          value: entry.value,
+          measured_at: entry.measured_at,
+          note: entry.note,
+        });
+      } else {
+        const { results } = await saveBodyMeasurements(token, [{ ...entry, source: 'manual' }]);
+        const result = results[0];
+        if (result?.outcome !== 'saved') {
+          setBodyError(result?.reason ?? 'That measurement could not be saved.');
+          return;
+        }
+      }
+      setBodyDialog(null);
+      await refreshBody(token);
+    } catch (err) {
+      setBodyError(err instanceof Error ? err.message : 'Unable to save the measurement.');
+    } finally {
+      setBodySaving(false);
+    }
+  };
+
+  const handleDeleteBody = async () => {
+    const token = session?.access_token;
+    const editing = bodyDialog?.editing;
+    if (!token || !editing) return;
+    setBodySaving(true);
+    setBodyError(null);
+    try {
+      await deleteBodyMeasurement(token, editing.id);
+      setBodyMeasurements((rows) => rows.filter((r) => r.id !== editing.id));
+      setBodyDialog(null);
+      await refreshBody(token);
+    } catch (err) {
+      setBodyError(err instanceof Error ? err.message : 'Unable to delete the measurement.');
+    } finally {
+      setBodySaving(false);
+    }
+  };
 
   // AI insight cards load separately and non-blocking — the endpoint may take a few seconds on a
   // cache miss, so it must never gate the stats above.
@@ -288,6 +404,15 @@ export default function ProgressPage() {
         </Card>
       </div>
 
+      <ProgressSnapshotSection
+        snapshot={progressSnapshot}
+        measurements={bodyMeasurements}
+        streakDays={weekStats?.consistency_streak_days ?? null}
+        unitSystem={unitSystem}
+        onAdd={(metric) => openBodyDialog({ editing: null, metric })}
+        onEdit={(row) => openBodyDialog({ editing: row, metric: row.metric })}
+      />
+
       {summaryTiles.length > 0 && healthSummary && (
         <>
           <div className="flex items-center justify-between">
@@ -376,6 +501,19 @@ export default function ProgressPage() {
           );
         })}
       </div>
+
+      {bodyDialog ? (
+        <BodyMeasurementDialog
+          editing={bodyDialog.editing}
+          initialMetric={bodyDialog.metric}
+          unitSystem={unitSystem}
+          saving={bodySaving}
+          error={bodyError}
+          onSave={(entry) => void handleSaveBody(entry)}
+          onDelete={bodyDialog.editing ? () => void handleDeleteBody() : undefined}
+          onClose={() => setBodyDialog(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { ArrowLeft, Check, Trash2 } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -8,11 +8,13 @@ import ScreenHeader from '@/components/ScreenHeader';
 import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
 import {
   updateProfile,
+  type BiologicalSex,
   type CoachPersonality,
   type FitnessLevel,
   type PrimaryGoal,
   type ProfilePayload,
 } from '@/lib/api';
+import { cmToIn, formatNumber, inToCm, type UnitSystem } from '@/lib/units';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type UserProfile } from '@/store/useAppStore';
 
@@ -60,6 +62,72 @@ function splitList(raw: string): string[] {
     .filter(Boolean);
 }
 
+const SEX_OPTIONS: { value: BiologicalSex | null; label: string }[] = [
+  { value: 'female', label: 'Female' },
+  { value: 'male', label: 'Male' },
+  { value: null, label: 'Prefer not to say' },
+];
+
+/** Backend bounds (API_docs → profile fields). */
+const MIN_BIRTH_YEAR = 1900;
+const HEIGHT_CM_RANGE = { min: 100, max: 250 };
+const MAX_HR_RANGE = { min: 100, max: 240 };
+
+/** Height form fields: one `cm` box in metric, `ft` + `in` boxes in imperial. */
+function heightToFields(cm: number | null, system: UnitSystem): { cm: string; ft: string; inches: string } {
+  if (cm == null) return { cm: '', ft: '', inches: '' };
+  if (system === 'metric') return { cm: formatNumber(cm), ft: '', inches: '' };
+  const totalIn = Math.round(cmToIn(cm));
+  return { cm: '', ft: String(Math.floor(totalIn / 12)), inches: String(totalIn % 12) };
+}
+
+/** Parses the body-profile fields; returns either the payload values or the first error. */
+function parseBodyFields(
+  form: FormState,
+  system: UnitSystem,
+):
+  | { ok: true; birth_year: number | null; height_cm: number | null; max_heart_rate: number | null }
+  | { ok: false; error: string } {
+  const maxYear = new Date().getFullYear() - 10;
+  let birthYear: number | null = null;
+  if (form.birthYear.trim()) {
+    const n = Number(form.birthYear.trim());
+    if (!Number.isInteger(n) || n < MIN_BIRTH_YEAR || n > maxYear) {
+      return { ok: false, error: `Birth year should be between ${MIN_BIRTH_YEAR} and ${maxYear}.` };
+    }
+    birthYear = n;
+  }
+
+  let heightCm: number | null = null;
+  if (system === 'metric' ? form.heightCm.trim() : form.heightFt.trim() || form.heightIn.trim()) {
+    const cm =
+      system === 'metric'
+        ? Number(form.heightCm.replace(',', '.'))
+        : inToCm(Number(form.heightFt || 0) * 12 + Number(form.heightIn.replace(',', '.') || 0));
+    if (!Number.isFinite(cm) || cm < HEIGHT_CM_RANGE.min || cm > HEIGHT_CM_RANGE.max) {
+      return {
+        ok: false,
+        error:
+          system === 'metric'
+            ? `Height should be between ${HEIGHT_CM_RANGE.min} and ${HEIGHT_CM_RANGE.max} cm.`
+            : 'Height should be between 3′4″ and 8′2″.',
+      };
+    }
+    heightCm = Math.round(cm * 10) / 10;
+  }
+
+  let maxHr: number | null = null;
+  if (form.maxHr.trim()) {
+    const n = Number(form.maxHr.trim());
+    if (!Number.isInteger(n) || n < MAX_HR_RANGE.min || n > MAX_HR_RANGE.max) {
+      return { ok: false, error: `Max heart rate should be a whole number between ${MAX_HR_RANGE.min} and ${MAX_HR_RANGE.max}.` };
+    }
+    maxHr = n;
+  }
+
+  return { ok: true, birth_year: birthYear, height_cm: heightCm, max_heart_rate: maxHr };
+}
+
 interface FormState {
   displayName: string;
   goal: PrimaryGoal;
@@ -70,9 +138,17 @@ interface FormState {
   duration: number;
   limitations: string;
   equipment: string;
+  birthYear: string;
+  heightCm: string;
+  heightFt: string;
+  heightIn: string;
+  sex: BiologicalSex | null;
+  maxHr: string;
 }
 
 function formFromProfile(p: UserProfile): FormState {
+  // `?? null`: a profile cached before the body fields existed has them undefined.
+  const height = heightToFields(p.height_cm ?? null, p.preferred_unit_system);
   return {
     displayName: p.display_name ?? '',
     goal: p.primary_goal ?? 'general_fitness',
@@ -83,6 +159,12 @@ function formFromProfile(p: UserProfile): FormState {
     duration: p.preferred_duration_minutes,
     limitations: (p.limitations ?? []).join(', '),
     equipment: (p.equipment_available ?? []).join(', '),
+    birthYear: p.birth_year != null ? String(p.birth_year) : '',
+    heightCm: height.cm,
+    heightFt: height.ft,
+    heightIn: height.inches,
+    sex: p.sex ?? null,
+    maxHr: p.max_heart_rate != null ? String(p.max_heart_rate) : '',
   };
 }
 
@@ -90,6 +172,7 @@ export default function ProfilePage() {
   const navigate = useNavigate();
   const { session, user, applyProfileUpdate, deleteAccount } = useAuth();
   const profile = useAppStore((s) => s.profile);
+  const unitSystem = profile.preferred_unit_system;
 
   const [form, setForm] = useState<FormState>(() => formFromProfile(profile));
   const [dirty, setDirty] = useState(false);
@@ -99,6 +182,7 @@ export default function ProfilePage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(() => profile.max_heart_rate != null);
 
   // Re-seed from the store until the user starts editing, so a background profile
   // hydration (stale-while-revalidate) doesn't get lost behind an untouched form.
@@ -132,6 +216,16 @@ export default function ProfilePage() {
       setError('Pick at least one training day.');
       return;
     }
+    const body = parseBodyFields(form, unitSystem);
+    if (!body.ok) {
+      setError(body.error);
+      return;
+    }
+    // An untouched imperial height round-trips through whole inches; keep the stored
+    // value rather than drifting it by a few millimetres on every save.
+    const seeded = formFromProfile(profile);
+    const heightUntouched =
+      form.heightCm === seeded.heightCm && form.heightFt === seeded.heightFt && form.heightIn === seeded.heightIn;
     setError(null);
     setSubmitting(true);
     const payload: ProfilePayload = {
@@ -144,6 +238,10 @@ export default function ProfilePage() {
       fears: form.fears,
       limitations: splitList(form.limitations),
       equipment_available: splitList(form.equipment),
+      birth_year: body.birth_year,
+      height_cm: heightUntouched ? (profile.height_cm ?? null) : body.height_cm,
+      sex: form.sex,
+      max_heart_rate: body.max_heart_rate,
     };
     try {
       const { profile: updated } = await updateProfile(session.access_token, payload);
@@ -329,6 +427,99 @@ export default function ProfilePage() {
             onChange={(e) => update('equipment', e.target.value)}
           />
         </div>
+      </Card>
+
+      {/* Body & heart rate — all optional, never part of onboarding. */}
+      <Card padding="24px">
+        <Eyebrow className="mb-2">Body & heart rate</Eyebrow>
+        <p className="mb-4 text-[13px] leading-[1.45]" style={{ color: 'var(--text-muted)' }}>
+          All optional. Your birth year unlocks heart-rate zones; height lets us show waist-to-height.
+        </p>
+        <div className="grid grid-cols-2 gap-3">
+          <Input
+            label="Birth year"
+            inputMode="numeric"
+            maxLength={4}
+            placeholder="e.g. 1990"
+            value={form.birthYear}
+            onChange={(e) => update('birthYear', e.target.value.replace(/[^0-9]/g, ''))}
+          />
+          {unitSystem === 'metric' ? (
+            <Input
+              label="Height (cm)"
+              inputMode="decimal"
+              maxLength={5}
+              placeholder="e.g. 175"
+              value={form.heightCm}
+              onChange={(e) => update('heightCm', e.target.value)}
+            />
+          ) : (
+            <div>
+              <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: 'var(--text-label)' }}>
+                Height
+              </span>
+              <div className="grid grid-cols-2 gap-2">
+                <Input
+                  aria-label="Height, feet"
+                  inputMode="numeric"
+                  maxLength={1}
+                  placeholder="ft"
+                  value={form.heightFt}
+                  onChange={(e) => update('heightFt', e.target.value.replace(/[^0-9]/g, ''))}
+                />
+                <Input
+                  aria-label="Height, inches"
+                  inputMode="decimal"
+                  maxLength={4}
+                  placeholder="in"
+                  value={form.heightIn}
+                  onChange={(e) => update('heightIn', e.target.value)}
+                />
+              </div>
+            </div>
+          )}
+        </div>
+
+        <div className="mt-5">
+          <Eyebrow className="mb-2.5">Sex</Eyebrow>
+          <div className="flex flex-wrap gap-2.5">
+            {SEX_OPTIONS.map((o) => (
+              <Chip key={o.label} active={form.sex === o.value} onClick={() => update('sex', o.value)}>
+                {o.label}
+              </Chip>
+            ))}
+          </div>
+          <p className="mt-2 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+            Used only for reference ranges.
+          </p>
+        </div>
+
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((o) => !o)}
+          aria-expanded={advancedOpen}
+          className="mt-5 inline-flex items-center gap-1.5 text-[13.5px] font-bold"
+          style={{ color: 'var(--text-secondary)' }}
+        >
+          {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+          Advanced
+        </button>
+        {advancedOpen ? (
+          <div className="mt-3">
+            <Input
+              label="Max heart rate (bpm)"
+              inputMode="numeric"
+              maxLength={3}
+              placeholder="Leave blank to estimate from age"
+              value={form.maxHr}
+              onChange={(e) => update('maxHr', e.target.value.replace(/[^0-9]/g, ''))}
+            />
+            <p className="mt-2 text-[12.5px] leading-[1.45]" style={{ color: 'var(--text-muted)' }}>
+              Most people should leave this blank — we estimate it from your age. Only set it if you’ve
+              measured your max in a lab or a hard, all-out test.
+            </p>
+          </div>
+        ) : null}
       </Card>
 
       {/* Coach memory — saves per-item, deliberately outside the form's Save. */}
