@@ -1,7 +1,8 @@
-import { Activity, Calendar, Dumbbell, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, ShieldCheck, Zap } from 'lucide-react';
+import { Activity, Calendar, Dumbbell, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, Ruler, ShieldCheck, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
+import BodyMeasurementDialog, { type BodyMeasurementEntry } from '@/components/BodyMeasurementDialog';
 import HealthCaptureDialog, { type HealthCaptureValues } from '@/components/HealthCaptureDialog';
 import QuickActionsFab from '@/components/QuickActionsFab';
 import QuickLogDialog from '@/components/QuickLogDialog';
@@ -12,6 +13,7 @@ import {
   getDashboard,
   getHealthLog,
   logActivity,
+  saveBodyMeasurements,
   syncHealth,
   type ActivityLogPayload,
 } from '@/lib/api';
@@ -94,6 +96,9 @@ export default function HomePage() {
   const [quickLogOpen, setQuickLogOpen] = useState(false);
   const [quickLogSaving, setQuickLogSaving] = useState(false);
   const [quickLogError, setQuickLogError] = useState<string | null>(null);
+  const [bodyOpen, setBodyOpen] = useState(false);
+  const [bodySaving, setBodySaving] = useState(false);
+  const [bodyError, setBodyError] = useState<string | null>(null);
   const isNative = isNativeHealthAvailable();
 
   const loadDashboard = useCallback(async () => {
@@ -236,6 +241,29 @@ export default function HomePage() {
    * Quick-log: something the user did outside the plan. XP is awarded server-side from
    * the type (+ distance for cardio), so the response value is the only source of truth.
    */
+  const handleBodySave = async (entry: BodyMeasurementEntry) => {
+    const token = session?.access_token;
+    if (!token) {
+      setBodyError('Your session is missing. Sign in again and retry.');
+      return;
+    }
+    setBodySaving(true);
+    setBodyError(null);
+    try {
+      const { results } = await saveBodyMeasurements(token, [{ ...entry, source: 'manual' }]);
+      const result = results[0];
+      if (result?.outcome !== 'saved') {
+        setBodyError(result?.reason ?? 'That measurement could not be saved.');
+        return;
+      }
+      setBodyOpen(false);
+    } catch (err) {
+      setBodyError(err instanceof Error ? err.message : 'Unable to save the measurement.');
+    } finally {
+      setBodySaving(false);
+    }
+  };
+
   const handleQuickLog = async (payload: ActivityLogPayload) => {
     if (quickLogSaving) return;
     if (!session?.access_token) {
@@ -502,8 +530,8 @@ export default function HomePage() {
         </div>
       ) : null}
 
-      {/* Both manual-capture flows live on one FAB so the header and the snapshot card
-          stay clean (and two different "Log" buttons stop competing). */}
+      {/* Every manual-capture flow lives on one FAB so the header and the snapshot card
+          stay clean (and competing "Log" buttons don't pile up). */}
       <QuickActionsFab
         actions={[
           {
@@ -520,6 +548,15 @@ export default function HomePage() {
             label: manualCapture ? 'Update health data' : 'Log health data',
             icon: <HeartPulse size={16} color="var(--accent-text)" />,
             onSelect: openCapture,
+          },
+          {
+            id: 'body',
+            label: 'Add measurement',
+            icon: <Ruler size={16} color="var(--accent-text)" />,
+            onSelect: () => {
+              setBodyError(null);
+              setBodyOpen(true);
+            },
           },
         ]}
       />
@@ -545,6 +582,20 @@ export default function HomePage() {
           onSave={(payload) => void handleQuickLog(payload)}
           onClose={() => {
             if (!quickLogSaving) setQuickLogOpen(false);
+          }}
+        />
+      ) : null}
+
+      {/* Body measurement — Progress re-reads the body data when it next loads. */}
+      {bodyOpen ? (
+        <BodyMeasurementDialog
+          initialMetric={null}
+          unitSystem={profile.preferred_unit_system}
+          saving={bodySaving}
+          error={bodyError}
+          onSave={(entry) => void handleBodySave(entry)}
+          onClose={() => {
+            if (!bodySaving) setBodyOpen(false);
           }}
         />
       ) : null}

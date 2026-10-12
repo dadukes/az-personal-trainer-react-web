@@ -27,7 +27,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 |-------|------|-------|
 | `/login` | `LoginPage` | Split gradient hero + sign-in/sign-up toggle |
 | `/onboarding` | `OnboardingPage` | 3 steps; sends only backend-accepted profile fields |
-| `/` | `HomePage` | Health snapshot + today's plan / CTA + week strip; both manual-capture dialogs hang off the `QuickActionsFab` |
+| `/` | `HomePage` | Health snapshot + today's plan / CTA + week strip; every manual-capture dialog (workout, health data, body measurement) hangs off the `QuickActionsFab` |
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **Your progress** (`progress_snapshot` + body measurements) + health trends chart + AI health insights |
@@ -105,8 +105,9 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   rules: strength → consistency → body → fitness; a `null` field means "not tracked" (render
   nothing, never nag); weight's headline is the 7-day average and the sparkline only shows once
   the backend returns a trend; body changes are colour-neutral. Entries come from
-  `getBodyMeasurements` (90 days) and include rows the **mobile app imported from Health
-  Connect** — those show their source ("Fitdays", "Garmin Connect") and are **read-only** (the
+  `getBodyMeasurements` (90 days), sit collapsed behind "Show entries (N)", and include rows
+  the **mobile app imported from Health Connect** — those show their source ("Fitdays",
+  "Garmin Connect") and are **read-only** (the
   server 409s; the next sync would restore them). `manual`/`coach` rows open
   `BodyMeasurementDialog` in edit mode (PATCH, or delete with an inline confirm). Values are
   typed in the user's units and converted to canonical (kg/cm) in the dialog.

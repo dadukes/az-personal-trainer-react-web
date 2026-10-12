@@ -1,4 +1,4 @@
-import { Activity, Dumbbell, HeartPulse, Pencil, Plus, Ruler, Scale, Wind } from 'lucide-react';
+import { Activity, ChevronDown, ChevronUp, Dumbbell, HeartPulse, Pencil, Plus, Ruler, Scale, Wind } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { useMemo, useState } from 'react';
 
@@ -75,6 +75,9 @@ export default function ProgressSnapshotSection({
   onAdd,
   onEdit,
 }: ProgressSnapshotSectionProps) {
+  // The entries list is collapsed by default: the card leads with the weight trend and the
+  // measurement tiles, and the raw rows are there for anyone who wants them.
+  const [entriesOpen, setEntriesOpen] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const strength = snapshot?.strength ?? null;
   const consistency = snapshot?.consistency ?? null;
@@ -206,23 +209,33 @@ export default function ProgressSnapshotSection({
             ) : null}
           </div>
 
-          {history.length > 0 ? (
-            <div className="mt-5">
-              <div className="mb-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: 'var(--text-label)' }}>
-                  Entries
-                </span>
-                {measurements.length > HISTORY_ROWS ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowAll((v) => !v)}
-                    className="text-[12px] font-bold"
-                    style={{ color: 'var(--accent-text)' }}
-                  >
-                    {showAll ? 'Show fewer' : `Show all ${measurements.length}`}
-                  </button>
-                ) : null}
-              </div>
+          {measurements.length > 0 ? (
+            <div className="mt-5 flex items-center justify-between">
+              <button
+                type="button"
+                onClick={() => setEntriesOpen((o) => !o)}
+                aria-expanded={entriesOpen}
+                className="inline-flex items-center gap-1 text-[13px] font-bold"
+                style={{ color: 'var(--text-secondary)' }}
+              >
+                {entriesOpen ? 'Hide entries' : `Show entries (${measurements.length})`}
+                {entriesOpen ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+              </button>
+              {entriesOpen && measurements.length > HISTORY_ROWS ? (
+                <button
+                  type="button"
+                  onClick={() => setShowAll((v) => !v)}
+                  className="text-[12px] font-bold"
+                  style={{ color: 'var(--accent-text)' }}
+                >
+                  {showAll ? 'Show fewer' : `Show all ${measurements.length}`}
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {entriesOpen && history.length > 0 ? (
+            <div className="mt-2">
               {history.map((row) => {
                 const editable = isEditableSource(row.source);
                 return (

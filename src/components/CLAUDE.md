@@ -14,7 +14,7 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   place their own sticky bars at `bottom-0` (+ `env(safe-area-inset-bottom)`), not above `74px`.
 - **`ScreenHeader.tsx`** — title + subtitle + optional right actions.
 - **`QuickActionsFab.tsx`** — the floating "+" that fans out into Home's manual-capture
-  actions (log workout / log health data). It is the **single** entry point for both dialogs;
+  actions (log workout / log health data / add measurement). It is the **single** entry point for those dialogs;
   don't add competing "Log" buttons to the header or the snapshot card.
 - **`UserMenu.tsx`** — avatar button + dropdown (edit profile, theme toggle, sign out). Primarily
   the mobile account entry point (`md:hidden` in Home's `ScreenHeader`), since the sidebar/rail
@@ -39,8 +39,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   `CoachMemory` it owns its fetching. Full-screen below `sm` (a bottom sheet sits under the
   keyboard once search is focused), centred dialog above; portalled; search is not auto-focused.
 - **`ProgressSnapshotSection.tsx`** — "Your progress" on `/progress` (strength, consistency,
-  body, fitness) from `progress_snapshot`, plus the body entries list. Presentational; the page
-  owns fetching. Mirrors the mobile `progress-snapshot-section`.
+  body, fitness) from `progress_snapshot`, plus the body entries list, **collapsed** by default
+  behind "Show entries (N)" (the card leads with the weight trend and tiles). Presentational;
+  the page owns fetching. Mirrors the mobile `progress-snapshot-section`.
 - **`BodyMeasurementDialog.tsx`** — add or edit one body measurement (metric chips, value in the
   user's units, date, note; delete in edit mode). Presentational like `HealthCaptureDialog`.
   The web adds **editing**, which mobile doesn't have yet; device-imported rows never open it.
