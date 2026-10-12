@@ -82,6 +82,8 @@ const SOURCE_APP_LABELS: Record<string, string> = {
   'com.fitbit.FitbitMobile': 'Fitbit',
   'com.google.android.apps.fitness': 'Google Fit',
   'com.google.android.apps.healthdata': 'Health Connect',
+  'com.google.android.apps.wear.companion': 'Pixel Watch',
+  'com.strava': 'Strava',
   'com.withings.wiscale2': 'Withings',
   'cn.fitdays.fitdays': 'Fitdays',
   'com.ouraring.oura': 'Oura',

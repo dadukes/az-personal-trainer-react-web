@@ -45,6 +45,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **`BodyMeasurementDialog.tsx`** — add or edit one body measurement (metric chips, value in the
   user's units, date, note; delete in edit mode). Presentational like `HealthCaptureDialog`.
   The web adds **editing**, which mobile doesn't have yet; device-imported rows never open it.
+- **`ActivityRow.tsx` / `ZoneBar.tsx` / `WeekActivityCard.tsx`** — activities outside guided
+  workouts (web twins of the mobile `activity-row`, `zone-bar`, `week-activity-card`). Labels come
+  from `src/lib/activities.ts`; zone colours are the `--zone-1…5` tokens. Presentational.
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.

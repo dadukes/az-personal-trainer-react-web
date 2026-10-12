@@ -70,6 +70,14 @@
   --effort-recover: var(--forma-aqua);
   --effort-recover-bg: var(--bg-subtle);
 
+  /* Heart-rate zones Z1 (very light) → Z5 (max). Cool easy zones, warm hard ones; always
+     paired with a zone label. Mirrors ZoneColors in the mobile app's constants/theme.ts. */
+  --zone-1: #8fa3b8;
+  --zone-2: var(--forma-sky);
+  --zone-3: var(--forma-aqua);
+  --zone-4: #f2b33d;
+  --zone-5: #ee6a4d;
+
   --shadow-sm: 0 1px 2px rgba(6, 34, 77, 0.06);
   --shadow-md: 0 4px 14px rgba(6, 34, 77, 0.08);
   --shadow-lg: 0 18px 48px rgba(6, 34, 77, 0.14);
@@ -118,6 +126,10 @@
   --effort-work-bg: #2b2416;
   --effort-recover: var(--forma-aqua);
   --effort-recover-bg: var(--bg-subtle);
+
+  --zone-1: #6f8496;
+  --zone-4: var(--forma-gold);
+  --zone-5: #f0715a;
 }
 
 * {

@@ -15,6 +15,12 @@ export default {
           slate: '#113768',
           gold: '#F5C542',
           danger: '#EF4444',
+          // Heart-rate zones Z1..Z5 (light values; the --zone-* CSS vars flip for dark).
+          zone1: '#8FA3B8',
+          zone2: '#39B1F2',
+          zone3: '#34D2C1',
+          zone4: '#F2B33D',
+          zone5: '#EE6A4D',
         },
       },
       fontFamily: {

@@ -38,6 +38,12 @@ for project-wide rules.
   names for Health Connect data origins (`sourceAppLabel`; unknown packages read "your watch").
   `isEditableSource` gates edit/delete: device imports are read-only.
 
+## activities.ts — activity display
+
+- Copied from the mobile app's `lib/activities.ts`; keep the two in step. Title, source badge,
+  duration · distance in the user's units, and the user's note on coach/quick logs. No zone maths:
+  `seconds_in_zone` and `zone_model` come from `GET /activities` / the dashboard.
+
 ## env.ts
 
 - Only `import.meta.env.VITE_*` vars are readable in the browser bundle. Add new config here

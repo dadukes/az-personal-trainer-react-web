@@ -31,7 +31,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **Your progress** (`progress_snapshot` + body measurements) + health trends chart + AI health insights |
-| `/progress/workouts` | `WorkoutHistoryPage` | List of past completed sessions (`getWorkoutSessions`) |
+| `/progress/workouts` | `WorkoutHistoryPage` | Guided sessions (`getWorkoutSessions`) merged newest-first with activities outside the plan (`getActivities`, 90 days: watch imports, coach logs, quick logs). `?activity=<id>` highlights and scrolls to one (Home links here) |
 | `/progress/workouts/:id` | `WorkoutHistoryDetailPage` | One session's logged sets, grouped by section (`getWorkoutSession`) |
 | `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) incl. the optional **Body & heart rate** fields + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
 | `/delete-account` | `DeleteAccountPage` | **Public** (no auth guard, no shell): Play-required deletion URL; signs the user in, then deletes |
@@ -50,6 +50,11 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   placeholder/CTA). Empty `active_workout_plan` → the "Ready to plan your workout?" CTA.
   The 5-day "Upcoming week" is a snap-scrolling row on mobile and a grid from `sm` up — a
   2-col grid left a ragged single-card last row.
+  **This week** (`WeekActivityCard`, from the dashboard's `week_activities`) shows Mon–Sun with an
+  aqua **tick** for a planned workout done and a separate blue **dot** per other activity (watch
+  import from the mobile app, coach log, quick log) — never mix them, so the plan's completion stays
+  truthful. Selecting a day lists its activities; a row opens `/progress/workouts?activity=<id>`.
+  Upcoming cards carry the same "+N activity" marker. A quick log re-loads the dashboard.
 - **Workout session**: the header carries the guided/list toggle and (when the day has
   `ai_notes`) an info button. The session note is a **dialog**, auto-opened once per
   plan+day via `forma:workout-note-seen` — it must not reappear above every exercise.
@@ -100,6 +105,13 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   It is **not** a dual-axis chart — both series are min–max normalized to a shared 0–100 scale
   (the tooltip shows the real captured values), avoiding the spurious-correlation trap of two
   independent y-scales.
+- **Workout history / activities**: activity rows (`ActivityRow`, detailed) show the source badge
+  ("Garmin Connect" / "Logged with coach" / "Quick log"), avg/max bpm and the time-in-zone bar
+  (`ZoneBar`, `--zone-1…5`, always labelled). Zones come from the server (`seconds_in_zone`);
+  `zone_model: null` with HR present → "Add your birth year to see heart-rate zones" → Profile.
+  Activities are **view-only** on web: imports come from the phone and are read-only server-side,
+  and there is no edit endpoint for coach/quick logs. Activities failing to load never hides the
+  guided sessions.
 - **Progress / Your progress**: `ProgressSnapshotSection` renders `GET /progress` →
   `progress_snapshot` (store: `progressSnapshot`) — the web twin of the mobile section, same
   rules: strength → consistency → body → fitness; a `null` field means "not tracked" (render

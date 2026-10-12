@@ -104,6 +104,26 @@ caller's RLS-scoped client. **Not yet in `API_docs.md`; deploy the backend befor
   Previously only `dashboard.completed_days` exposed session ids, and only for the current week
   with no per-set detail.
 
+## 9. 🔵 No edit/delete for coach-logged and quick-logged activities (parked 2026-10-12)
+
+**Gap:** activities outside guided workouts (`activity_logs` rows with `source: 'coach'` or
+`'app'`) are entered by hand — told to the coach, or quick-logged from Home's + button — but the
+backend has **no `PATCH` / `DELETE /api/activities/{id}`**. A wrong duration, distance or type can
+only be fixed by asking the coach, which can't edit either. The web-parity rule ("view always, edit
+if manually enterable") therefore can't be met yet; mobile can't edit them either.
+
+**What it would need (backend):** `PATCH` / `DELETE /api/activities/{id}` for `app`/`coach` rows only
+(device imports stay read-only — the next sync would restore them; 409 like body measurements).
+Rows tied to a guided workout (`workout_session_id`) or that are a session's XP mirror stay out of
+reach. Decide how an edit treats XP (recompute with `computeActivityXp` and adjust `users.total_xp`
+by the delta, or keep the original award), and what happens when a watch import has already been
+**merged** into the row (it is then `source: health_connect`, so read-only).
+
+- **Web behavior today:** `WorkoutHistoryPage` and Home's `WeekActivityCard` show these rows
+  read-only (`ActivityRow`, with a "Logged with coach" / "Quick log" badge and the user's note).
+  When the endpoint lands, add an edit dialog for `app`/`coach` rows (mirroring
+  `BodyMeasurementDialog`'s edit mode) on web, and the same on mobile's Activities screen.
+
 ---
 
 ## Not gaps (verified working against the local backend)

@@ -3,6 +3,7 @@ import type { ComponentType } from 'react';
 import { useMemo, useState } from 'react';
 
 import { Card, Eyebrow } from '@/components/ui';
+import ZoneBar from '@/components/ZoneBar';
 import type { BodyMeasurement, BodyMetric, MeasurementChange, ProgressSnapshot, SignalTrend } from '@/lib/api';
 import { BODY_METRICS, formatMetric, formatMetricChange, isEditableSource, sourceLabel } from '@/lib/body';
 import { formatNumber, kgToLb, type UnitSystem } from '@/lib/units';
@@ -314,6 +315,14 @@ export default function ProgressSnapshotSection({
               />
             ) : null}
           </div>
+          {cardio?.zone_minutes_per_week && cardio.zone_minutes_per_week.some((m) => m > 0) ? (
+            <div className="mt-3.5 flex flex-col gap-1.5">
+              <span className="text-[12px] font-bold" style={{ color: 'var(--text-secondary)' }}>
+                ~{Math.round(cardio.zone_minutes_per_week.slice(1).reduce((sum, m) => sum + m, 0))} min / week in zone 2 or above
+              </span>
+              <ZoneBar values={cardio.zone_minutes_per_week} format={(m) => `${Math.round(m)}m`} />
+            </div>
+          ) : null}
           {vo2 ? (
             <div className="mt-3 flex">
               <PillButton label="VO2 max" icon={Wind} onClick={() => onAdd('vo2max_ml_kg_min')} ariaLabel="Add VO2 max" />

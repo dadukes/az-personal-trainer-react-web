@@ -276,6 +276,11 @@ export interface DashboardResponse {
     pending_insights: PendingInsight[];
     /** Keyed by weekday name (`monday`…`sunday`) for the current week; absent days aren't done. */
     completed_days?: Record<string, CompletedDay>;
+    /**
+     * This week's activities outside guided workouts (coach-logged, quick-logged, watch
+     * imports), keyed by local `YYYY-MM-DD`, oldest first. `{}` when empty or unavailable.
+     */
+    week_activities?: Record<string, ActivityItem[]>;
   };
 }
 
@@ -345,6 +350,95 @@ export interface ProgressResponse {
     /** Pre-computed progress signals; absent on an older backend. */
     progress_snapshot?: ProgressSnapshot | null;
   };
+}
+
+// ─── Activities (outside guided workouts) + watch import ──────────────────────
+
+export type ActivitySource = 'app' | 'coach' | 'health_connect' | 'apple_health';
+
+/** Five values, Z1..Z5. Seconds on an activity; minutes per week on the snapshot. */
+export type ZoneSeconds = [number, number, number, number, number];
+
+/** One activity from `GET /activities` or the dashboard's `week_activities`. */
+export interface ActivityItem {
+  id: string;
+  activity_type: ActivityType;
+  /** Device label (e.g. "Run", "Treadmill run"); `null` for app/coach rows. */
+  name: string | null;
+  /** Strength session imported from a device (`activity_type` is `other`). */
+  is_strength: boolean;
+  started_at: string | null;
+  completed_at: string;
+  duration_minutes: number | null;
+  distance_km: number | null;
+  xp_earned: number;
+  /** For imports, the device title when one was set. */
+  notes: string | null;
+  source: ActivitySource;
+  /** Data-origin package of a device import. */
+  source_app: string | null;
+  avg_hr: number | null;
+  max_hr: number | null;
+  hr_coverage: number | null;
+  /** Z1..Z5 seconds; `null` without HR data **or** without a zone model (no birth year). */
+  seconds_in_zone: ZoneSeconds | null;
+}
+
+export interface ZoneModel {
+  max_hr: number;
+  resting_hr: number | null;
+  method: 'hrr' | 'percent_max';
+  /** Lower bpm bound of Z1..Z5. */
+  floors: number[];
+}
+
+export interface ActivitiesResponse {
+  success: boolean;
+  activities: ActivityItem[];
+  /** `null` when the profile has neither a birth year nor a max-HR override. */
+  zone_model: ZoneModel | null;
+}
+
+/** One watch-recorded session for `POST /activities/import`. */
+export interface ImportedActivityInput {
+  source: 'health_connect' | 'apple_health';
+  source_app: string | null;
+  /** Idempotency key — the device record id. */
+  source_record_id: string;
+  /** Health Connect `ExerciseType` constant; the server maps it. */
+  exercise_type: number;
+  title: string | null;
+  started_at: string;
+  completed_at: string;
+  distance_km: number | null;
+  /** Mean bpm per bucket from ONE origin; `null` = an empty bucket. */
+  heart_rate: { bucket_seconds: number; samples: (number | null)[] } | null;
+}
+
+export type ActivityImportOutcome =
+  | 'created'
+  | 'updated'
+  | 'unchanged'
+  | 'merged'
+  | 'linked_to_workout'
+  | 'skipped';
+
+export interface ActivityImportResult {
+  source_record_id: string;
+  outcome: ActivityImportOutcome;
+  activity_id?: string;
+  /** Only on `created`. */
+  xp_earned?: number;
+  /** Only on `skipped`. */
+  reason?: string;
+}
+
+export interface ImportActivitiesResponse {
+  success: boolean;
+  /** In input order. */
+  results: ActivityImportResult[];
+  total_xp_earned: number;
+  new_total_xp: number;
 }
 
 // ─── Body measurements + progress snapshot ────────────────────────────────────
@@ -461,7 +555,12 @@ export interface ProgressSnapshot {
   resting_hr: { avg_7d: number; change: number | null } | null;
   sleep: { avg_hours_7d: number } | null;
   steps: { avg_7d: number; change_pct: number | null } | null;
-  cardio: { minutes_per_week: number; sessions: number } | null;
+  cardio: {
+    minutes_per_week: number;
+    sessions: number;
+    /** Weekly minutes in Z1..Z5; `null` without HR data or a zone model. */
+    zone_minutes_per_week?: ZoneSeconds | null;
+  } | null;
   nutrition: { days_logged: number; avg_protein_g: number | null } | null;
 }
 
@@ -1019,6 +1118,18 @@ export async function logActivity(
     method: 'POST',
     body: JSON.stringify(payload),
   });
+}
+
+/** Activities outside guided workouts, newest first, with HR zones derived on read. */
+export async function getActivities(
+  accessToken: string,
+  q: { days?: number; limit?: number } = {},
+): Promise<ActivitiesResponse> {
+  const query = new URLSearchParams();
+  if (q.days != null) query.set('days', String(q.days));
+  if (q.limit != null) query.set('limit', String(q.limit));
+  const qs = query.toString();
+  return apiFetch<ActivitiesResponse>(`/activities${qs ? `?${qs}` : ''}`, accessToken);
 }
 
 export async function getExerciseDetail(

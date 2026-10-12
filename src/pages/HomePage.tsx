@@ -8,6 +8,7 @@ import QuickActionsFab from '@/components/QuickActionsFab';
 import QuickLogDialog from '@/components/QuickLogDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import UserMenu from '@/components/UserMenu';
+import WeekActivityCard from '@/components/WeekActivityCard';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import {
   getDashboard,
@@ -15,6 +16,7 @@ import {
   logActivity,
   saveBodyMeasurements,
   syncHealth,
+  type ActivityItem,
   type ActivityLogPayload,
 } from '@/lib/api';
 import {
@@ -88,6 +90,8 @@ export default function HomePage() {
   const [planId, setPlanId] = useState<string | undefined>();
   /** Authoritative completed dates (local `YYYY-MM-DD`) from the dashboard's `completed_days`. */
   const [serverCompletedDates, setServerCompletedDates] = useState<Set<string>>(() => new Set());
+  /** Dashboard `week_activities`: this week's activities outside guided workouts, by local date. */
+  const [weekActivities, setWeekActivities] = useState<Record<string, ActivityItem[]>>({});
   const [redoConfirm, setRedoConfirm] = useState<string | null>(null);
   const [manualCapture, setManualCapture] = useState<ManualHealthCapture | null>(null);
   const [captureOpen, setCaptureOpen] = useState(false);
@@ -114,6 +118,7 @@ export default function HomePage() {
           ),
         ),
       );
+      setWeekActivities(result.data.week_activities ?? {});
       if (!plan) {
         setWeekPlan([]);
         return;
@@ -276,6 +281,8 @@ export default function HomePage() {
       const result = await logActivity(session.access_token, payload);
       addXp(result.xp_earned);
       setQuickLogOpen(false);
+      // The "This week" card lists quick logs too.
+      void loadDashboard();
     } catch {
       setQuickLogError('Couldn’t log that. Check your connection and try again.');
     } finally {
@@ -477,6 +484,7 @@ export default function HomePage() {
             {weekPlan.map((day) => {
               const isToday = day.status === 'today';
               const completed = isDayCompleted(day.date);
+              const otherCount = weekActivities[day.date]?.length ?? 0;
               return (
                 <button
                   key={day.key}
@@ -523,12 +531,30 @@ export default function HomePage() {
                   >
                     {day.duration}
                   </div>
+                  {/* Activity outside the plan: its own marker, never the plan's DONE badge. */}
+                  {otherCount > 0 ? (
+                    <div
+                      className="mt-2 flex items-center gap-1 text-[10.5px] font-semibold"
+                      style={{ color: isToday ? 'var(--text-on-mint)' : 'var(--text-secondary)' }}
+                    >
+                      <span className="h-1.5 w-1.5 rounded-full" style={{ background: 'var(--forma-sky)' }} />
+                      +{otherCount} {otherCount === 1 ? 'activity' : 'activities'}
+                    </div>
+                  ) : null}
                 </button>
               );
             })}
           </div>
         </div>
       ) : null}
+
+      {/* This week: plan ticks + everything else the user did (watch, coach, quick logs). */}
+      <WeekActivityCard
+        weekActivities={weekActivities}
+        isPlanDone={isDayCompleted}
+        unitSystem={profile.preferred_unit_system}
+        onOpenActivity={(item) => navigate(item ? `/progress/workouts?activity=${item.id}` : '/progress/workouts')}
+      />
 
       {/* Every manual-capture flow lives on one FAB so the header and the snapshot card
           stay clean (and competing "Log" buttons don't pile up). */}
