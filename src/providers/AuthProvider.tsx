@@ -12,6 +12,7 @@ import {
 import { deleteAccount as deleteAccountRequest, getProfile, type UserProfileData } from '@/lib/api';
 import { env } from '@/lib/env';
 import { getOnboardingStorageKey, supabase } from '@/lib/supabase';
+import { syncDeviceTimezone } from '@/lib/timezone';
 import { INITIAL_PROFILE, useAppStore, type UserProfile } from '@/store/useAppStore';
 
 // ─── Profile persistence helpers (localStorage) ───────────────────────────────
@@ -97,6 +98,9 @@ async function hydrateProfile(userId: string, accessToken: string): Promise<void
   try {
     const { profile: apiProfile } = await getProfile(accessToken);
     commitProfile(userId, apiProfile);
+    // The browser moved zones (or the profile still has the 'UTC' default): follow it.
+    const updated = await syncDeviceTimezone(accessToken);
+    if (updated) commitProfile(userId, updated);
   } catch {
     // Background refresh failed — cached data (if any) remains
   }
@@ -180,6 +184,21 @@ export function AuthProvider({ children }: PropsWithChildren) {
       subscription.unsubscribe();
     };
   }, []);
+
+  // Returning to the tab (after a flight, say) re-checks the zone.
+  const userId = session?.user?.id ?? null;
+  const accessToken = session?.access_token ?? null;
+  useEffect(() => {
+    if (!userId || !accessToken) return;
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible') return;
+      void syncDeviceTimezone(accessToken).then((updated) => {
+        if (updated) commitProfile(userId, updated);
+      });
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [userId, accessToken]);
 
   const assertSupabaseConfig = useCallback(() => {
     if (!env.hasSupabaseConfig) {

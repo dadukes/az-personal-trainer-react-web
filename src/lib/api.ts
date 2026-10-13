@@ -399,6 +399,101 @@ export interface ActivitiesResponse {
   zone_model: ZoneModel | null;
 }
 
+/** `GET /activities/{id}` — one activity outside guided workouts. */
+export interface ActivityDetailResponse {
+  success: boolean;
+  activity: ActivityItem;
+  zone_model: ZoneModel | null;
+}
+
+/** `PATCH /activities/{id}` body — coach and quick logs only; `null` clears a number. */
+export interface ActivityUpdatePayload {
+  activity_type?: ActivityType;
+  duration_minutes?: number | null;
+  distance_km?: number | null;
+  notes?: string | null;
+}
+
+/** `PATCH` / `DELETE /activities/{id}`. XP is recomputed server-side; apply `xp_delta`. */
+export interface ActivityMutationResponse {
+  success: boolean;
+  /** PATCH only. */
+  activity?: ActivityItem;
+  xp_delta: number;
+  new_total_xp: number;
+}
+
+/** HR summary of a watch recording of a guided workout (linked on import). */
+export interface LinkedHeartRate {
+  activity_id: string;
+  avg_hr: number | null;
+  max_hr: number | null;
+  hr_coverage: number | null;
+  seconds_in_zone: ZoneSeconds | null;
+  source: ActivitySource;
+  source_app: string | null;
+}
+
+/** A guided (or coach plan-day) workout as a `GET /history` entry. */
+export interface HistoryWorkout {
+  id: string;
+  plan_id: string | null;
+  day: string | null;
+  /** The plan day's focus ("Upper Body Strength"); `null` → show the weekday. */
+  title: string | null;
+  started_at: string;
+  completed_at: string;
+  duration_minutes: number;
+  total_sets: number;
+  xp_earned: number;
+  /** How it was logged: the guided player, told to the coach, or completed by a watch recording. */
+  source: WorkoutSessionSource;
+  /** A plan day reported to the coach: no per-set detail. */
+  coach_logged: boolean;
+  /** From the best-covered watch recording. */
+  avg_hr: number | null;
+  max_hr: number | null;
+  /** Data-origin package of that recording; `null` without one. */
+  recorded_by: string | null;
+  /** From the recordings or the coach's log; `null` when none has one. */
+  distance_km: number | null;
+}
+
+export type WorkoutSessionSource = 'app' | 'coach' | 'watch';
+
+interface HistoryItemBase {
+  id: string;
+  completed_at: string;
+  /** Local `YYYY-MM-DD` in the user's (server-side) timezone. */
+  date: string;
+  /** Monday of the item's week; matches `HistoryWeek.week_start`. */
+  week_start: string;
+}
+
+export type HistoryItem =
+  | (HistoryItemBase & { kind: 'workout'; workout: HistoryWorkout })
+  | (HistoryItemBase & { kind: 'activity'; activity: ActivityItem });
+
+/** Whole-week totals (not just the loaded page), counted like `workouts_this_week`. */
+export interface HistoryWeek {
+  week_start: string;
+  week_end: string;
+  sessions: number;
+  duration_minutes: number;
+  distance_km: number;
+  xp_earned: number;
+}
+
+/** `GET /history` — the Activities timeline, newest first. */
+export interface HistoryResponse {
+  success: boolean;
+  items: HistoryItem[];
+  weeks: HistoryWeek[];
+  /** Pass back as `before`; `null` = nothing older. A short page with a cursor is normal. */
+  next_cursor: string | null;
+  zone_model: ZoneModel | null;
+}
+
 /** One watch-recorded session for `POST /activities/import`. */
 export interface ImportedActivityInput {
   source: 'health_connect' | 'apple_health';
@@ -421,6 +516,7 @@ export type ActivityImportOutcome =
   | 'unchanged'
   | 'merged'
   | 'linked_to_workout'
+  | 'completed_plan_day'
   | 'skipped';
 
 export interface ActivityImportResult {
@@ -804,7 +900,15 @@ export interface WorkoutSessionsResponse {
 export interface WorkoutSessionDetailResponse {
   success: boolean;
   session: WorkoutSessionSummary;
+  /** The plan day's focus; `null` when the plan or day is gone. */
+  title: string | null;
+  source: WorkoutSessionSource;
   sets: WorkoutSetLogEntry[];
+  /** From the best-covered watch recording of this workout; `null` without one. */
+  heart_rate: LinkedHeartRate | null;
+  /** Every watch recording that belongs to it (a bike warm-up and the strength session), oldest first. */
+  recordings: ActivityItem[];
+  zone_model: ZoneModel | null;
 }
 
 // ─── Plan viewing / editing (Day Detail) ──────────────────────────────────────
@@ -948,6 +1052,17 @@ export async function updateProfile(
 ): Promise<ProfileResponse> {
   return apiFetch<ProfileResponse>('/profile', accessToken, {
     method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Partial profile update (`PATCH /profile`) — only the supplied fields change. */
+export async function patchProfile(
+  accessToken: string,
+  payload: Partial<ProfilePayload> & { timezone?: string },
+): Promise<ProfileResponse> {
+  return apiFetch<ProfileResponse>('/profile', accessToken, {
+    method: 'PATCH',
     body: JSON.stringify(payload),
   });
 }
@@ -1130,6 +1245,42 @@ export async function getActivities(
   if (q.limit != null) query.set('limit', String(q.limit));
   const qs = query.toString();
   return apiFetch<ActivitiesResponse>(`/activities${qs ? `?${qs}` : ''}`, accessToken);
+}
+
+/** One page of the Activities timeline (guided workouts + everything else), newest first. */
+export async function getHistory(
+  accessToken: string,
+  q: { before?: string | null; limit?: number } = {},
+): Promise<HistoryResponse> {
+  const query = new URLSearchParams();
+  if (q.before) query.set('before', q.before);
+  if (q.limit != null) query.set('limit', String(q.limit));
+  const qs = query.toString();
+  return apiFetch<HistoryResponse>(`/history${qs ? `?${qs}` : ''}`, accessToken);
+}
+
+/** One activity outside guided workouts (404 for a guided workout's own rows). */
+export async function getActivity(accessToken: string, activityId: string): Promise<ActivityDetailResponse> {
+  return apiFetch<ActivityDetailResponse>(`/activities/${encodeURIComponent(activityId)}`, accessToken);
+}
+
+/** Edit a coach or quick log; device imports answer 409. */
+export async function updateActivity(
+  accessToken: string,
+  activityId: string,
+  payload: ActivityUpdatePayload,
+): Promise<ActivityMutationResponse> {
+  return apiFetch<ActivityMutationResponse>(`/activities/${encodeURIComponent(activityId)}`, accessToken, {
+    method: 'PATCH',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Delete a coach or quick log (its XP goes with it); device imports answer 409. */
+export async function deleteActivity(accessToken: string, activityId: string): Promise<ActivityMutationResponse> {
+  return apiFetch<ActivityMutationResponse>(`/activities/${encodeURIComponent(activityId)}`, accessToken, {
+    method: 'DELETE',
+  });
 }
 
 export async function getExerciseDetail(

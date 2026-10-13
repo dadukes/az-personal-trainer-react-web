@@ -553,7 +553,7 @@ export default function HomePage() {
         weekActivities={weekActivities}
         isPlanDone={isDayCompleted}
         unitSystem={profile.preferred_unit_system}
-        onOpenActivity={(item) => navigate(item ? `/progress/workouts?activity=${item.id}` : '/progress/workouts')}
+        onOpenActivity={(item) => navigate(item ? `/activities/${item.id}` : '/activities')}
       />
 
       {/* Every manual-capture flow lives on one FAB so the header and the snapshot card

@@ -379,11 +379,11 @@ export default function ProgressPage() {
           <div className="mb-3.5 flex items-center justify-between">
             <Eyebrow>This week</Eyebrow>
             <button
-              onClick={() => navigate('/progress/workouts')}
+              onClick={() => navigate('/activities')}
               className="text-[12px] font-bold transition-opacity hover:opacity-80"
               style={{ color: 'var(--accent-text)' }}
             >
-              Workout history →
+              All activities →
             </button>
           </div>
           <div className="flex gap-3">
@@ -394,7 +394,7 @@ export default function ProgressPage() {
             <StatTile
               value={weekStats ? String(weekStats.workouts_this_week) : '--'}
               label="Workouts this week"
-              onClick={() => navigate('/progress/workouts')}
+              onClick={() => navigate('/activities')}
             />
             <StatTile
               value={weekStats ? `${weekStats.minutes_trained_this_week}m` : '--'}

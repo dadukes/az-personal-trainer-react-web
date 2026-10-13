@@ -1,4 +1,4 @@
-import { Home, LogOut, MessageSquare, Moon, Settings, Sun, TrendingUp, Utensils } from 'lucide-react';
+import { Activity, Home, LogOut, MessageSquare, Moon, Settings, Sun, TrendingUp, Utensils } from 'lucide-react';
 import type { ComponentType } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 
@@ -17,6 +17,7 @@ const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'Home', icon: Home },
   { to: '/coach', label: 'Coach', icon: MessageSquare },
   { to: '/fuel', label: 'Fuel', icon: Utensils },
+  { to: '/activities', label: 'Activities', icon: Activity },
   { to: '/progress', label: 'Progress', icon: TrendingUp },
 ];
 

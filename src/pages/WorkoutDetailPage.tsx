@@ -1,17 +1,23 @@
-import { ChevronLeft, Clock, Dumbbell, Layers, MessageCircle, Zap } from 'lucide-react';
+import { Clock, Dumbbell, Layers, MapPin, MessageCircle, Watch, Weight, Zap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
+import ActivityRow from '@/components/ActivityRow';
+import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
+import HeartRateCard from '@/components/HeartRateCard';
 import { Badge, Card, Eyebrow, StatTile } from '@/components/ui';
+import { sourceAppLabel } from '@/lib/body';
+import { formatDistance, timeRangeText, workoutDurationSeconds, workoutTitle, workoutVolume } from '@/lib/activities';
 import {
   getWorkoutSession,
   type WorkoutSection,
-  type WorkoutSessionSummary,
+  type WorkoutSessionDetailResponse,
   type WorkoutSetLogEntry,
 } from '@/lib/api';
 import { weightText } from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppStore } from '@/store/useAppStore';
 
 const SECTION_LABELS: Record<WorkoutSection, string> = {
   warmup: 'Warm-up',
@@ -21,27 +27,12 @@ const SECTION_LABELS: Record<WorkoutSection, string> = {
 
 const SECTION_ORDER: WorkoutSection[] = ['warmup', 'main', 'cooldown'];
 
-function formatSessionDate(iso: string): string {
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return iso;
-  return d.toLocaleDateString(undefined, {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  });
-}
-
 function formatDuration(seconds: number): string {
   const mins = Math.max(0, Math.round(seconds / 60));
   if (mins < 60) return `${mins}m`;
   const h = Math.floor(mins / 60);
   const m = mins % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
-}
-
-function capitalize(s: string): string {
-  return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
 /**
@@ -105,14 +96,19 @@ function groupBySection(sets: WorkoutSetLogEntry[]): Record<WorkoutSection, Exer
   return bySection;
 }
 
-export default function WorkoutHistoryDetailPage() {
+/**
+ * `/activities/workout/:id` — one guided workout: duration, sets and XP, the heart rate
+ * from a watch recording of the same session (linked on import) and every logged set,
+ * grouped by section. A plan day the user reported to the coach has no sets.
+ */
+export default function WorkoutDetailPage() {
   const navigate = useNavigate();
+  const goBack = useBackToActivities();
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
+  const unitSystem = useAppStore((s) => s.profile.preferred_unit_system);
 
-  const [data, setData] = useState<{ session: WorkoutSessionSummary; sets: WorkoutSetLogEntry[] } | null>(
-    null,
-  );
+  const [data, setData] = useState<WorkoutSessionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -124,7 +120,7 @@ export default function WorkoutHistoryDetailPage() {
     void (async () => {
       try {
         const result = await getWorkoutSession(token, id);
-        if (mounted) setData({ session: result.session, sets: result.sets ?? [] });
+        if (mounted) setData({ ...result, sets: result.sets ?? [] });
       } catch (err) {
         if (mounted) setError(err instanceof Error ? err.message : 'Could not load this workout.');
       } finally {
@@ -138,27 +134,24 @@ export default function WorkoutHistoryDetailPage() {
 
   const grouped = data ? groupBySection(data.sets) : null;
   const completedSets = data ? data.sets.filter((s) => s.completed).length : 0;
-  // The coach can log a session the user reported in chat; those rows have no set logs.
-  const coachLogged = !!data && data.session.total_sets === 0 && data.sets.length === 0;
+  const volume = data ? workoutVolume(data.sets, unitSystem) : null;
+  // A plan day told to the coach, or completed by a watch recording, has no set logs.
+  const source = data?.source ?? (data && data.session.total_sets === 0 ? 'coach' : 'app');
+  const noSets = !!data && data.sets.length === 0 && source !== 'app';
+  const recordings = data?.recordings ?? [];
+  const distanceKm = recordings.reduce((sum, r) => sum + (r.distance_km ?? 0), 0);
+  const durationSeconds = data ? workoutDurationSeconds(data.session.duration_seconds, recordings) : 0;
+  // The coach stamps the time the user told it; a recording knows when it happened.
+  const shownStart = recordings[0]?.started_at ?? (source === 'coach' ? null : data?.session.started_at ?? null);
+  const shownEnd = recordings.length > 0 ? recordings[recordings.length - 1].completed_at : data?.session.completed_at ?? '';
 
   return (
     <div className="mx-auto flex w-full max-w-[760px] animate-fade-slide-up flex-col gap-5 p-5 sm:p-8">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={() => navigate('/progress/workouts')}
-          aria-label="Back to workout history"
-          className="flex h-10 w-10 items-center justify-center rounded-xl"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
-        >
-          <ChevronLeft size={20} color="var(--text-secondary)" />
-        </button>
-        <div>
-          <Eyebrow>Workout history</Eyebrow>
-          <div className="text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-            {data?.session.day ? capitalize(data.session.day) : 'Workout'}
-          </div>
-        </div>
-      </div>
+      <DetailHeader
+        eyebrow="Planned workout"
+        title={data ? workoutTitle({ title: data.title, day: data.session.day }) : 'Workout'}
+        onBack={goBack}
+      />
 
       {loading ? (
         <div className="flex justify-center py-16">
@@ -176,23 +169,27 @@ export default function WorkoutHistoryDetailPage() {
       ) : (
         <>
           <div className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-            {formatSessionDate(data.session.completed_at)}
+            {timeRangeText(shownStart, shownEnd)}
           </div>
 
           {/* Session summary tiles */}
-          <div className="flex gap-3">
+          <div className={`grid grid-cols-2 gap-3 ${volume || distanceKm > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
             <StatTile
-              value={data.session.duration_seconds > 0 ? formatDuration(data.session.duration_seconds) : '—'}
+              value={durationSeconds > 0 ? formatDuration(durationSeconds) : '—'}
               label="Duration"
               icon={<Clock size={16} color="#34D2C1" />}
             />
-            {!coachLogged ? (
+            {distanceKm > 0 ? (
+              <StatTile value={formatDistance(distanceKm, unitSystem, 2)} label="Distance" icon={<MapPin size={16} color="#34D2C1" />} />
+            ) : null}
+            {!noSets ? (
               <StatTile
                 value={String(completedSets)}
                 label="Sets completed"
                 icon={<Layers size={16} color="#34D2C1" />}
               />
             ) : null}
+            {volume ? <StatTile value={volume} label="Volume" icon={<Weight size={16} color="#34D2C1" />} /> : null}
             <StatTile
               value={data.session.xp_earned > 0 ? `+${data.session.xp_earned}` : '—'}
               label="XP earned"
@@ -200,31 +197,54 @@ export default function WorkoutHistoryDetailPage() {
             />
           </div>
 
-          {/* A coach-logged session carries no per-set detail — an empty set table would
-              read as "nothing happened", so state plainly what it is instead. */}
-          {coachLogged ? (
+          {data.heart_rate ? (
+            <HeartRateCard
+              avgHr={data.heart_rate.avg_hr}
+              maxHr={data.heart_rate.max_hr}
+              secondsInZone={data.heart_rate.seconds_in_zone}
+              zoneModel={data.zone_model}
+              sourceLabel={sourceAppLabel(data.heart_rate.source_app)}
+              onAddBirthYear={() => navigate('/profile')}
+            />
+          ) : null}
+
+          {/* A plan day told to the coach or completed by the watch has no per-set detail — an
+              empty set table would read as "nothing happened", so state plainly what it is. */}
+          {noSets ? (
             <Card padding="16px 18px">
               <div className="flex items-start gap-3">
                 <div
                   className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
                   style={{ background: 'var(--bg-subtle)' }}
                 >
-                  <MessageCircle size={18} color="#34D2C1" />
+                  {source === 'watch' ? <Watch size={18} color="#34D2C1" /> : <MessageCircle size={18} color="#34D2C1" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                      Logged with your coach
+                      {source === 'watch' ? 'Completed on your watch' : 'Logged with your coach'}
                     </span>
-                    <Badge tone="mint">Coach-logged</Badge>
+                    <Badge tone="mint">{source === 'watch' ? 'Plan day done' : 'Coach-logged'}</Badge>
                   </div>
                   <p className="mt-1 text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                    You told your coach about this one in chat, so there&rsquo;s no set-by-set
-                    breakdown — it still counts towards your week.
+                    {source === 'watch'
+                      ? `${sourceAppLabel(recordings[0]?.source_app ?? null)} recorded this, so the planned day is ticked off. There’s no set-by-set breakdown.`
+                      : recordings.length > 0
+                        ? `You told your coach about this one and ${sourceAppLabel(recordings[0].source_app)} recorded it. It counts once towards your week.`
+                        : 'You told your coach about this one in chat, so there’s no set-by-set breakdown — it still counts towards your week.'}
                   </p>
                 </div>
               </div>
             </Card>
+          ) : null}
+
+          {recordings.length > 0 ? (
+            <div className="flex flex-col gap-3">
+              <Eyebrow>Recorded on your watch</Eyebrow>
+              {recordings.map((r) => (
+                <ActivityRow key={r.id} item={r} unitSystem={unitSystem} detailed />
+              ))}
+            </div>
           ) : null}
 
           {/* Logged exercises grouped by section */}

@@ -98,31 +98,23 @@ plus `WorkoutSessionModel.findByIdForUser` / `findSetLogsBySessionId`). Both rea
 caller's RLS-scoped client. **Not yet in `API_docs.md`; deploy the backend before the web
 `/progress/workouts` view can load real data.**
 
-- **Web behavior:** `ProgressPage`'s "Workouts this week" tile → `/progress/workouts`
-  (`WorkoutHistoryPage`, `getWorkoutSessions`); tapping a row opens `/progress/workouts/:id`
-  (`WorkoutHistoryDetailPage`, `getWorkoutSession`) which groups the logged sets by section.
+- **Web behavior:** superseded by the **Activities** tab (2026-10-13): `/activities` reads the merged
+  `GET /history` timeline, and a guided workout opens `/activities/workout/:id` (`WorkoutDetailPage`,
+  `getWorkoutSession`, now with the plan-day title and the linked watch heart rate).
   Previously only `dashboard.completed_days` exposed session ids, and only for the current week
   with no per-set detail.
 
-## 9. 🔵 No edit/delete for coach-logged and quick-logged activities (parked 2026-10-12)
+## 9. ✅ Edit/delete for coach-logged and quick-logged activities (resolved 2026-10-13)
 
-**Gap:** activities outside guided workouts (`activity_logs` rows with `source: 'coach'` or
-`'app'`) are entered by hand — told to the coach, or quick-logged from Home's + button — but the
-backend has **no `PATCH` / `DELETE /api/activities/{id}`**. A wrong duration, distance or type can
-only be fixed by asking the coach, which can't edit either. The web-parity rule ("view always, edit
-if manually enterable") therefore can't be met yet; mobile can't edit them either.
+`PATCH` / `DELETE /api/activities/{activityId}` (health-data plan step 7b) edit or delete `app` and
+`coach` rows. Device imports answer **409** `activity_imported` (the next sync would restore them).
+A watch recording linked to a guided workout, or a workout's XP-mirror row, answers **404**: it
+belongs to the workout. Editing the type, duration or distance recomputes XP with the
+`POST /activity/log` rules; deleting removes the row's XP. Both return `xp_delta` + `new_total_xp`.
 
-**What it would need (backend):** `PATCH` / `DELETE /api/activities/{id}` for `app`/`coach` rows only
-(device imports stay read-only — the next sync would restore them; 409 like body measurements).
-Rows tied to a guided workout (`workout_session_id`) or that are a session's XP mirror stay out of
-reach. Decide how an edit treats XP (recompute with `computeActivityXp` and adjust `users.total_xp`
-by the delta, or keep the original award), and what happens when a watch import has already been
-**merged** into the row (it is then `source: health_connect`, so read-only).
-
-- **Web behavior today:** `WorkoutHistoryPage` and Home's `WeekActivityCard` show these rows
-  read-only (`ActivityRow`, with a "Logged with coach" / "Quick log" badge and the user's note).
-  When the endpoint lands, add an edit dialog for `app`/`coach` rows (mirroring
-  `BodyMeasurementDialog`'s edit mode) on web, and the same on mobile's Activities screen.
+- **Web behavior:** the activity detail page (`/activities/:id`) has **Edit** for coach and quick
+  logs (`ActivityEditDialog`: type, duration, distance in the user's units, note, delete with an
+  inline confirm). The store's XP moves by `xp_delta`.
 
 ---
 

@@ -10,7 +10,7 @@ Fitness AI personal trainer. It is a port of the Expo/React Native app
 Claude Design **"Forma Web App Prototype"**. It talks to the **same Azure Functions
 backend** and **Supabase Auth** as the mobile app.
 
-Core user journey: **auth → onboarding → tabs** (Home, Coach, Fuel, Progress), plus
+Core user journey: **auth → onboarding → tabs** (Home, Coach, Fuel, Activities, Progress), plus
 plan-day view, guided workout session, and chat history.
 
 > Tagline is exact: **"Fitness that fits you."** (keep the period). App name

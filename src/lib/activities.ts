@@ -1,4 +1,4 @@
-import type { ActivityItem, ActivityType, ZoneSeconds } from '@/lib/api';
+import type { ActivityItem, ActivityType, WorkoutSetLogEntry, ZoneSeconds } from '@/lib/api';
 import { sourceAppLabel } from '@/lib/body';
 
 /**
@@ -93,4 +93,138 @@ export function activityNoun(item: Pick<ActivityItem, 'name' | 'activity_type'>)
 /** Sort key for a day list: when it started, else when it ended. */
 export function activityTime(item: Pick<ActivityItem, 'started_at' | 'completed_at'>): string {
   return item.started_at ?? item.completed_at;
+}
+
+/** Coach and quick logs are the user's own entries, so they can be edited; imports can't. */
+export function isEditableActivity(item: Pick<ActivityItem, 'source'>): boolean {
+  return item.source === 'app' || item.source === 'coach';
+}
+
+/** Types an edit can switch between (the quick-log set plus the coach's). */
+export const EDITABLE_TYPES: { type: ActivityType; label: string }[] = [
+  { type: 'cardio', label: 'Cardio' },
+  { type: 'walk', label: 'Walk' },
+  { type: 'class', label: 'Class' },
+  { type: 'full_workout', label: 'Workout' },
+  { type: 'other', label: 'Other' },
+  { type: 'micro_win', label: 'Quick win' },
+];
+
+/** `5.4 km` / `3.4 mi`. */
+export function formatDistance(km: number, system: 'metric' | 'imperial', digits = 1): string {
+  return system === 'imperial' ? `${(km / 1.609344).toFixed(digits)} mi` : `${km.toFixed(digits)} km`;
+}
+
+/**
+ * Pace for runs and walks (`5:32 /km`), speed for rides (`24.1 km/h`); null without both
+ * a duration and a distance, or for types where neither means much.
+ */
+export function paceOrSpeed(
+  item: Pick<ActivityItem, 'activity_type' | 'name' | 'duration_minutes' | 'distance_km'>,
+  system: 'metric' | 'imperial',
+): { label: 'Avg pace' | 'Avg speed'; value: string } | null {
+  const minutes = item.duration_minutes ?? 0;
+  const km = item.distance_km ?? 0;
+  if (minutes <= 0 || km <= 0) return null;
+  if (item.activity_type !== 'cardio' && item.activity_type !== 'walk') return null;
+  const dist = system === 'imperial' ? km / 1.609344 : km;
+  const unit = system === 'imperial' ? 'mi' : 'km';
+  if (isCycling(item)) {
+    return { label: 'Avg speed', value: `${(dist / (minutes / 60)).toFixed(1)} ${unit}/h` };
+  }
+  const secondsPerUnit = Math.round((minutes * 60) / dist);
+  const m = Math.floor(secondsPerUnit / 60);
+  const s = secondsPerUnit % 60;
+  return { label: 'Avg pace', value: `${m}:${String(s).padStart(2, '0')} /${unit}` };
+}
+
+/** A guided workout's name: the plan day's focus, else the weekday ("Monday"). */
+export function workoutTitle(workout: { title: string | null; day: string | null }): string {
+  if (workout.title) return workout.title;
+  if (workout.day) return workout.day.charAt(0).toUpperCase() + workout.day.slice(1);
+  return 'Workout';
+}
+
+function parseLocalDate(dateKey: string): Date {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+/** "This week", "Last week", else "Sep 29 – Oct 5" (year added when it isn't this year). */
+export function weekRangeLabel(weekStart: string, weekEnd: string, today: Date = new Date()): string {
+  const monday = new Date(today);
+  monday.setHours(0, 0, 0, 0);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const start = parseLocalDate(weekStart);
+  const weeksAgo = Math.round((monday.getTime() - start.getTime()) / (7 * 24 * 3600 * 1000));
+  if (weeksAgo === 0) return 'This week';
+  if (weeksAgo === 1) return 'Last week';
+  const end = parseLocalDate(weekEnd);
+  const sameMonth = start.getMonth() === end.getMonth();
+  const year = end.getFullYear() !== today.getFullYear() ? `, ${end.getFullYear()}` : '';
+  const from = start.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  const to = sameMonth ? String(end.getDate()) : end.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  return `${from} – ${to}${year}`;
+}
+
+/** `4 sessions · 2 h 40 min · 18.5 km`; zero parts are dropped. */
+export function weekTotalsText(
+  week: { sessions: number; duration_minutes: number; distance_km: number },
+  system: 'metric' | 'imperial',
+): string {
+  const parts = [`${week.sessions} ${week.sessions === 1 ? 'session' : 'sessions'}`];
+  if (week.duration_minutes > 0) parts.push(formatMinutes(week.duration_minutes));
+  if (week.distance_km > 0) parts.push(formatDistance(week.distance_km, system));
+  return parts.join(' · ');
+}
+
+/** Bpm range of each zone from the model's floors. Below the Z1 floor counts as Z1; Z5 is open-ended. */
+export function zoneRanges(floors: readonly number[]): string[] {
+  return floors.map((floor, i) => {
+    if (i === 0) return `≤ ${floors[1] - 1}`;
+    return i < floors.length - 1 ? `${floor}–${floors[i + 1] - 1}` : `${floor}+`;
+  });
+}
+
+/** "Sunday, October 12, 2026 · 7:00 AM – 7:32 AM" (just the end time without a start). */
+export function timeRangeText(startISO: string | null, endISO: string): string {
+  const end = new Date(endISO);
+  const start = startISO ? new Date(startISO) : null;
+  const date = (start ?? end).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+  const t = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+  return start ? `${date} · ${t(start)} – ${t(end)}` : `${date} · ${t(end)}`;
+}
+
+const KG_PER_LB = 0.45359237;
+
+/**
+ * Total weight moved in a workout (reps × load over completed, not-skipped sets), in the
+ * user's unit; null when nothing was lifted with a load. Sets logged in the other unit are
+ * converted.
+ */
+export function workoutVolume(sets: WorkoutSetLogEntry[], system: 'metric' | 'imperial'): string | null {
+  let kg = 0;
+  for (const set of sets) {
+    if (!set.completed || set.skipped || !set.reps || !set.weight || set.weight <= 0) continue;
+    kg += set.reps * (set.weight_unit === 'lb' ? set.weight * KG_PER_LB : set.weight);
+  }
+  if (kg <= 0) return null;
+  const value = system === 'imperial' ? kg / KG_PER_LB : kg;
+  return `${Math.round(value).toLocaleString()} ${system === 'imperial' ? 'lb' : 'kg'}`;
+}
+
+/**
+ * A workout's length: the longer of what was logged and the span of its watch recordings —
+ * a workout ticked in afterwards or told to the coach is as long as the watch says it was.
+ */
+export function workoutDurationSeconds(
+  loggedSeconds: number,
+  recordings: Pick<ActivityItem, 'started_at' | 'completed_at' | 'duration_minutes'>[],
+): number {
+  if (recordings.length === 0) return loggedSeconds;
+  const starts = recordings.map((r) =>
+    r.started_at ? Date.parse(r.started_at) : Date.parse(r.completed_at) - (r.duration_minutes ?? 0) * 60000,
+  );
+  const span = (Math.max(...recordings.map((r) => Date.parse(r.completed_at))) - Math.min(...starts)) / 1000;
+  return Math.max(loggedSeconds, Math.round(span));
 }

@@ -48,6 +48,12 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **`ActivityRow.tsx` / `ZoneBar.tsx` / `WeekActivityCard.tsx`** — activities outside guided
   workouts (web twins of the mobile `activity-row`, `zone-bar`, `week-activity-card`). Labels come
   from `src/lib/activities.ts`; zone colours are the `--zone-1…5` tokens. Presentational.
+- **`WorkoutRow.tsx` / `HeartRateCard.tsx` / `ActivityEditDialog.tsx` / `DetailHeader.tsx`** — the
+  Activities tab: a guided workout's list row; the detail pages' heart-rate section (avg/max, zone
+  bar, per-zone table with bpm ranges from `zone_model.floors`, or the birth-year prompt); the edit
+  dialog for coach/quick logs (presentational, like `BodyMeasurementDialog`); and the detail pages'
+  back + title header (`useBackToActivities`). Mobile twins: `workout-row`, `heart-rate-card`,
+  `activity-edit-sheet`, `detail-header`.
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.
