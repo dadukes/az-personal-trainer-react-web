@@ -1,4 +1,4 @@
-import { AlertTriangle, Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Shuffle, Sparkles, TrendingUp, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Shuffle, Sparkles, TrendingUp, Watch, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -76,7 +76,7 @@ export default function WorkoutSessionPage() {
   const { day } = useParams<{ day: string }>();
   const navigate = useNavigate();
   const { session } = useAuth();
-  const { profile, addXp, markWorkoutCompleted } = useAppStore();
+  const { profile, addXp, setTotalXp, markWorkoutCompleted } = useAppStore();
   const unit: WeightUnit = profile.preferred_unit_system === 'imperial' ? 'lb' : 'kg';
   const dayKey = resolveDayKey(day);
 
@@ -93,6 +93,8 @@ export default function WorkoutSessionPage() {
   // Per-exercise XP tally. XP is effort-based and variable, so showing where it came
   // from is the difference between a number and a reason to come back.
   const [xpBreakdown, setXpBreakdown] = useState<XpBreakdownEntry[] | null>(null);
+  /** A watch recording synced from the phone joined this workout as it was logged. */
+  const [watchLinked, setWatchLinked] = useState(false);
   const [noteOpen, setNoteOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [view, setView] = useState<WorkoutView>(() => {
@@ -413,7 +415,13 @@ export default function WorkoutSessionPage() {
       earned = result.xp_earned;
       setXpEarned(result.xp_earned);
       setXpBreakdown(result.xp_breakdown ?? null);
-      addXp(result.xp_earned);
+      if ((result.linked_recordings ?? 0) > 0) {
+        // It gave its XP back to this workout: the server total is net.
+        setWatchLinked(true);
+        setTotalXp(result.new_total_xp);
+      } else {
+        addXp(result.xp_earned);
+      }
     } catch {
       // logWorkout falls back internally
     } finally {
@@ -421,7 +429,7 @@ export default function WorkoutSessionPage() {
       // Mark the day done locally regardless of network outcome — the user finished it.
       markWorkoutCompleted(planId, dateForDayKey(dayKey), earned);
     }
-  }, [session, blocks, planId, dayKey, elapsed, startedAt, addXp, markWorkoutCompleted]);
+  }, [session, blocks, planId, dayKey, elapsed, startedAt, addXp, setTotalXp, markWorkoutCompleted]);
 
   if (loading) {
     return (
@@ -486,6 +494,16 @@ export default function WorkoutSessionPage() {
             </div>
           </Card>
         </div>
+
+        {watchLinked ? (
+          <Card className="flex w-full items-center gap-3 text-left" padding="12px 16px">
+            <Watch size={16} color="var(--accent-text)" className="flex-shrink-0" />
+            <p className="text-[13px] leading-[1.45]" style={{ color: 'var(--text-secondary)' }}>
+              Your watch recording was added to this workout. Its heart rate and distance are on the workout&rsquo;s
+              page in Activities.
+            </p>
+          </Card>
+        ) : null}
 
         {xpBreakdown && xpBreakdown.length > 0 ? (
           <Card className="w-full" padding="16px 18px">

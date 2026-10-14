@@ -844,6 +844,11 @@ export interface WorkoutLogResponse {
   leveled_up: boolean;
   /** Absent on the `/activity/log` fallback path and on pre-rollout backends. */
   xp_breakdown?: XpBreakdownEntry[];
+  /**
+   * Watch recordings that joined this workout as it was logged (their XP is taken back,
+   * so `new_total_xp` is net of it). Absent on the fallback path and older backends.
+   */
+  linked_recordings?: number;
   summary: {
     total_sets: number;
     duration_seconds: number;

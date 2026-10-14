@@ -124,6 +124,8 @@ interface GamificationSlice {
   gamification: GamificationState;
   setGamification: (state: Partial<GamificationState>) => void;
   addXp: (xpEarned: number) => void;
+  /** Sets the total from the server's `new_total_xp` (when XP was also taken back). */
+  setTotalXp: (totalXp: number) => void;
 }
 
 interface HealthSlice {
@@ -292,6 +294,11 @@ export const useAppStore = create<AppStore>((set) => ({
           xp_to_next_level: xpToNext,
         },
       };
+    }),
+  setTotalXp: (totalXp) =>
+    set(() => {
+      const level = Math.floor(totalXp / 500) + 1;
+      return { gamification: { current_xp: totalXp, current_level: level, xp_to_next_level: level * 500 } };
     }),
 
   // Health
