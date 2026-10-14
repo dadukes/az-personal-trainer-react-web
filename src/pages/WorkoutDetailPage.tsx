@@ -1,4 +1,4 @@
-import { Clock, Dumbbell, Layers, MapPin, MessageCircle, Watch, Weight, Zap } from 'lucide-react';
+import { Clock, Dumbbell, Flame, Layers, MapPin, MessageCircle, Mountain, Watch, Weight, Zap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -8,7 +8,17 @@ import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
 import HeartRateCard from '@/components/HeartRateCard';
 import { Badge, Card, Eyebrow, StatTile } from '@/components/ui';
 import { sourceAppLabel } from '@/lib/body';
-import { formatDistance, timeRangeText, workoutDurationSeconds, workoutTitle, workoutVolume } from '@/lib/activities';
+import {
+  formatCalories,
+  formatDistance,
+  formatElevation,
+  recordingTotals,
+  statGridClass,
+  timeRangeText,
+  workoutDurationSeconds,
+  workoutTitle,
+  workoutVolume,
+} from '@/lib/activities';
 import {
   getWorkoutSession,
   type WorkoutSection,
@@ -144,6 +154,42 @@ export default function WorkoutDetailPage() {
   // The coach stamps the time the user told it; a recording knows when it happened.
   const shownStart = recordings[0]?.started_at ?? (source === 'coach' ? null : data?.session.started_at ?? null);
   const shownEnd = recordings.length > 0 ? recordings[recordings.length - 1].completed_at : data?.session.completed_at ?? '';
+  const totals = recordingTotals(recordings);
+  const accent = '#34D2C1';
+  const tiles: ReactNode[] = data
+    ? [
+        <StatTile
+          key="duration"
+          value={durationSeconds > 0 ? formatDuration(durationSeconds) : '—'}
+          label="Duration"
+          icon={<Clock size={16} color={accent} />}
+        />,
+        distanceKm > 0 ? (
+          <StatTile key="distance" value={formatDistance(distanceKm, unitSystem, 2)} label="Distance" icon={<MapPin size={16} color={accent} />} />
+        ) : null,
+        !noSets ? (
+          <StatTile key="sets" value={String(completedSets)} label="Sets completed" icon={<Layers size={16} color={accent} />} />
+        ) : null,
+        volume ? <StatTile key="volume" value={volume} label="Volume" icon={<Weight size={16} color={accent} />} /> : null,
+        totals.calories ? (
+          <StatTile key="calories" value={formatCalories(totals.calories)} label="Active calories" icon={<Flame size={16} color={accent} />} />
+        ) : null,
+        totals.elevation ? (
+          <StatTile
+            key="elevation"
+            value={formatElevation(totals.elevation, unitSystem)}
+            label="Elevation gain"
+            icon={<Mountain size={16} color={accent} />}
+          />
+        ) : null,
+        <StatTile
+          key="xp"
+          value={data.session.xp_earned > 0 ? `+${data.session.xp_earned}` : '—'}
+          label="XP earned"
+          icon={<Zap size={16} color={accent} />}
+        />,
+      ].filter(Boolean)
+    : [];
 
   return (
     <div className="mx-auto flex w-full max-w-[760px] animate-fade-slide-up flex-col gap-5 p-5 sm:p-8">
@@ -173,29 +219,7 @@ export default function WorkoutDetailPage() {
           </div>
 
           {/* Session summary tiles */}
-          <div className={`grid grid-cols-2 gap-3 ${volume || distanceKm > 0 ? 'sm:grid-cols-4' : 'sm:grid-cols-3'}`}>
-            <StatTile
-              value={durationSeconds > 0 ? formatDuration(durationSeconds) : '—'}
-              label="Duration"
-              icon={<Clock size={16} color="#34D2C1" />}
-            />
-            {distanceKm > 0 ? (
-              <StatTile value={formatDistance(distanceKm, unitSystem, 2)} label="Distance" icon={<MapPin size={16} color="#34D2C1" />} />
-            ) : null}
-            {!noSets ? (
-              <StatTile
-                value={String(completedSets)}
-                label="Sets completed"
-                icon={<Layers size={16} color="#34D2C1" />}
-              />
-            ) : null}
-            {volume ? <StatTile value={volume} label="Volume" icon={<Weight size={16} color="#34D2C1" />} /> : null}
-            <StatTile
-              value={data.session.xp_earned > 0 ? `+${data.session.xp_earned}` : '—'}
-              label="XP earned"
-              icon={<Zap size={16} color="#34D2C1" />}
-            />
-          </div>
+          <div className={`grid grid-cols-2 gap-3 ${statGridClass(tiles.length)}`}>{tiles}</div>
 
           {data.heart_rate ? (
             <HeartRateCard
@@ -204,6 +228,7 @@ export default function WorkoutDetailPage() {
               secondsInZone={data.heart_rate.seconds_in_zone}
               zoneModel={data.zone_model}
               sourceLabel={sourceAppLabel(data.heart_rate.source_app)}
+              curve={data.hr_curve}
               onAddBirthYear={() => navigate('/profile')}
             />
           ) : null}

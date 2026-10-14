@@ -1,9 +1,13 @@
 import { HeartPulse } from 'lucide-react';
+import { lazy, Suspense } from 'react';
 
 import { Card, Eyebrow } from '@/components/ui';
 import ZoneBar from '@/components/ZoneBar';
 import { ZONE_DESCRIPTIONS, ZONE_LABELS, formatMinutes, zoneRanges } from '@/lib/activities';
-import type { ZoneModel, ZoneSeconds } from '@/lib/api';
+import type { HrCurveSegment, ZoneModel, ZoneSeconds } from '@/lib/api';
+
+// recharts stays in its own chunk, as for the Progress trends chart.
+const HeartRateChart = lazy(() => import('@/components/HeartRateChart'));
 
 interface HeartRateCardProps {
   avgHr: number | null;
@@ -12,16 +16,26 @@ interface HeartRateCardProps {
   zoneModel: ZoneModel | null;
   /** "Garmin Connect", for the footnote; omit when the page header already says it. */
   sourceLabel?: string | null;
+  /** The curve(s) for the chart; a workout passes one segment per recording. */
+  curve?: HrCurveSegment[] | null;
   onAddBirthYear: () => void;
 }
 
 /**
- * The heart-rate section of an activity / workout detail page: avg and max bpm, then the
- * time in each zone as a bar plus a table (zone, name, bpm range, minutes, share). Colour
+ * The heart-rate section of an activity / workout detail page: avg and max bpm, the curve
+ * over the session (when stored), then the time in each zone as a bar plus a table (zone, name, bpm range, minutes, share). Colour
  * is never the only signal. Without a zone model the zones can't be drawn, so the card
  * asks for a birth year instead of guessing one.
  */
-export default function HeartRateCard({ avgHr, maxHr, secondsInZone, zoneModel, sourceLabel, onAddBirthYear }: HeartRateCardProps) {
+export default function HeartRateCard({
+  avgHr,
+  maxHr,
+  secondsInZone,
+  zoneModel,
+  sourceLabel,
+  curve,
+  onAddBirthYear,
+}: HeartRateCardProps) {
   if (avgHr == null && maxHr == null) return null;
   const total = secondsInZone?.reduce((sum, s) => sum + s, 0) ?? 0;
   const ranges = zoneModel ? zoneRanges(zoneModel.floors) : null;
@@ -56,6 +70,12 @@ export default function HeartRateCard({ avgHr, maxHr, secondsInZone, zoneModel, 
             ) : null,
           )}
         </div>
+
+        {curve && curve.length > 0 ? (
+          <Suspense fallback={<div className="h-[180px]" />}>
+            <HeartRateChart segments={curve} zoneModel={zoneModel} />
+          </Suspense>
+        ) : null}
 
         {secondsInZone && total > 0 ? (
           <>

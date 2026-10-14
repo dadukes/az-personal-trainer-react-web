@@ -54,6 +54,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   dialog for coach/quick logs (presentational, like `BodyMeasurementDialog`); and the detail pages'
   back + title header (`useBackToActivities`). Mobile twins: `workout-row`, `heart-rate-card`,
   `activity-edit-sheet`, `detail-header`.
+- **`HeartRateChart.tsx`** — bpm over elapsed time from `hr_curve` (recharts), zones as faint bands
+  when a zone model exists, a workout's recordings on one axis with a gap between them. Lazy-loaded
+  by `HeartRateCard` so recharts stays its own chunk. Mobile twin: `heart-rate-chart` (react-native-svg).
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.

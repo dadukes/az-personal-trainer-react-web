@@ -32,8 +32,8 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **Your progress** (`progress_snapshot` + body measurements) + health trends chart + AI health insights |
 | `/activities` | `ActivitiesPage` | Every session newest first: guided workouts + watch imports + coach/quick logs from `GET /history`, cursor-paged (loads as the end scrolls into view; "Load older" fallback), grouped by Mon–Sun week with the server's whole-week totals |
-| `/activities/:id` | `ActivityDetailPage` | One activity (`getActivity`): stats (duration, distance, pace/speed, XP), `HeartRateCard`, note. **Edit** for coach/quick logs (`ActivityEditDialog`); imports are read-only |
-| `/activities/workout/:id` | `WorkoutDetailPage` | One guided workout (`getWorkoutSession`): plan-day title, duration/sets/volume/XP, linked watch HR (`HeartRateCard`), sets by section |
+| `/activities/:id` | `ActivityDetailPage` | One activity (`getActivity`): stats (duration, distance, pace/speed, a ride's max speed, calories, elevation, XP — only what the device shared; `statGridClass` keeps rows even), `HeartRateCard` with the `hr_curve` chart, note. **Edit** for coach/quick logs (`ActivityEditDialog`); imports are read-only |
+| `/activities/workout/:id` | `WorkoutDetailPage` | One guided workout (`getWorkoutSession`): plan-day title, duration/sets/volume/calories/elevation/XP, watch HR combined across its recordings with one chart (`HeartRateCard`), sets by section |
 | `/progress/workouts`, `/progress/workouts/:id` | redirects | Old links → `/activities`, `/activities/workout/:id` |
 | `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) incl. the optional **Body & heart rate** fields + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
 | `/delete-account` | `DeleteAccountPage` | **Public** (no auth guard, no shell): Play-required deletion URL; signs the user in, then deletes |

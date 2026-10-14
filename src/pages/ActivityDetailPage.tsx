@@ -1,4 +1,5 @@
-import { Clock, Gauge, MapPin, Pencil, Zap } from 'lucide-react';
+import { Clock, Flame, Gauge, MapPin, Mountain, Pencil, Zap } from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
@@ -10,11 +11,15 @@ import { Button, Card, Eyebrow, StatTile } from '@/components/ui';
 import {
   activitySourceLabel,
   activityTitle,
+  formatCalories,
   formatDistance,
+  formatElevation,
   formatMinutes,
   isDeviceActivity,
   isEditableActivity,
+  maxSpeedText,
   paceOrSpeed,
+  statGridClass,
   timeRangeText,
 } from '@/lib/activities';
 import {
@@ -23,6 +28,7 @@ import {
   updateActivity,
   type ActivityItem,
   type ActivityUpdatePayload,
+  type HrCurveSegment,
   type ZoneModel,
 } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
@@ -45,6 +51,7 @@ export default function ActivityDetailPage() {
 
   const [activity, setActivity] = useState<ActivityItem | null>(null);
   const [zoneModel, setZoneModel] = useState<ZoneModel | null>(null);
+  const [curve, setCurve] = useState<HrCurveSegment[] | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
@@ -61,6 +68,7 @@ export default function ActivityDetailPage() {
         if (!mounted) return;
         setActivity(result.activity);
         setZoneModel(result.zone_model);
+        setCurve(result.hr_curve ?? null);
         setError(null);
       } catch (err) {
         if (mounted) setError(err instanceof Error ? err.message : 'Could not load this activity.');
@@ -104,6 +112,50 @@ export default function ActivityDetailPage() {
   };
 
   const pace = activity ? paceOrSpeed(activity, unitSystem) : null;
+  const topSpeed = activity ? maxSpeedText(activity, unitSystem) : null;
+  const accent = 'var(--accent)';
+  const tiles: ReactNode[] = activity
+    ? [
+        <StatTile
+          key="duration"
+          value={activity.duration_minutes ? formatMinutes(activity.duration_minutes) : '—'}
+          label="Duration"
+          icon={<Clock size={16} color={accent} />}
+        />,
+        activity.distance_km != null && activity.distance_km > 0 ? (
+          <StatTile
+            key="distance"
+            value={formatDistance(activity.distance_km, unitSystem, 2)}
+            label="Distance"
+            icon={<MapPin size={16} color={accent} />}
+          />
+        ) : null,
+        pace ? <StatTile key="pace" value={pace.value} label={pace.label} icon={<Gauge size={16} color={accent} />} /> : null,
+        topSpeed ? <StatTile key="max-speed" value={topSpeed} label="Max speed" icon={<Gauge size={16} color={accent} />} /> : null,
+        activity.active_calories ? (
+          <StatTile
+            key="calories"
+            value={formatCalories(activity.active_calories)}
+            label="Active calories"
+            icon={<Flame size={16} color={accent} />}
+          />
+        ) : null,
+        activity.elevation_gain_m ? (
+          <StatTile
+            key="elevation"
+            value={formatElevation(activity.elevation_gain_m, unitSystem)}
+            label="Elevation gain"
+            icon={<Mountain size={16} color={accent} />}
+          />
+        ) : null,
+        <StatTile
+          key="xp"
+          value={activity.xp_earned > 0 ? `+${activity.xp_earned}` : '—'}
+          label="XP earned"
+          icon={<Zap size={16} color={accent} />}
+        />,
+      ].filter(Boolean)
+    : [];
   const device = activity ? isDeviceActivity(activity) : false;
   // A device title that just repeats the type ("Run") adds nothing.
   const rawNote = activity?.notes?.trim() || null;
@@ -149,32 +201,14 @@ export default function ActivityDetailPage() {
             <SourceBadge item={activity} />
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-            <StatTile
-              value={activity.duration_minutes ? formatMinutes(activity.duration_minutes) : '—'}
-              label="Duration"
-              icon={<Clock size={16} color="var(--accent)" />}
-            />
-            {activity.distance_km != null && activity.distance_km > 0 ? (
-              <StatTile
-                value={formatDistance(activity.distance_km, unitSystem, 2)}
-                label="Distance"
-                icon={<MapPin size={16} color="var(--accent)" />}
-              />
-            ) : null}
-            {pace ? <StatTile value={pace.value} label={pace.label} icon={<Gauge size={16} color="var(--accent)" />} /> : null}
-            <StatTile
-              value={activity.xp_earned > 0 ? `+${activity.xp_earned}` : '—'}
-              label="XP earned"
-              icon={<Zap size={16} color="var(--accent)" />}
-            />
-          </div>
+          <div className={`grid grid-cols-2 gap-3 ${statGridClass(tiles.length)}`}>{tiles}</div>
 
           <HeartRateCard
             avgHr={activity.avg_hr}
             maxHr={activity.max_hr}
             secondsInZone={activity.seconds_in_zone}
             zoneModel={zoneModel}
+            curve={curve}
             onAddBirthYear={() => navigate('/profile')}
           />
 

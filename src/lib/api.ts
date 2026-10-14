@@ -382,6 +382,18 @@ export interface ActivityItem {
   hr_coverage: number | null;
   /** Z1..Z5 seconds; `null` without HR data **or** without a zone model (no birth year). */
   seconds_in_zone: ZoneSeconds | null;
+  /** Device stats (kcal, metres, m/s); `null` when the device didn't share them. */
+  active_calories: number | null;
+  elevation_gain_m: number | null;
+  avg_speed_mps: number | null;
+  max_speed_mps: number | null;
+}
+
+/** One recording's heart-rate curve: mean bpm per bucket from `started_at`, `null` = no reading. */
+export interface HrCurveSegment {
+  started_at: string;
+  bucket_seconds: number;
+  bpm: (number | null)[];
 }
 
 export interface ZoneModel {
@@ -403,6 +415,8 @@ export interface ActivitiesResponse {
 export interface ActivityDetailResponse {
   success: boolean;
   activity: ActivityItem;
+  /** Chart data; `null` without heart rate (or before the next sync for older imports). */
+  hr_curve: HrCurveSegment[] | null;
   zone_model: ZoneModel | null;
 }
 
@@ -423,7 +437,10 @@ export interface ActivityMutationResponse {
   new_total_xp: number;
 }
 
-/** HR summary of a watch recording of a guided workout (linked on import). */
+/**
+ * A guided workout's heart rate, combined across its watch recordings (time-weighted avg,
+ * highest max, zones added up); `activity_id` / `source_app` name the one with most readings.
+ */
 export interface LinkedHeartRate {
   activity_id: string;
   avg_hr: number | null;
@@ -909,8 +926,10 @@ export interface WorkoutSessionDetailResponse {
   title: string | null;
   source: WorkoutSessionSource;
   sets: WorkoutSetLogEntry[];
-  /** From the best-covered watch recording of this workout; `null` without one. */
+  /** Combined across the workout's watch recordings; `null` when none has heart rate. */
   heart_rate: LinkedHeartRate | null;
+  /** One curve per recording, oldest first, for one chart; `null` without any. */
+  hr_curve: HrCurveSegment[] | null;
   /** Every watch recording that belongs to it (a bike warm-up and the strength session), oldest first. */
   recordings: ActivityItem[];
   zone_model: ZoneModel | null;

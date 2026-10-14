@@ -1,4 +1,4 @@
-import type { ActivityItem, ActivityType, WorkoutSetLogEntry, ZoneSeconds } from '@/lib/api';
+import type { ActivityItem, ActivityType, HrCurveSegment, WorkoutSetLogEntry, ZoneSeconds } from '@/lib/api';
 import { sourceAppLabel } from '@/lib/body';
 
 /**
@@ -227,4 +227,82 @@ export function workoutDurationSeconds(
   );
   const span = (Math.max(...recordings.map((r) => Date.parse(r.completed_at))) - Math.min(...starts)) / 1000;
   return Math.max(loggedSeconds, Math.round(span));
+}
+
+/** `412 kcal`. */
+export function formatCalories(kcal: number): string {
+  return `${Math.round(kcal).toLocaleString()} kcal`;
+}
+
+/** `48 m` / `157 ft`. */
+export function formatElevation(meters: number, system: 'metric' | 'imperial'): string {
+  return system === 'imperial' ? `${Math.round(meters * 3.28084).toLocaleString()} ft` : `${Math.round(meters).toLocaleString()} m`;
+}
+
+/**
+ * Top speed for rides (`38.2 km/h`); null otherwise. On foot one GPS spike turns a "best
+ * pace" into nonsense, so runs and walks show only their average pace.
+ */
+export function maxSpeedText(
+  item: Pick<ActivityItem, 'name' | 'max_speed_mps'>,
+  system: 'metric' | 'imperial',
+): string | null {
+  if (!item.max_speed_mps || item.max_speed_mps <= 0 || !isCycling(item)) return null;
+  const kmh = item.max_speed_mps * 3.6;
+  return system === 'imperial' ? `${(kmh / 1.609344).toFixed(1)} mi/h` : `${kmh.toFixed(1)} km/h`;
+}
+
+/** Calories and climb summed over a workout's recordings; each null when none shared it. */
+export function recordingTotals(
+  recordings: Pick<ActivityItem, 'active_calories' | 'elevation_gain_m'>[],
+): { calories: number | null; elevation: number | null } {
+  const sum = (values: (number | null)[]) => {
+    const present = values.filter((v): v is number => v != null && v > 0);
+    return present.length > 0 ? present.reduce((a, b) => a + b, 0) : null;
+  };
+  return {
+    calories: sum(recordings.map((r) => r.active_calories)),
+    elevation: sum(recordings.map((r) => r.elevation_gain_m)),
+  };
+}
+
+/** One point of the heart-rate chart: seconds since the first recording started. */
+export interface HrChartPoint {
+  t: number;
+  bpm: number | null;
+}
+
+/**
+ * The curves of one activity or of a workout's recordings on one time axis. A null point
+ * at each later recording's start breaks the line, so the gap between a warm-up and the
+ * main session stays empty. Each bucket sits at its middle.
+ */
+export function hrChartPoints(segments: HrCurveSegment[]): HrChartPoint[] {
+  if (segments.length === 0) return [];
+  const t0 = Date.parse(segments[0].started_at);
+  const points: HrChartPoint[] = [];
+  segments.forEach((segment, i) => {
+    const start = (Date.parse(segment.started_at) - t0) / 1000;
+    if (i > 0) points.push({ t: start, bpm: null });
+    segment.bpm.forEach((bpm, k) => points.push({ t: start + (k + 0.5) * segment.bucket_seconds, bpm }));
+  });
+  return points;
+}
+
+/** Elapsed time for chart axes: `0:00`, `12:30`, `1:05:00`. */
+export function formatElapsed(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+/**
+ * Columns for a detail page's stat tiles from `sm` up, so rows come out even: 4 → one row,
+ * 5 or 6 → rows of 3, 7 or 8 → rows of 4. (Web only; phones always use two columns.)
+ */
+export function statGridClass(count: number): string {
+  if (count <= 2) return 'sm:grid-cols-2';
+  return count === 4 || count >= 7 ? 'sm:grid-cols-4' : 'sm:grid-cols-3';
 }
