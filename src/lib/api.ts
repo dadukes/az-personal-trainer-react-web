@@ -927,6 +927,47 @@ export interface WorkoutSessionsResponse {
   sessions: WorkoutSessionSummary[];
 }
 
+/** What the plan prescribes for an exercise, for seeding the editor. */
+export interface SessionExerciseTarget {
+  sets: number;
+  reps: number | null;
+  weight: number | null;
+  weight_unit: WeightUnit | null;
+  duration_seconds: number | null;
+}
+
+/**
+ * One exercise of a logged workout: the plan day merged with the logs.
+ * `logged` has set rows; `done` counts without rows (the coach logged the day, or the watch
+ * recording stood in for the main block); `not_logged` is on the plan day with nothing recorded.
+ */
+export interface SessionExercise {
+  /** What `updateWorkoutExercise` edits. */
+  key: string;
+  section: WorkoutSection;
+  exercise_id: string | null;
+  name: string;
+  type: ExerciseType;
+  swapped_from: string | null;
+  skipped: boolean;
+  status: 'logged' | 'done' | 'not_logged';
+  done_by: 'coach' | 'watch' | null;
+  /** False on a watch-completed day's main block: the recording earned that XP. */
+  earns_xp: boolean;
+  sets: WorkoutSetLogEntry[];
+  target: SessionExerciseTarget | null;
+}
+
+/** `PUT /api/workouts/sessions/{id}/exercise`. XP moves by this exercise's difference; apply `new_total_xp`. */
+export interface WorkoutExerciseUpdateResponse {
+  success: boolean;
+  xp_earned: number;
+  xp_delta: number;
+  new_total_xp: number;
+  leveled_up: boolean;
+  exercise?: SessionExercise;
+}
+
 /** `GET /api/workouts/sessions/{id}` — one session header plus its per-set logs. */
 export interface WorkoutSessionDetailResponse {
   success: boolean;
@@ -935,6 +976,8 @@ export interface WorkoutSessionDetailResponse {
   title: string | null;
   source: WorkoutSessionSource;
   sets: WorkoutSetLogEntry[];
+  /** The plan day merged with the logs, display order; absent on older backends (group `sets`). */
+  exercises?: SessionExercise[];
   /** Combined across the workout's watch recordings; `null` when none has heart rate. */
   heart_rate: LinkedHeartRate | null;
   /** One curve per recording, oldest first, for one chart; `null` without any. */
@@ -1441,6 +1484,19 @@ export async function getWorkoutSessions(
   limit = 50,
 ): Promise<WorkoutSessionsResponse> {
   return apiFetch<WorkoutSessionsResponse>(`/workouts/sessions?limit=${limit}`, accessToken);
+}
+
+/** Replace one exercise's sets on a logged workout (tick off a warm-up, fix a weight, add a set). */
+export async function updateWorkoutExercise(
+  accessToken: string,
+  sessionId: string,
+  key: string,
+  sets: LoggedSet[],
+): Promise<WorkoutExerciseUpdateResponse> {
+  return apiFetch<WorkoutExerciseUpdateResponse>(`/workouts/sessions/${encodeURIComponent(sessionId)}/exercise`, accessToken, {
+    method: 'PUT',
+    body: JSON.stringify({ key, sets }),
+  });
 }
 
 /** A single workout session plus every per-set log recorded for it. */

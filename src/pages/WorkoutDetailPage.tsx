@@ -1,4 +1,4 @@
-import { Clock, Dumbbell, Flame, Layers, MapPin, MessageCircle, Mountain, Watch, Weight, Zap } from 'lucide-react';
+import { Check, Clock, Dumbbell, Flame, Layers, MapPin, MessageCircle, Mountain, Pencil, Plus, Watch, Weight, Zap } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -7,6 +7,7 @@ import ActivityRow from '@/components/ActivityRow';
 import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
 import GeneralHeartRateCard from '@/components/GeneralHeartRateCard';
 import HeartRateCard from '@/components/HeartRateCard';
+import WorkoutExerciseDialog from '@/components/WorkoutExerciseDialog';
 import { Badge, Card, Eyebrow, StatTile } from '@/components/ui';
 import { sourceAppLabel } from '@/lib/body';
 import {
@@ -22,11 +23,15 @@ import {
 } from '@/lib/activities';
 import {
   getWorkoutSession,
+  updateWorkoutExercise,
+  type LoggedSet,
+  type SessionExercise,
   type WorkoutSection,
   type WorkoutSessionDetailResponse,
   type WorkoutSetLogEntry,
 } from '@/lib/api';
 import { weightText } from '@/lib/exercise';
+import { exercisesFromSets } from '@/lib/workoutEdit';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -67,50 +72,19 @@ function formatSet(set: WorkoutSetLogEntry): string {
   return set.reps != null ? `${reps} reps` : '—';
 }
 
-interface ExerciseGroup {
-  key: string;
-  name: string;
-  swappedFrom: string | null;
-  skipped: boolean;
-  sets: WorkoutSetLogEntry[];
-}
-
-/** Group a section's set rows by exercise, preserving first-seen order. */
-function groupBySection(sets: WorkoutSetLogEntry[]): Record<WorkoutSection, ExerciseGroup[]> {
-  const bySection: Record<WorkoutSection, ExerciseGroup[]> = {
-    warmup: [],
-    main: [],
-    cooldown: [],
-  };
-  const index = new Map<string, ExerciseGroup>();
-
-  for (const set of sets) {
-    const section = set.section;
-    const key = `${section}|${set.exercise_id ?? set.name}`;
-    let group = index.get(key);
-    if (!group) {
-      group = {
-        key,
-        name: set.name,
-        swappedFrom: set.swapped_from,
-        skipped: set.skipped,
-        sets: [],
-      };
-      index.set(key, group);
-      bySection[section].push(group);
-    }
-    group.sets.push(set);
-    // A group is only "skipped" if every one of its sets was skipped.
-    group.skipped = group.skipped && set.skipped;
-  }
-
-  return bySection;
+/** The workout's exercises by section, in the server's display order. */
+function bySection(exercises: SessionExercise[]): Record<WorkoutSection, SessionExercise[]> {
+  const grouped: Record<WorkoutSection, SessionExercise[]> = { warmup: [], main: [], cooldown: [] };
+  for (const exercise of exercises) grouped[exercise.section].push(exercise);
+  return grouped;
 }
 
 /**
  * `/activities/workout/:id` — one guided workout: duration, sets and XP, the heart rate
- * from a watch recording of the same session (linked on import) and every logged set,
- * grouped by section. A plan day the user reported to the coach has no sets.
+ * from a watch recording of the same session (linked on import) and every exercise by
+ * section — the plan day merged with what was logged. Click an exercise to edit its sets or
+ * log one the watch or the coach didn't cover (a warm-up after a watch run); XP moves by
+ * that exercise's difference. Mobile twin: `app/activity/workout/[id].tsx`.
  */
 export default function WorkoutDetailPage() {
   const navigate = useNavigate();
@@ -118,16 +92,22 @@ export default function WorkoutDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
   const unitSystem = useAppStore((s) => s.profile.preferred_unit_system);
+  const setTotalXp = useAppStore((s) => s.setTotalXp);
 
   const [data, setData] = useState<WorkoutSessionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [editing, setEditing] = useState<SessionExercise | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!session?.access_token || !id) return;
     const token = session.access_token;
     let mounted = true;
-    setLoading(true);
+    // A re-read after an edit keeps the page in place.
+    if (reloadKey === 0) setLoading(true);
     void (async () => {
       try {
         const result = await getWorkoutSession(token, id);
@@ -141,9 +121,25 @@ export default function WorkoutDetailPage() {
     return () => {
       mounted = false;
     };
-  }, [session, id]);
+  }, [session, id, reloadKey]);
 
-  const grouped = data ? groupBySection(data.sets) : null;
+  const saveExercise = async (exercise: SessionExercise, sets: LoggedSet[]) => {
+    if (!session?.access_token || !id) return;
+    setSaving(true);
+    setSaveError(null);
+    try {
+      const result = await updateWorkoutExercise(session.access_token, id, exercise.key, sets);
+      setTotalXp(result.new_total_xp);
+      setEditing(null);
+      setReloadKey((k) => k + 1);
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : 'Could not save this exercise.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const grouped = data ? bySection(data.exercises ?? exercisesFromSets(data.sets)) : null;
   const completedSets = data ? data.sets.filter((s) => s.completed).length : 0;
   const volume = data ? workoutVolume(data.sets, unitSystem) : null;
   // A plan day told to the coach, or completed by a watch recording, has no set logs.
@@ -256,10 +252,10 @@ export default function WorkoutDetailPage() {
                   </div>
                   <p className="mt-1 text-[13px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
                     {source === 'watch'
-                      ? `${sourceAppLabel(recordings[0]?.source_app ?? null)} recorded this, so the planned day is ticked off. There’s no set-by-set breakdown.`
+                      ? `${sourceAppLabel(recordings[0]?.source_app ?? null)} recorded this, so the planned day is ticked off. Did the warm-up or cool-down too? Click them below to log them.`
                       : recordings.length > 0
-                        ? `You told your coach about this one and ${sourceAppLabel(recordings[0].source_app)} recorded it. It counts once towards your week.`
-                        : 'You told your coach about this one in chat, so there’s no set-by-set breakdown — it still counts towards your week.'}
+                        ? `You told your coach about this one and ${sourceAppLabel(recordings[0].source_app)} recorded it. It counts once towards your week. Click an exercise to fill in what you did.`
+                        : 'You told your coach about this one in chat. It still counts towards your week. Click an exercise to fill in what you did.'}
                   </p>
                 </div>
               </div>
@@ -275,49 +271,95 @@ export default function WorkoutDetailPage() {
             </div>
           ) : null}
 
-          {/* Logged exercises grouped by section */}
+          {/* The plan day's exercises by section, merged with what was logged */}
           {SECTION_ORDER.map((section) => {
-            const groups = grouped[section];
-            if (groups.length === 0) return null;
+            const exercises = grouped[section];
+            if (exercises.length === 0) return null;
             return (
               <div key={section} className="flex flex-col gap-3">
                 <Eyebrow>{SECTION_LABELS[section]}</Eyebrow>
-                {groups.map((group) => (
-                  <Card key={group.key} padding="16px 18px">
-                    <div className="flex items-start gap-3">
-                      <div
-                        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
-                        style={{ background: 'var(--bg-subtle)' }}
-                      >
-                        <Dumbbell size={18} color="#34D2C1" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {group.name}
-                          </span>
-                          {group.skipped ? <Badge tone="neutral">Skipped</Badge> : null}
-                        </div>
-                        {group.swappedFrom ? (
-                          <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                            Swapped from {group.swappedFrom}
-                          </div>
-                        ) : null}
-                        <div className="mt-2.5 flex flex-wrap gap-2">
-                          {group.sets.map((set) => (
-                            <SetPill key={set.id} set={set} />
-                          ))}
-                        </div>
-                      </div>
-                    </div>
-                  </Card>
+                {exercises.map((exercise) => (
+                  <ExerciseCard
+                    key={exercise.key}
+                    exercise={exercise}
+                    onClick={() => {
+                      setSaveError(null);
+                      setEditing(exercise);
+                    }}
+                  />
                 ))}
               </div>
             );
           })}
         </>
       )}
+
+      {editing ? (
+        <WorkoutExerciseDialog
+          exercise={editing}
+          preferredUnit={unitSystem === 'imperial' ? 'lb' : 'kg'}
+          saving={saving}
+          error={saveError}
+          onSave={(sets) => void saveExercise(editing, sets)}
+          onClose={() => setEditing(null)}
+        />
+      ) : null}
     </div>
+  );
+}
+
+/** One exercise: its sets, or how it counts without them. Clicking it opens the editor. */
+function ExerciseCard({ exercise, onClick }: { exercise: SessionExercise; onClick: () => void }): ReactNode {
+  const open = exercise.status === 'not_logged';
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`${open ? 'Log' : 'Edit'} ${exercise.name}`}
+      className="w-full rounded-[24px] px-[18px] py-4 text-left transition-transform active:scale-[0.99]"
+      style={{
+        background: open ? 'transparent' : 'var(--bg-surface)',
+        border: `1px ${open ? 'dashed var(--border-strong)' : 'solid var(--border-base)'}`,
+      }}
+    >
+      <div className="flex items-start gap-3">
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: 'var(--bg-subtle)' }}>
+          <Dumbbell size={18} color={open ? 'var(--text-muted)' : '#34D2C1'} />
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-[14.5px] font-bold" style={{ color: open ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
+              {exercise.name}
+            </span>
+            {exercise.status === 'logged' && exercise.skipped ? <Badge tone="neutral">Skipped</Badge> : null}
+          </div>
+          {exercise.swapped_from ? (
+            <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+              Swapped from {exercise.swapped_from}
+            </div>
+          ) : null}
+          {exercise.status === 'logged' ? (
+            <div className="mt-2.5 flex flex-wrap gap-2">
+              {exercise.sets.map((set) => (
+                <SetPill key={set.id} set={set} />
+              ))}
+            </div>
+          ) : exercise.status === 'done' ? (
+            <div className="mt-1.5 flex items-center gap-1.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
+              <Check size={14} strokeWidth={3} />
+              {exercise.done_by === 'watch' ? 'Recorded on your watch' : 'Done · logged with your coach'}
+            </div>
+          ) : (
+            <div className="mt-1.5 text-[12.5px] font-semibold" style={{ color: 'var(--text-muted)' }}>
+              Not logged · click to log it
+            </div>
+          )}
+        </div>
+        <span className="pt-1" style={{ color: 'var(--text-muted)' }}>
+          {open ? <Plus size={16} /> : <Pencil size={14} />}
+        </span>
+      </div>
+    </button>
   );
 }
 
