@@ -54,6 +54,11 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   dialog for coach/quick logs (presentational, like `BodyMeasurementDialog`); and the detail pages'
   back + title header (`useBackToActivities`). Mobile twins: `workout-row`, `heart-rate-card`,
   `activity-edit-sheet`, `detail-header`.
+- **`GeneralHeartRateCard.tsx`** — "General HR data" on a guided workout the watch didn't record
+  (`general_heart_rate`, sent by the phone): avg bpm and the smoothed all-day curve on
+  `HeartRateChart` with `zoneModel={null}` (no bands). Deliberately no max, zones or XP — the
+  background readings are too sparse. Title in mixed case, not an uppercase `Eyebrow`. Mobile twin:
+  `general-heart-rate-card`.
 - **`HeartRateChart.tsx`** — bpm over elapsed time from `hr_curve` (recharts), zones as faint bands
   when a zone model exists, a workout's recordings on one axis with a gap between them. Lazy-loaded
   by `HeartRateCard` so recharts stays its own chunk. Mobile twin: `heart-rate-chart` (react-native-svg).

@@ -6,7 +6,7 @@ import ActivityRow from '@/components/ActivityRow';
 import ScreenHeader from '@/components/ScreenHeader';
 import { Button, Card } from '@/components/ui';
 import WorkoutRow from '@/components/WorkoutRow';
-import { weekRangeLabel, weekTotalsText } from '@/lib/activities';
+import { groupTimeline, timelineGroupHeader } from '@/lib/activities';
 import { getHistory, type HistoryItem, type HistoryWeek, type ZoneModel } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
@@ -31,21 +31,11 @@ function scrollParent(el: HTMLElement): HTMLElement | null {
   return null;
 }
 
-/** Consecutive items of one week, in list order (the API is newest first). */
-function groupByWeek(items: HistoryItem[]): { weekStart: string; items: HistoryItem[] }[] {
-  const groups: { weekStart: string; items: HistoryItem[] }[] = [];
-  for (const item of items) {
-    const last = groups[groups.length - 1];
-    if (last && last.weekStart === item.week_start) last.items.push(item);
-    else groups.push({ weekStart: item.week_start, items: [item] });
-  }
-  return groups;
-}
-
 /**
  * `/activities` — every session, newest first: guided workouts, watch imports, coach and
- * quick logs (`GET /history`). Grouped by Mon–Sun week, each with the whole week's totals
- * from the server (a week split across two pages still shows its real totals). Older pages
+ * quick logs (`GET /history`). Grouped as Today, Earlier this week, then one group per older
+ * Mon–Sun week, with the whole week's totals from the server (a week split across two pages
+ * still shows its real totals). Older pages
  * load as the end of the list scrolls into view, with a button as the fallback.
  */
 export default function ActivitiesPage() {
@@ -128,7 +118,9 @@ export default function ActivitiesPage() {
     return () => observer.disconnect();
   }, [cursor, error, loadMore]);
 
-  const groups = useMemo(() => groupByWeek(items), [items]);
+  const groups = useMemo(() => groupTimeline(items), [items]);
+  // This week's totals go on the first of its groups (Today, else Earlier this week).
+  const firstThisWeek = groups.findIndex((g) => g.kind !== 'week');
   const needsBirthYear =
     !loading &&
     zoneModel == null &&
@@ -183,18 +175,20 @@ export default function ActivitiesPage() {
             </button>
           ) : null}
 
-          {groups.map((group) => {
-            const week = weeks[group.weekStart];
+          {groups.map((group, index) => {
+            const { title, totals } = timelineGroupHeader(group, weeks[group.weekStart], unitSystem, index === firstThisWeek);
             return (
-              <section key={group.weekStart} className="flex flex-col gap-2.5" aria-label={week ? weekRangeLabel(week.week_start, week.week_end) : undefined}>
-                {week ? (
+              <section key={group.key} className="flex flex-col gap-2.5" aria-label={title || undefined}>
+                {title ? (
                   <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-1">
                     <h2 className="text-[15px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                      {weekRangeLabel(week.week_start, week.week_end)}
+                      {title}
                     </h2>
-                    <span className="tabular text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-                      {weekTotalsText(week, unitSystem)}
-                    </span>
+                    {totals ? (
+                      <span className="tabular text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
+                        {totals}
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
                 {group.items.map((item) =>

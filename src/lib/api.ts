@@ -893,6 +893,15 @@ export interface WorkoutSessionSummary {
   created_at: string;
 }
 
+/**
+ * The watch's all-day heart rate over a guided workout it did not record ("General HR
+ * data"): average and a smoothed curve only — no max, no zones, no XP. Sent by the phone.
+ */
+export interface GeneralHeartRate {
+  avg_hr: number;
+  hr_curve: HrCurveSegment[];
+}
+
 /** A single logged set from a session (mirrors the backend `workout_set_logs` row). */
 export interface WorkoutSetLogEntry {
   id: string;
@@ -930,6 +939,8 @@ export interface WorkoutSessionDetailResponse {
   heart_rate: LinkedHeartRate | null;
   /** One curve per recording, oldest first, for one chart; `null` without any. */
   hr_curve: HrCurveSegment[] | null;
+  /** All-day heart rate over the workout when no recording has heart rate; absent on older backends. */
+  general_heart_rate?: GeneralHeartRate | null;
   /** Every watch recording that belongs to it (a bike warm-up and the strength session), oldest first. */
   recordings: ActivityItem[];
   zone_model: ZoneModel | null;

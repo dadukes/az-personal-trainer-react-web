@@ -178,6 +178,69 @@ export function weekTotalsText(
   return parts.join(' · ');
 }
 
+/** Which part of the Activities timeline an entry falls in. */
+export type TimelineGroupKind = 'today' | 'this_week' | 'week';
+
+export interface TimelineGroup<T> {
+  /** Stable key: `today`, `this_week` or `week:<monday>`. */
+  key: string;
+  kind: TimelineGroupKind;
+  weekStart: string;
+  items: T[];
+}
+
+function dateKey(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+/**
+ * Today, then earlier this week, then one group per older Mon–Sun week, in list order
+ * (the API is newest first). Dates are the server's local `YYYY-MM-DD`, which the apps
+ * keep on the device's timezone; an entry dated after today (a zone change) counts as today.
+ */
+export function groupTimeline<T extends { date: string; week_start: string }>(
+  items: readonly T[],
+  today: Date = new Date(),
+): TimelineGroup<T>[] {
+  const todayKey = dateKey(today);
+  const monday = new Date(today);
+  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
+  const mondayKey = dateKey(monday);
+
+  const groups: TimelineGroup<T>[] = [];
+  for (const item of items) {
+    const kind: TimelineGroupKind =
+      item.date >= todayKey ? 'today' : item.week_start >= mondayKey ? 'this_week' : 'week';
+    const key = kind === 'week' ? `week:${item.week_start}` : kind;
+    const last = groups[groups.length - 1];
+    if (last && last.key === key) last.items.push(item);
+    else groups.push({ key, kind, weekStart: item.week_start, items: [item] });
+  }
+  return groups;
+}
+
+/**
+ * A timeline group's heading and totals. The current week's totals go on the first of its
+ * groups only, labelled "This week" since they cover today and the earlier days together.
+ */
+export function timelineGroupHeader(
+  group: Pick<TimelineGroup<unknown>, 'kind'>,
+  week: { week_start: string; week_end: string; sessions: number; duration_minutes: number; distance_km: number } | undefined,
+  system: 'metric' | 'imperial',
+  firstOfWeek: boolean,
+): { title: string; totals: string | null } {
+  if (group.kind === 'week') {
+    return week
+      ? { title: weekRangeLabel(week.week_start, week.week_end), totals: weekTotalsText(week, system) }
+      : { title: '', totals: null };
+  }
+  return {
+    title: group.kind === 'today' ? 'Today' : 'Earlier this week',
+    totals: week && firstOfWeek ? `This week: ${weekTotalsText(week, system)}` : null,
+  };
+}
+
 /** Bpm range of each zone from the model's floors. Below the Z1 floor counts as Z1; Z5 is open-ended. */
 export function zoneRanges(floors: readonly number[]): string[] {
   return floors.map((floor, i) => {

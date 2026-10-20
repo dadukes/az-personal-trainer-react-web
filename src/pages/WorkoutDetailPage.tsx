@@ -5,6 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 
 import ActivityRow from '@/components/ActivityRow';
 import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
+import GeneralHeartRateCard from '@/components/GeneralHeartRateCard';
 import HeartRateCard from '@/components/HeartRateCard';
 import { Badge, Card, Eyebrow, StatTile } from '@/components/ui';
 import { sourceAppLabel } from '@/lib/body';
@@ -231,6 +232,8 @@ export default function WorkoutDetailPage() {
               curve={data.hr_curve}
               onAddBirthYear={() => navigate('/profile')}
             />
+          ) : data.general_heart_rate ? (
+            <GeneralHeartRateCard data={data.general_heart_rate} />
           ) : null}
 
           {/* A plan day told to the coach or completed by the watch has no per-set detail — an
