@@ -361,6 +361,7 @@ export default function PlanDayPage() {
           accessToken={session?.access_token}
           name={swapExercise.name}
           exerciseId={swapExercise.exercise_id}
+          coachAlternatives={swapExercise.alternatives}
           onClose={() => setSwapTarget(null)}
           onPick={(pick) => {
             // A draft edit like any other — it persists with "Save changes".

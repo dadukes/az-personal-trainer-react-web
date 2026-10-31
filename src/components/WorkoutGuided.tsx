@@ -7,7 +7,7 @@ import { NumberEntry } from '@/components/NumberEntry';
 import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
 import { Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail, type WeightUnit } from '@/lib/api';
-import { cardioKindVerb, isCatalogExercise, usesWeight, type ExercisePick } from '@/lib/exercise';
+import { cardioKindVerb, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import {
@@ -297,7 +297,8 @@ export default function WorkoutGuided({
 
         {/* "Each side" is not a row of its own — it rides on the rep dial / timer,
             where the number it qualifies actually lives. */}
-        {block.notes ? <CoachNote text={block.notes} /> : null}
+        {/* The note was written for the planned exercise; going back to it brings the note back. */}
+        {block.notes && !block.swappedFrom ? <CoachNote text={block.notes} /> : null}
 
         {cues.length > 0 ? (
           <div className="flex flex-col gap-2">
@@ -442,6 +443,7 @@ export default function WorkoutGuided({
           accessToken={accessToken}
           name={block.name}
           exerciseId={block.exercise_id}
+          coachAlternatives={sessionCoachAlternatives(block)}
           onClose={() => setSwapOpen(false)}
           onPick={(pick) => {
             onSwapExercise(blockIndex, pick);

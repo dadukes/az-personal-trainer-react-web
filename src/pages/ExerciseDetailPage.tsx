@@ -920,6 +920,7 @@ export default function ExerciseDetailPage() {
           accessToken={session?.access_token}
           name={ex.name}
           exerciseId={ex.exercise_id}
+          coachAlternatives={ex.alternatives}
           title={ex.exercise_id ? 'Find an alternative' : 'Link or swap exercise'}
           onClose={() => setSwapOpen(false)}
           onPick={(item) => {

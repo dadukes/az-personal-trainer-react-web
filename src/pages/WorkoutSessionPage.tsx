@@ -8,7 +8,7 @@ import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
 import { getDashboard, getLastPerformance, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
-import { isCatalogExercise, usesWeight, type ExercisePick } from '@/lib/exercise';
+import { isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
 import { roundTo } from '@/lib/numberEntry';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { dateForDayKey } from '@/lib/workout';
@@ -625,7 +625,8 @@ export default function WorkoutSessionPage() {
                   Swapped from {block.swappedFrom}
                 </div>
               ) : null}
-              {block.notes ? (
+              {/* The note was written for the planned exercise; going back to it brings the note back. */}
+              {block.notes && !block.swappedFrom ? (
                 <div className="mt-0.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
                   {block.notes}
                 </div>
@@ -758,6 +759,7 @@ export default function WorkoutSessionPage() {
           accessToken={session?.access_token}
           name={blocks[swapIndex].name}
           exerciseId={blocks[swapIndex].exercise_id}
+          coachAlternatives={sessionCoachAlternatives(blocks[swapIndex])}
           onClose={() => setSwapIndex(null)}
           onPick={(pick) => {
             swapExercise(swapIndex, pick);

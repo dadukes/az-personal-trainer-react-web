@@ -32,8 +32,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   commits on blur/Enter, Escape or an empty field reverts. `DurationEntry` shows "32:45"/"1:05:30"
   and opens an h/min/sec sheet (a numeric keypad has no ":"). Input font must stay **≥16px** or
   iOS zooms on focus. The sheet is portalled.
-- **`FindAlternativeDialog.tsx`** — "Find an alternative": suggestions on open
-  (`GET /exercises/{id}/alternatives`; an unlinked exercise first borrows its nearest name match's
+- **`FindAlternativeDialog.tsx`** — "Find an alternative": the coach's `alternatives` first when the
+  caller passes them (rendered at once from plan data, pictures filled in by `getExercisesBatch`), then
+  suggestions on open (`GET /exercises/{id}/alternatives`; an unlinked exercise first borrows its nearest name match's
   id, which is offered too) plus a search with a "use as typed" escape hatch. Returns an
   `ExercisePick`; the caller decides what a pick means (session swap vs plan draft edit). Like
   `CoachMemory` it owns its fetching. Full-screen below `sm` (a bottom sheet sits under the

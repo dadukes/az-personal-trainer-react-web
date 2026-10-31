@@ -1,5 +1,6 @@
 import type {
   CardioActivityKind,
+  CoachAlternative,
   DashboardExercise,
   ExerciseType,
   HeartRateZone,
@@ -245,13 +246,50 @@ export interface ExercisePick {
   bodyPart?: string;
 }
 
+/** A coach alternative as the pick the swap sheet hands back. */
+export function coachAlternativePick(alternative: CoachAlternative): ExercisePick {
+  return {
+    name: alternative.name,
+    exerciseId: alternative.exercise_id,
+    targetMuscle: alternative.target_muscle,
+    bodyPart: alternative.body_part,
+  };
+}
+
+/** Whether a coach alternative is the given exercise, by catalog id or by name. */
+export function isCoachAlternativeFor(
+  alternative: CoachAlternative,
+  name: string,
+  exerciseId: string | undefined,
+): boolean {
+  return (
+    (Boolean(exerciseId) && alternative.exercise_id === exerciseId) ||
+    alternative.name.trim().toLowerCase() === name.trim().toLowerCase()
+  );
+}
+
 /**
  * A plan exercise with `pick` swapped in. Linking an unlinked exercise is not a swap, so
- * `swapped_from` is only stamped when a catalog-linked exercise is replaced by another.
- * Cues and the last-performance cache describe the old movement and are dropped.
+ * `swapped_from` is only stamped when a catalog-linked exercise is replaced by another,
+ * or by one of the coach's alternatives (which are real swaps even from an unlinked one).
+ * Cues, notes and the last-performance cache describe the old movement and are dropped.
+ *
+ * Taking a coach alternative moves the old exercise onto the list in its place, since
+ * those are all substitutes for the same slot. Swapping to anything else clears the list:
+ * like the cues, the coach's picks described the old movement.
  */
 export function swapPlanExercise(ex: DashboardExercise, pick: ExercisePick): DashboardExercise {
-  const swapped = Boolean(ex.exercise_id) && ex.exercise_id !== pick.exerciseId;
+  const list = ex.alternatives ?? [];
+  const others = list.filter((a) => !isCoachAlternativeFor(a, pick.name, pick.exerciseId));
+  const fromCoach = others.length < list.length;
+  const swapped = fromCoach || (Boolean(ex.exercise_id) && ex.exercise_id !== pick.exerciseId);
+  const previous: CoachAlternative = {
+    name: ex.name,
+    exercise_id: ex.exercise_id,
+    target_muscle: ex.target_muscle,
+    body_part: ex.body_part,
+    why: 'Your previous exercise',
+  };
   return {
     ...ex,
     name: pick.name,
@@ -260,8 +298,39 @@ export function swapPlanExercise(ex: DashboardExercise, pick: ExercisePick): Das
     body_part: pick.bodyPart,
     swapped_from: swapped ? ex.name : ex.swapped_from,
     cues: swapped ? undefined : ex.cues,
+    notes: swapped ? undefined : ex.notes,
     last_performance: undefined,
+    alternatives: fromCoach ? [...others, previous] : swapped ? undefined : ex.alternatives,
   };
+}
+
+/**
+ * What a workout block's swap sheet offers from the coach. The list survives a swap for
+ * today, minus whatever the block is doing now, and is led by the planned exercise once
+ * it has been swapped away, so going back doesn't need a search.
+ */
+export function sessionCoachAlternatives(block: {
+  name: string;
+  exercise_id?: string;
+  swappedFrom?: string;
+  alternatives?: CoachAlternative[];
+  planned?: ExercisePick;
+}): CoachAlternative[] {
+  const backToPlan: CoachAlternative[] =
+    block.swappedFrom && block.planned
+      ? [
+          {
+            name: block.planned.name,
+            exercise_id: block.planned.exerciseId,
+            target_muscle: block.planned.targetMuscle,
+            body_part: block.planned.bodyPart,
+            why: 'Back to the planned exercise',
+          },
+        ]
+      : [];
+  return [...backToPlan, ...(block.alternatives ?? [])].filter(
+    (a) => !isCoachAlternativeFor(a, block.name, block.exercise_id),
+  );
 }
 
 /**

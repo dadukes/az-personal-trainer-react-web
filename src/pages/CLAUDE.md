@@ -77,6 +77,8 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   block key stays the plan's so the persisted signature still matches, swaps persist in
   `forma:workout-session` (`swaps`), not-done sets reset their weight (then pre-fill from
   `getLastPerformance`), and `swapped_from` is sent to `logWorkout`. The plan is never changed.
+  The coach note describes the planned exercise, so both views hide it while `swappedFrom` is set
+  and it returns if the user swaps back.
 - **Profile / coach memory**: the `CoachMemory` card sits between Personalization and the save
   row and shows the AI's global memory — the same `user_memory` rows the backend pastes into the
   coach's system instruction — with edit / add / forget. It is deliberately **outside** the
@@ -140,7 +142,10 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   manually typed exercise self-links on save; the detail page's search just lets the user pick the
   exact match instead. `main` section ↔ the plan's `exercises` array.
   Swaps from a day row (shuffle button) and from the detail page both open `FindAlternativeDialog`
-  and write through `swapPlanExercise` as ordinary draft edits (saved with `Save changes`). Below
+  and write through `swapPlanExercise` as ordinary draft edits (saved with `Save changes`). A real
+  swap drops the old exercise's cues and notes for good. Taking a coach alternative moves the old exercise onto the list in its place; any other swap clears the list.
+  In a workout the swap is for today only: the block keeps the list, and `sessionCoachAlternatives`
+  adds the planned exercise once it has been swapped away. Below
   `sm` the row's target text sits under the name, leaving room for the swap button.
 
 ## UI & branding

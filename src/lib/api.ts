@@ -199,6 +199,20 @@ export interface ExerciseIntervals {
   recover_hr_zone?: HeartRateZone;
 }
 
+/**
+ * A substitute the coach picked for an exercise, listed first in the swap sheet. A swap
+ * keeps the parent's sets and reps, so there is no prescription here. `exercise_id` is
+ * absent when the name has no confident catalog match — still swappable by name.
+ */
+export interface CoachAlternative {
+  name: string;
+  exercise_id?: string;
+  target_muscle?: string;
+  body_part?: string;
+  /** The coach's short reason, e.g. "Easier on the lower back". */
+  why?: string;
+}
+
 export interface DashboardExercise {
   name: string;
   /** Always present on server reads; optional only for on-device plans cached pre-rollout. */
@@ -220,6 +234,8 @@ export interface DashboardExercise {
   is_per_side?: boolean;
   target_weight?: number;
   weight_unit?: WeightUnit;
+  /** Coach-picked substitutes. Never on cardio or class, which have no swap. */
+  alternatives?: CoachAlternative[];
   // ── cardio ──
   activity_kind?: CardioActivityKind;
   distance_km?: number;

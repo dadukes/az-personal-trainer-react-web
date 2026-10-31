@@ -5,10 +5,12 @@ import { createPortal } from 'react-dom';
 import { Button, Eyebrow, Input } from '@/components/ui';
 import {
   getExerciseAlternatives,
+  getExercisesBatch,
   searchExercises,
   type CatalogExerciseSummary,
+  type CoachAlternative,
 } from '@/lib/api';
-import type { ExercisePick } from '@/lib/exercise';
+import { coachAlternativePick, isCoachAlternativeFor, type ExercisePick } from '@/lib/exercise';
 
 /**
  * The provider's name search returns a small bounded window (~10 max), so keep the page
@@ -27,9 +29,29 @@ interface FindAlternativeDialogProps {
   /** The exercise being replaced. */
   name: string;
   exerciseId?: string;
+  /** Substitutes the coach picked; listed first, ahead of the automatic suggestions. */
+  coachAlternatives?: CoachAlternative[];
   title?: string;
   onPick: (pick: ExercisePick) => void;
   onClose: () => void;
+}
+
+/** What a coach alternative's row needs from the catalog; the plan has the rest. */
+type CoachCatalogFields = Pick<CatalogExerciseSummary, 'image_url' | 'equipment'>;
+
+function coachRowItem(
+  alternative: CoachAlternative,
+  catalog: Record<string, CoachCatalogFields>,
+): CatalogExerciseSummary {
+  const fields = alternative.exercise_id ? catalog[alternative.exercise_id] : undefined;
+  return {
+    id: alternative.exercise_id ?? alternative.name,
+    name: alternative.name,
+    image_url: fields?.image_url ?? null,
+    target: alternative.target_muscle ?? null,
+    body_part: alternative.body_part ?? null,
+    equipment: fields?.equipment ?? null,
+  };
 }
 
 function toPick(item: CatalogExerciseSummary): ExercisePick {
@@ -42,8 +64,8 @@ function toPick(item: CatalogExerciseSummary): ExercisePick {
 }
 
 /**
- * "I can't do this one" — suggestions the moment it opens, plus a search for when the
- * user already knows what they'd rather do. Shared by the workout (guided + list) and
+ * "I can't do this one" — the coach's own alternatives first, automatic suggestions the
+ * moment it opens, plus a search for when the user already knows what they'd rather do. Shared by the workout (guided + list) and
  * the plan editor (day rows + exercise detail); the caller decides what a pick means.
  *
  * Like `CoachMemory`, it owns its own fetching: it is opened from deep inside rows on
@@ -57,10 +79,14 @@ export default function FindAlternativeDialog({
   accessToken,
   name,
   exerciseId,
+  coachAlternatives,
   title = 'Find an alternative',
   onPick,
   onClose,
 }: FindAlternativeDialogProps) {
+  const coach = coachAlternatives ?? [];
+  const coachIdsKey = coach.flatMap((a) => (a.exercise_id ? [a.exercise_id] : [])).join(',');
+  const [coachCatalog, setCoachCatalog] = useState<Record<string, CoachCatalogFields>>({});
   const [suggestions, setSuggestions] = useState<Suggestion[] | null>(null);
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<CatalogExerciseSummary[]>([]);
@@ -76,6 +102,29 @@ export default function FindAlternativeDialog({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // The coach's rows render at once from plan data; this only fills in their pictures,
+  // so a failure just leaves the placeholder.
+  useEffect(() => {
+    if (!accessToken || !coachIdsKey) return;
+    let active = true;
+    void (async () => {
+      try {
+        const { exercises } = await getExercisesBatch(accessToken, coachIdsKey.split(','));
+        if (!active) return;
+        setCoachCatalog(
+          Object.fromEntries(
+            exercises.map((e) => [e.id, { image_url: e.image_url ?? e.gif_url, equipment: e.equipment }]),
+          ),
+        );
+      } catch {
+        /* keep the placeholders */
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [accessToken, coachIdsKey]);
 
   // Suggestions load straight away. Alternatives hang off a catalog id, so an unlinked
   // exercise first borrows the id of its nearest name match — which is itself offered,
@@ -173,6 +222,10 @@ export default function FindAlternativeDialog({
   const term = query.trim();
   const searchActive = term.length >= 2;
   const visibleResults = results.filter((r) => r.id !== exerciseId);
+  // The coach's picks aren't repeated among the automatic ones.
+  const moreSuggestions = suggestions?.filter(
+    (s) => !coach.some((a) => isCoachAlternativeFor(a, s.item.name, s.item.id)),
+  );
 
   return createPortal(
     <div
@@ -266,8 +319,21 @@ export default function FindAlternativeDialog({
             </>
           ) : (
             <>
-              <Eyebrow className="mt-1">Suggested alternatives</Eyebrow>
-              {suggestions == null ? (
+              {coach.length > 0 ? (
+                <>
+                  <Eyebrow className="mt-1">Coach suggested</Eyebrow>
+                  {coach.map((a) => (
+                    <ExerciseOptionRow
+                      key={a.exercise_id ?? a.name}
+                      item={coachRowItem(a, coachCatalog)}
+                      why={a.why}
+                      onPick={() => onPick(coachAlternativePick(a))}
+                    />
+                  ))}
+                </>
+              ) : null}
+              <Eyebrow className="mt-1">{coach.length > 0 ? 'More suggestions' : 'Suggested alternatives'}</Eyebrow>
+              {moreSuggestions == null ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <div
                     key={i}
@@ -275,10 +341,14 @@ export default function FindAlternativeDialog({
                     style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
                   />
                 ))
-              ) : suggestions.length === 0 ? (
-                <Muted>No suggestions for this one — search above for what you&rsquo;d rather do.</Muted>
+              ) : moreSuggestions.length === 0 ? (
+                <Muted>
+                  {coach.length > 0
+                    ? 'Nothing else to suggest — search above for what you\u2019d rather do.'
+                    : 'No suggestions for this one — search above for what you\u2019d rather do.'}
+                </Muted>
               ) : (
-                suggestions.map((s) => (
+                moreSuggestions.map((s) => (
                   <ExerciseOptionRow key={s.item.id} item={s.item} why={s.why} onPick={() => onPick(toPick(s.item))} />
                 ))
               )}

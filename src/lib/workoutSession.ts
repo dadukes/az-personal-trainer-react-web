@@ -1,6 +1,7 @@
 import {
   type CardioActivityKind,
   type CardioFormat,
+  type CoachAlternative,
   type DashboardDayPlan,
   type DashboardExercise,
   type ExerciseIntervals,
@@ -64,6 +65,10 @@ export interface Block {
   bodyPart?: string;
   /** Set when the user swapped the planned exercise mid-session; the plan's name. */
   swappedFrom?: string;
+  /** The plan's identity for this block; unchanged by a swap, so the way back survives one. */
+  planned?: ExercisePick;
+  /** The coach's substitutes from the plan; unchanged by a swap. */
+  alternatives?: CoachAlternative[];
   // ── cardio ──
   activityKind?: CardioActivityKind;
   cardioFormat?: CardioFormat;
@@ -214,6 +219,13 @@ function buildBlock(
     cues: ex.cues,
     targetMuscle: ex.target_muscle,
     bodyPart: ex.body_part,
+    planned: {
+      name: ex.name,
+      exerciseId: ex.exercise_id,
+      targetMuscle: ex.target_muscle,
+      bodyPart: ex.body_part,
+    },
+    alternatives: ex.alternatives,
   };
 
   if (type === 'cardio') {
