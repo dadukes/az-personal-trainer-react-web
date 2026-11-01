@@ -246,13 +246,13 @@ export default function CoachPage() {
             {chatError ? (
               <div
                 className="flex items-center justify-between gap-3 rounded-xl px-4 py-3"
-                style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)' }}
+                style={{ background: 'var(--danger-tint)' }}
               >
                 <span className="flex-1 text-[12.5px]" style={{ color: 'var(--forma-danger)' }}>
                   {chatError}
                 </span>
                 {failedPrompt ? (
-                  <Button size="sm" onClick={() => streamReply(failedPrompt)} leftIcon={<RotateCcw size={13} color="#06224D" />}>
+                  <Button size="sm" onClick={() => streamReply(failedPrompt)} leftIcon={<RotateCcw size={13} color="var(--on-aqua)" />}>
                     Retry
                   </Button>
                 ) : null}
@@ -265,7 +265,7 @@ export default function CoachPage() {
                   className="flex h-12 w-12 items-center justify-center rounded-full"
                   style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-strong)' }}
                 >
-                  <Zap size={20} color="#34D2C1" />
+                  <Zap size={20} color="var(--teal)" />
                 </div>
                 <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
                   Your coach is ready
@@ -285,7 +285,7 @@ export default function CoachPage() {
                       className="mr-2 mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
                       style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-strong)' }}
                     >
-                      <Zap size={13} color="#34D2C1" />
+                      <Zap size={13} color="var(--teal)" />
                     </div>
                   ) : null}
                   <div
@@ -299,7 +299,7 @@ export default function CoachPage() {
                     {isUser ? (
                       <span className="text-[14px] leading-6">{message.content}</span>
                     ) : message.isStreaming && message.content === '' ? (
-                      <TypingDots color="#34D2C1" />
+                      <TypingDots color="var(--teal)" />
                     ) : (
                       <ChatMarkdown content={message.content} streaming={message.isStreaming} />
                     )}
@@ -371,7 +371,7 @@ export default function CoachPage() {
                 className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
                 style={{ background: 'var(--accent)' }}
               >
-                <Square size={15} color="#06224D" fill="#06224D" />
+                <Square size={15} color="var(--on-aqua)" fill="var(--on-aqua)" />
               </button>
             ) : (
               <button
@@ -381,7 +381,7 @@ export default function CoachPage() {
                 className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full disabled:opacity-50"
                 style={{ background: 'var(--accent)' }}
               >
-                <SendHorizontal size={16} color="#06224D" />
+                <SendHorizontal size={16} color="var(--on-aqua)" />
               </button>
             )}
           </div>
@@ -414,7 +414,7 @@ export default function CoachPage() {
               <p className="mb-3 text-[12.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
                 Tuned to how you feel today.
               </p>
-              <Button variant="secondary" fullWidth size="sm" onClick={() => navigate(`/plan/${todayWorkout.key}`)}>
+              <Button variant="quiet" fullWidth size="sm" onClick={() => navigate(`/plan/${todayWorkout.key}`)}>
                 View full plan
               </Button>
             </>

@@ -60,16 +60,16 @@ const ICON_MAP: Record<string, ComponentType<{ size?: number; color?: string }>>
 };
 
 const ICON_COLOR: Record<string, string> = {
-  heart_pulse: '#34D2C1',
-  sleep: '#39B1F2',
-  steps: '#34D2C1',
-  stress: '#F5C542',
-  energy: '#34D2C1',
-  calories: '#39B1F2',
-  workout: '#34D2C1',
-  trophy: '#F5C542',
-  trending_up: '#34D2C1',
-  general: '#34D2C1',
+  heart_pulse: 'var(--teal)',
+  sleep: 'var(--sky)',
+  steps: 'var(--teal)',
+  stress: 'var(--gold)',
+  energy: 'var(--teal)',
+  calories: 'var(--sky)',
+  workout: 'var(--teal)',
+  trophy: 'var(--gold)',
+  trending_up: 'var(--teal)',
+  general: 'var(--teal)',
 };
 
 // The deterministic 30-day averages, in display order. `avgKey` reads the value off

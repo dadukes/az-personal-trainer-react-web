@@ -30,9 +30,10 @@ plan-day view, guided workout session, and chat history.
 - Keep error handling user-safe: critical actions surface a clear message; background
   refreshes may fail silently and fall back to cached/placeholder UI.
 - Guard async work in effects against stale updates (`mounted`/`active` flag or `AbortController`).
-- **Use brand tokens, not hardcoded hex.** Semantic CSS vars (`--accent`, `--bg-surface`,
-  `--text-primary`, …) live in [src/index.css](src/index.css); the `forma.*` Tailwind
-  colors live in `tailwind.config.js`. Both mirror the design system's `tokens/colors.css`.
+- **Use Forma Signal tokens, not hardcoded colours.** They live in [src/index.css](src/index.css)
+  (`--ground`, `--surface`, `--ink`, `--teal`, …, with Tailwind names in `tailwind.config.js`) and
+  mirror the mobile app's `constants/tokens.js`. Older names like `--bg-surface` point at them.
+  `npm run check:colors` stops the count of hard-coded colours from growing.
 
 ## Tech stack
 
@@ -65,7 +66,12 @@ npm run typecheck   # tsc --noEmit
 npm test            # Vitest: pure logic only (no component tests)
 ```
 
-Run **`npm run typecheck`** (and ideally `npm run build`) before considering a change done.
+Run **`npm run typecheck`** (and ideally `npm run build`) before considering a change done, plus
+`npm run check:colors` if it touches styling. After clearing colours out of a file, lower the
+baseline with `node scripts/check-colors.js --update`.
+
+`/design-system` shows every token and component in the current theme. It's on in dev builds, or
+with `localStorage.setItem('forma:flag:designSystem', '1')`.
 
 ## Backend / API
 

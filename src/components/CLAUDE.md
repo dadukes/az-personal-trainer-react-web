@@ -4,9 +4,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 
 ## What lives here
 
-- **`ui.tsx`** — the design-system primitives, ports of the Claude Design
-  `FormaFitnessDesignSystem` components: `Button`, `Card`, `Input`, `SegmentedToggle`, `Chip`,
-  `StatTile`, `Badge`, `Avatar`, `ProgressBar`, `ChatBubble`, plus `Eyebrow` (uppercase label).
+- **`ui.tsx`** — the design-system primitives. Forma Signal: `Surface`, `Stat`, `Button`, `Row`,
+  `Sheet`, `Segmented`, `StatusTick`. Older ones that screens move off as they're redesigned:
+  `Card`, `StatTile`, `Input`, `Chip`, `Badge`, `Avatar`, `ProgressBar`, `ChatBubble`, `Eyebrow`.
 - **`AppShell.tsx`** — the responsive app frame: **sidebar (≥1024) → icon rail (768–1023) →
   bottom tab bar (<768)**, plus the footer user block, theme toggle, and sign-out. Routes matching
   `isImmersiveRoute` (today: `/workout/*`) render **with all three nav surfaces hidden** — a
@@ -77,17 +77,20 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **Theme via CSS variables, not props.** Components read semantic tokens (`--accent`,
   `--bg-surface`, `--text-primary`, `--border-base`, …) so light/dark flip automatically with
   no per-component branching. Add new tokens to `src/index.css` (both `:root` and `[data-theme="dark"]`).
-- Match the design language: **24px** card radius with a 1px hairline border (cards lean on the
-  border, not heavy shadows); pills (`999px`) for chips/avatars/FABs; 12px for buttons/inner tiles.
-- Buttons: primary = solid **aqua fill + navy label**; secondary = bordered surface; ghost =
-  borderless. Press **scales down** (`active:scale-*`) rather than shifting color. Selected states
-  swap to a **mint fill + aqua border**.
+- Match Forma Signal: radius is 12 control, 16 button, 20 surface, 24 hero (`rounded-control` and
+  so on), with pills (`999px`) for chips/avatars/FABs. New screens use one `Surface` level: depth by
+  tone, no outlines, no box inside a box, and lists as one Surface of `Row`s. Type comes from the
+  `type-*` classes in `index.css`.
+- Buttons: primary = **aqua fill + navy label**, for the one main action; strong = navy; quiet =
+  tonal; link = teal text. Press **scales down** (`active:scale-*`) rather than shifting color.
+  Selected states use the `--tint` fill.
+- **Aqua is a fill, never text on a light ground.** Text and icons use `--teal`, but not on
+  `--sunken` in light mode (4.4:1). Pairs that must stay readable are in `src/lib/designTokens.test.ts`.
 - Icons are **lucide-react** at brand stroke weight (`2` default; `2.2–2.5` for active nav).
   Don't hand-draw icons or swap icon sets.
 - Keep primitives presentational and stateless where possible; data-fetching belongs in pages.
-- **Anything sitting on the mint fill (`--bg-selected`) reads from the `--text-on-mint*` tokens.**
-  The mint is identical in both themes, so the theme-flipping text tokens (`--text-secondary`,
-  `--accent-text`) turn unreadable-on-mint in dark.
+- **Anything on the selected fill (`--bg-selected`) reads from the `--text-on-mint*` tokens**, which
+  stay readable on the tint in both themes. Content on the hero uses `--hero-ink` and `--hero-sub`.
 - **Mobile (<768) scrolls the document, not an inner element** — that is what makes the browser
   auto-hide its URL bar. `AppShell` only becomes a fixed `100dvh` frame with its own scroll
   region from `md` up. Use `dvh`, never `vh`, and offset fixed bottom bars by

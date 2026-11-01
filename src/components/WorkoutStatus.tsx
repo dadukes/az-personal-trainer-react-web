@@ -75,17 +75,17 @@ export function WorkoutResumeCard({ draft }: { draft: WorkoutDraft }) {
   return (
     <section
       aria-label="Workout in progress"
-      className="flex flex-col gap-4 rounded-[24px] p-6 sm:p-7"
-      style={{ background: 'var(--forma-navy)' }}
+      className="flex flex-col gap-4 rounded-hero p-5 sm:p-7"
+      style={{ background: 'var(--hero)' }}
     >
       <div className="flex flex-col gap-1.5">
-        <span className="text-[13px] font-semibold" style={{ color: 'var(--forma-mint, #C9F0E6)' }}>
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--hero-sub)' }}>
           In progress · {startedAgoLabel(draft.startedAt, new Date())}
         </span>
-        <h2 className="m-0 text-[26px] font-extrabold text-white">
+        <h2 className="m-0 text-[26px] font-extrabold" style={{ color: 'var(--hero-ink)' }}>
           {draft.focus ?? `${capitalize(draft.dayKey)} workout`}
         </h2>
-        <span className="text-[15px] font-medium leading-[21px]" style={{ color: 'var(--forma-mint, #C9F0E6)' }}>
+        <span className="text-[15px] font-medium leading-[21px]" style={{ color: 'var(--hero-sub)' }}>
           {done > 0
             ? `${done} of ${total} sets ticked. They're saved on this device.`
             : 'Nothing ticked yet. Pick up where you left off.'}
@@ -163,19 +163,19 @@ function PendingRow({ save }: { save: PendingWorkoutSave }) {
       <div className="flex gap-2">
         {confirmingDiscard ? (
           <>
-            <Button variant="ghost" fullWidth onClick={() => setConfirmingDiscard(false)}>
+            <Button variant="link" fullWidth onClick={() => setConfirmingDiscard(false)}>
               Keep it
             </Button>
-            <Button variant="ghost" fullWidth onClick={() => discardPendingWorkout(save.clientSessionId)}>
+            <Button variant="link" fullWidth onClick={() => discardPendingWorkout(save.clientSessionId)}>
               <span style={{ color: 'var(--forma-danger)' }}>Yes, discard it</span>
             </Button>
           </>
         ) : (
           <>
-            <Button variant="secondary" fullWidth disabled={retrying} onClick={() => void onRetry()}>
+            <Button variant="quiet" fullWidth disabled={retrying} onClick={() => void onRetry()}>
               {retrying ? 'Trying…' : 'Try again'}
             </Button>
-            <Button variant="ghost" fullWidth onClick={() => setConfirmingDiscard(true)}>
+            <Button variant="link" fullWidth onClick={() => setConfirmingDiscard(true)}>
               Discard
             </Button>
           </>

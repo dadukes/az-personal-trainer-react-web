@@ -35,7 +35,7 @@ export default function QuickActionsFab({ actions }: { actions: QuickAction[] })
       {open ? (
         <div
           className="fixed inset-0 z-30"
-          style={{ background: 'rgba(6,34,77,0.35)' }}
+          style={{ background: 'var(--scrim)' }}
           onClick={() => setOpen(false)}
         />
       ) : null}
@@ -70,12 +70,12 @@ export default function QuickActionsFab({ actions }: { actions: QuickAction[] })
           aria-expanded={open}
           aria-label={open ? 'Close log menu' : 'Log something'}
           className="flex h-14 w-14 items-center justify-center rounded-full transition-transform active:scale-95"
-          style={{ background: 'var(--accent)', boxShadow: '0 6px 18px rgba(52,210,193,0.35)' }}
+          style={{ background: 'var(--accent)' }}
         >
           {open ? (
-            <X size={24} color="#06224D" strokeWidth={2.6} />
+            <X size={24} color="var(--on-aqua)" strokeWidth={2.6} />
           ) : (
-            <Plus size={26} color="#06224D" strokeWidth={2.6} />
+            <Plus size={26} color="var(--on-aqua)" strokeWidth={2.6} />
           )}
         </button>
       </div>

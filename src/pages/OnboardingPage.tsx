@@ -53,11 +53,11 @@ function StepDots({ step }: { step: Step }) {
               className="flex h-8 w-8 items-center justify-center rounded-full text-[14px] font-extrabold"
               style={
                 done || active
-                  ? { background: 'var(--forma-aqua)', color: 'var(--forma-navy)' }
+                  ? { background: 'var(--forma-aqua)', color: 'var(--on-aqua)' }
                   : { border: '1px solid var(--border-strong)', color: 'var(--text-muted)' }
               }
             >
-              {done ? <Check size={16} color="var(--forma-navy)" strokeWidth={3} /> : n}
+              {done ? <Check size={16} color="var(--on-aqua)" strokeWidth={3} /> : n}
             </div>
             {idx < 2 ? (
               <div className="h-0.5 w-11" style={{ background: n < step ? 'var(--forma-aqua)' : 'var(--border-base)' }} />
@@ -180,7 +180,7 @@ export default function OnboardingPage() {
                       </div>
                       <div
                         className="mt-1 text-[13px] leading-[1.4]"
-                        style={{ color: active ? '#0E4C45cc' : 'var(--text-muted)' }}
+                        style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
                       >
                         {p.blurb}
                       </div>
@@ -269,7 +269,7 @@ export default function OnboardingPage() {
             </div>
 
             <div className="mt-7 flex justify-between">
-              <Button variant="secondary" size="lg" onClick={() => setStep(1)}>
+              <Button variant="quiet" size="lg" onClick={() => setStep(1)}>
                 Back
               </Button>
               <Button
@@ -298,11 +298,11 @@ export default function OnboardingPage() {
               {['Apple Health', 'Google Fit'].map((provider) => (
                 <Card key={provider} variant="subtle" padding="14px 16px">
                   <div className="flex items-center gap-3">
-                    <ShieldCheck size={20} color="#34D2C1" />
+                    <ShieldCheck size={20} color="var(--teal)" />
                     <span className="flex-1 text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
                       {provider}
                     </span>
-                    <Button variant="secondary" size="sm" disabled>
+                    <Button variant="quiet" size="sm" disabled>
                       Mobile only
                     </Button>
                   </div>
@@ -346,7 +346,7 @@ export default function OnboardingPage() {
             ) : null}
 
             <div className="mt-7 flex justify-between">
-              <Button variant="ghost" size="lg" onClick={() => setStep(2)}>
+              <Button variant="link" size="lg" onClick={() => setStep(2)}>
                 Back
               </Button>
               <Button size="lg" onClick={handleFinish} disabled={submitting}>

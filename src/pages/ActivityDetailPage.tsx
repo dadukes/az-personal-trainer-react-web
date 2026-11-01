@@ -169,7 +169,7 @@ export default function ActivityDetailPage() {
         onBack={goBack}
         action={
           activity && isEditableActivity(activity) ? (
-            <Button variant="secondary" size="sm" onClick={() => setEditing(true)}>
+            <Button variant="quiet" size="sm" onClick={() => setEditing(true)}>
               <Pencil size={14} /> Edit
             </Button>
           ) : undefined

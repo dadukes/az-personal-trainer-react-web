@@ -18,5 +18,7 @@ export default defineConfig({
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],
+    // The token test reads index.css as text; Vitest blanks CSS files otherwise.
+    css: { include: [/index\.css/] },
   },
 });

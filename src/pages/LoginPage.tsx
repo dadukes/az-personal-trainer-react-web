@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 
-import { Button, Input, SegmentedToggle } from '@/components/ui';
+import { Button, Input, Segmented } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
 
 type Mode = 'sign-in' | 'sign-up';
@@ -96,7 +96,7 @@ export default function LoginPage() {
             </div>
           </div>
 
-          <SegmentedToggle
+          <Segmented
             options={[
               { value: 'sign-in', label: 'Sign in' },
               { value: 'sign-up', label: 'Create account' },
@@ -129,7 +129,7 @@ export default function LoginPage() {
           {error ? (
             <div
               className="rounded-xl px-3.5 py-2.5 text-[12.5px] font-medium"
-              style={{ background: 'rgba(239,68,68,0.1)', color: 'var(--forma-danger)', border: '1px solid rgba(239,68,68,0.25)' }}
+              style={{ background: 'var(--danger-tint)', color: 'var(--forma-danger)' }}
             >
               {error}
             </div>

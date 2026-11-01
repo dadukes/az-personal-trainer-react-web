@@ -4,10 +4,11 @@
  * a flag on the deployed site without a new build:
  * `localStorage.setItem('forma:flag:logbook', '1')`.
  */
-export type FeatureFlag = 'logbook';
+export type FeatureFlag = 'logbook' | 'designSystem';
 
 const FLAG_VALUES: Record<FeatureFlag, string | undefined> = {
   logbook: import.meta.env.VITE_FLAG_LOGBOOK as string | undefined,
+  designSystem: import.meta.env.VITE_FLAG_DESIGN_SYSTEM as string | undefined,
 };
 
 export function parseFlagValue(value: string | null | undefined): boolean {

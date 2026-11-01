@@ -152,7 +152,7 @@ export default function WorkoutDetailPage() {
   const shownStart = recordings[0]?.started_at ?? (source === 'coach' ? null : data?.session.started_at ?? null);
   const shownEnd = recordings.length > 0 ? recordings[recordings.length - 1].completed_at : data?.session.completed_at ?? '';
   const totals = recordingTotals(recordings);
-  const accent = '#34D2C1';
+  const accent = 'var(--teal)';
   const tiles: ReactNode[] = data
     ? [
         <StatTile
@@ -241,7 +241,7 @@ export default function WorkoutDetailPage() {
                   className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
                   style={{ background: 'var(--bg-subtle)' }}
                 >
-                  {source === 'watch' ? <Watch size={18} color="#34D2C1" /> : <MessageCircle size={18} color="#34D2C1" />}
+                  {source === 'watch' ? <Watch size={18} color="var(--teal)" /> : <MessageCircle size={18} color="var(--teal)" />}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
@@ -333,7 +333,7 @@ function ExerciseCard({
     >
       <div className="flex items-start gap-3">
         <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: 'var(--bg-subtle)' }}>
-          <Dumbbell size={18} color={open ? 'var(--text-muted)' : '#34D2C1'} />
+          <Dumbbell size={18} color={open ? 'var(--text-muted)' : 'var(--teal)'} />
         </div>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">

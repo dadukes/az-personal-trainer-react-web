@@ -178,7 +178,7 @@ export default function CoachMemory({ accessToken }: Props) {
             {loadError}
           </p>
           <Button
-            variant="secondary"
+            variant="quiet"
             size="sm"
             leftIcon={<RotateCcw size={14} />}
             onClick={() => setReloadToken((t) => t + 1)}
@@ -223,7 +223,7 @@ export default function CoachMemory({ accessToken }: Props) {
                       style={textareaStyle}
                     />
                     <div className="flex justify-end gap-2.5">
-                      <Button variant="secondary" size="sm" onClick={cancelEdit} disabled={busy}>
+                      <Button variant="quiet" size="sm" onClick={cancelEdit} disabled={busy}>
                         Cancel
                       </Button>
                       <Button
@@ -252,7 +252,7 @@ export default function CoachMemory({ accessToken }: Props) {
                             Forget this?
                           </span>
                           <Button
-                            variant="secondary"
+                            variant="quiet"
                             size="sm"
                             onClick={() => setConfirmingId(null)}
                             disabled={busy}
@@ -260,7 +260,7 @@ export default function CoachMemory({ accessToken }: Props) {
                             Keep
                           </Button>
                           <Button
-                            variant="secondary"
+                            variant="quiet"
                             size="sm"
                             leftIcon={<Trash2 size={14} color="var(--forma-danger)" />}
                             style={{ color: 'var(--forma-danger)', borderColor: 'var(--forma-danger)' }}
@@ -318,7 +318,7 @@ export default function CoachMemory({ accessToken }: Props) {
               />
               <div className="flex justify-end gap-2.5">
                 <Button
-                  variant="secondary"
+                  variant="quiet"
                   size="sm"
                   onClick={() => {
                     setAdding(false);
@@ -340,7 +340,7 @@ export default function CoachMemory({ accessToken }: Props) {
             </div>
           ) : (
             <Button
-              variant="secondary"
+              variant="quiet"
               size="sm"
               leftIcon={<Plus size={15} />}
               onClick={() => {

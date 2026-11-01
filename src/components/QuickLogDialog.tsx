@@ -74,7 +74,7 @@ export default function QuickLogDialog({ saving, error, onSave, onClose }: Quick
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={() => {
         if (!saving) onClose();
       }}
@@ -204,7 +204,7 @@ export default function QuickLogDialog({ saving, error, onSave, onClose }: Quick
         ) : null}
 
         <div className="mt-5 flex gap-3">
-          <Button variant="secondary" fullWidth onClick={onClose} disabled={saving}>
+          <Button variant="quiet" fullWidth onClick={onClose} disabled={saving}>
             Cancel
           </Button>
           <Button

@@ -92,7 +92,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                   <>
                     <Icon
                       size={20}
-                      color={isActive ? '#0E4C45' : 'var(--tab-inactive)'}
+                      color={isActive ? 'var(--text-on-mint)' : 'var(--tab-inactive)'}
                       strokeWidth={isActive ? 2.4 : 2}
                     />
                     <span
@@ -163,7 +163,7 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
                 >
                   <Icon
                     size={20}
-                    color={isActive ? '#0E4C45' : 'var(--tab-inactive)'}
+                    color={isActive ? 'var(--text-on-mint)' : 'var(--tab-inactive)'}
                     strokeWidth={isActive ? 2.4 : 2}
                   />
                 </div>

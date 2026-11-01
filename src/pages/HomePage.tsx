@@ -319,9 +319,9 @@ export default function HomePage() {
             ? 'Sleep · Needs focus'
             : 'Sleep looks solid',
     },
-    { icon: <HeartPulse size={18} color="#39B1F2" />, value: hrLabel, label: 'Resting heart rate' },
-    { icon: <Activity size={18} color="#34D2C1" />, value: stepsLabel, label: 'Steps today' },
-    { icon: <Flame size={18} color="#39B1F2" />, value: calLabel, label: 'Active calories' },
+    { icon: <HeartPulse size={18} color="var(--sky)" />, value: hrLabel, label: 'Resting heart rate' },
+    { icon: <Activity size={18} color="var(--teal)" />, value: stepsLabel, label: 'Steps today' },
+    { icon: <Flame size={18} color="var(--sky)" />, value: calLabel, label: 'Active calories' },
   ];
 
   return (
@@ -337,7 +337,7 @@ export default function HomePage() {
       <Card>
         <div className="mb-4 flex items-center justify-between gap-3">
           <div className="flex min-w-0 items-center gap-1.5">
-            <ShieldCheck size={15} color="#34D2C1" />
+            <ShieldCheck size={15} color="var(--teal)" />
             <span
               className="truncate text-[11.5px] font-bold tracking-[0.08em]"
               style={{ color: 'var(--accent-text)' }}
@@ -387,42 +387,38 @@ export default function HomePage() {
       {workoutDraft ? (
         <WorkoutResumeCard draft={workoutDraft} />
       ) : hasPlan ? (
-        <div className="rounded-[24px] p-1" style={{ background: 'var(--forma-aqua)' }}>
-          <div
-            className="flex items-center justify-between rounded-[20px] px-6 py-6 sm:px-7"
-            style={{ background: 'var(--forma-navy)' }}
-          >
+        <div className="flex items-center justify-between rounded-hero p-5 sm:p-7" style={{ background: 'var(--hero)' }}>
             <div className="min-w-0">
               {todayCompleted ? (
                 <div
                   className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold tracking-[0.04em]"
-                  style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
+                  style={{ background: 'var(--forma-aqua)', color: 'var(--on-aqua)' }}
                 >
                   <Check size={13} strokeWidth={3} />
                   <span>COMPLETED</span>
                 </div>
               ) : (
-                <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--forma-mint)' }}>
+                <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--hero-sub)' }}>
                   TODAY&rsquo;S PLAN
                 </div>
               )}
-              <div className="my-1.5 text-[24px] font-extrabold text-white">
+              <div className="my-1.5 text-[24px] font-extrabold" style={{ color: 'var(--hero-ink)' }}>
                 {todayWorkout?.title ?? 'Rest Day'}
               </div>
               {todayHasWorkout ? (
-                <div className="flex items-center gap-1.5 text-[13.5px]" style={{ color: '#C9F0E6' }}>
-                  <Calendar size={14} color="#C9F0E6" />
+                <div className="flex items-center gap-1.5 text-[13.5px]" style={{ color: 'var(--hero-sub)' }}>
+                  <Calendar size={14} color="var(--hero-sub)" />
                   <span>{todayWorkout?.duration}</span>
-                  {todayCompleted ? <span style={{ color: 'var(--forma-mint)' }}>· Nice work today</span> : null}
+                  {todayCompleted ? <span style={{ color: 'var(--hero-sub)' }}>· Nice work today</span> : null}
                 </div>
               ) : null}
             </div>
             <div className="flex items-center gap-3.5">
               {todayWorkout ? (
                 <Button
-                  variant="secondary"
+                  variant="quiet"
                   className="hidden sm:inline-flex"
-                  style={{ background: 'transparent', borderColor: 'rgba(255,255,255,0.35)', color: '#fff' }}
+                  style={{ background: 'transparent', border: '1px solid var(--hero-sub)', color: 'var(--hero-ink)' }}
                   onClick={() => navigate(`/plan/${todayWorkout.key}`)}
                 >
                   View full plan
@@ -435,23 +431,21 @@ export default function HomePage() {
                   className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
                   style={{
                     background: 'var(--forma-aqua)',
-                    boxShadow: '0 6px 18px rgba(52,210,193,0.35)',
                   }}
                 >
                   {todayCompleted ? (
-                    <RotateCcw size={22} color="#06224D" strokeWidth={2.6} />
+                    <RotateCcw size={22} color="var(--on-aqua)" strokeWidth={2.6} />
                   ) : (
-                    <Play size={22} color="#06224D" fill="#06224D" style={{ marginLeft: 2 }} />
+                    <Play size={22} color="var(--on-aqua)" fill="var(--on-aqua)" style={{ marginLeft: 2 }} />
                   )}
                 </button>
               ) : null}
             </div>
-          </div>
         </div>
       ) : (
         <Card onClick={handlePlanCTA} className="hover:brightness-[0.99]">
           <div className="flex items-start gap-3">
-            <MessageCircle size={24} color="#34D2C1" />
+            <MessageCircle size={24} color="var(--teal)" />
             <div className="flex-1">
               <div className="text-[18px] font-bold" style={{ color: 'var(--text-primary)' }}>
                 Ready to plan your workout?
@@ -463,8 +457,8 @@ export default function HomePage() {
                 className="mt-4 inline-flex items-center gap-2 rounded-lg px-3 py-2"
                 style={{ background: 'var(--forma-aqua)' }}
               >
-                <MessageCircle size={16} color="#0E4C45" />
-                <span className="font-semibold" style={{ color: '#0E4C45' }}>
+                <MessageCircle size={16} color="var(--on-aqua)" />
+                <span className="font-semibold" style={{ color: 'var(--on-aqua)' }}>
                   Start Planning
                 </span>
               </div>
@@ -479,7 +473,7 @@ export default function HomePage() {
           <div className="mb-3 flex items-center justify-between">
             <Eyebrow>Upcoming week</Eyebrow>
             <Badge tone="neutral">
-              <Zap size={10} color="#34D2C1" />
+              <Zap size={10} color="var(--teal)" />
               AI ADAPTS DAILY
             </Badge>
           </div>
@@ -505,7 +499,7 @@ export default function HomePage() {
                       {/* Corner "Done" ribbon */}
                       <span
                         className="absolute right-0 top-0 inline-flex items-center gap-1 rounded-bl-[12px] px-2 py-1 text-[9.5px] font-extrabold tracking-[0.04em]"
-                        style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
+                        style={{ background: 'var(--forma-aqua)', color: 'var(--on-aqua)' }}
                       >
                         <Check size={10} strokeWidth={3} />
                         DONE
@@ -526,7 +520,7 @@ export default function HomePage() {
                   </div>
                   <div
                     className="mt-1 text-[12px]"
-                    style={{ color: isToday ? 'rgba(14,76,69,.7)' : 'var(--text-muted)' }}
+                    style={{ color: isToday ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
                   >
                     {day.duration}
                   </div>
@@ -629,7 +623,7 @@ export default function HomePage() {
       {redoConfirm ? (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-5"
-          style={{ background: 'rgba(6,34,77,0.45)' }}
+          style={{ background: 'var(--scrim)' }}
           onClick={() => setRedoConfirm(null)}
         >
           <div
@@ -639,7 +633,7 @@ export default function HomePage() {
             className="w-full max-w-[380px] rounded-[24px] p-6 text-center"
             style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
           >
-            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-[28px]" style={{ background: 'var(--forma-mint)' }}>
+            <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-[28px]" style={{ background: 'var(--bg-selected)' }}>
               💪
             </div>
             <div className="text-[18px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
@@ -649,7 +643,7 @@ export default function HomePage() {
               You&rsquo;ve already completed this workout. Want to run through it again?
             </p>
             <div className="mt-5 flex gap-3">
-              <Button variant="secondary" fullWidth onClick={() => setRedoConfirm(null)}>
+              <Button variant="quiet" fullWidth onClick={() => setRedoConfirm(null)}>
                 Not now
               </Button>
               <Button

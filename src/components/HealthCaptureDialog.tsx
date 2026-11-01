@@ -155,7 +155,7 @@ export default function HealthCaptureDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={() => {
         if (!saving) onClose();
       }}
@@ -271,7 +271,7 @@ export default function HealthCaptureDialog({
         ) : null}
 
         <div className="mt-5 flex gap-3">
-          <Button variant="secondary" fullWidth disabled={saving} onClick={onClose}>
+          <Button variant="quiet" fullWidth disabled={saving} onClick={onClose}>
             Cancel
           </Button>
           <Button fullWidth disabled={saving || !hasAnyValue} onClick={() => onSave(values)}>

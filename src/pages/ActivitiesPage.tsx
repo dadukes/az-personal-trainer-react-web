@@ -222,7 +222,7 @@ export default function ActivitiesPage() {
           ) : null}
           {cursor ? (
             <div className="flex justify-center">
-              <Button variant="secondary" disabled={loadingMore} onClick={() => void loadMore()}>
+              <Button variant="quiet" disabled={loadingMore} onClick={() => void loadMore()}>
                 {loadingMore ? 'Loading…' : 'Load older activities'}
               </Button>
             </div>

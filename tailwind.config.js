@@ -5,6 +5,17 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Forma Signal tokens: they flip with the theme, so classes like `bg-surface` need no dark variant.
+        ground: 'var(--ground)',
+        surface: 'var(--surface)',
+        sunken: 'var(--sunken)',
+        line: 'var(--line)',
+        ink: { DEFAULT: 'var(--ink)', 2: 'var(--ink-2)', 3: 'var(--ink-3)' },
+        aqua: 'var(--aqua)',
+        'on-aqua': 'var(--on-aqua)',
+        teal: 'var(--teal)',
+        tint: 'var(--tint)',
+        hero: 'var(--hero)',
         forma: {
           navy: '#06224D',
           aqua: '#34D2C1',
@@ -25,10 +36,15 @@ export default {
       },
       fontFamily: {
         sans: ['"Plus Jakarta Sans"', 'system-ui', '-apple-system', 'sans-serif'],
+        number: ['"Sofia Sans Condensed"', '"Arial Narrow"', 'sans-serif'],
         mono: ['"JetBrains Mono"', 'SFMono-Regular', 'Menlo', 'monospace'],
       },
       borderRadius: {
         '4xl': '24px',
+        control: 'var(--radius-control)',
+        button: 'var(--radius-button)',
+        surface: 'var(--radius-surface)',
+        hero: 'var(--radius-hero)',
       },
       keyframes: {
         'fade-slide-up': {

@@ -1,8 +1,9 @@
-import type { ReactElement } from 'react';
+import { lazy, Suspense, type ReactElement } from 'react';
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 
 import AppShell from '@/components/AppShell';
 import { WorkoutSyncHost } from '@/components/WorkoutStatus';
+import { isFeatureEnabled } from '@/lib/featureFlags';
 import { useAuth } from '@/providers/AuthProvider';
 import ActivitiesPage from '@/pages/ActivitiesPage';
 import ActivityDetailPage from '@/pages/ActivityDetailPage';
@@ -19,6 +20,8 @@ import ProfilePage from '@/pages/ProfilePage';
 import ProgressPage from '@/pages/ProgressPage';
 import WorkoutDetailPage from '@/pages/WorkoutDetailPage';
 import WorkoutSessionPage from '@/pages/WorkoutSessionPage';
+
+const DesignSystemPage = lazy(() => import('@/pages/DesignSystemPage'));
 
 /** The old `/progress/workouts/:id` links (bookmarks, history) land on the new detail route. */
 function LegacyWorkoutRedirect() {
@@ -107,6 +110,9 @@ export default function App() {
       <Route path="/plan/:day" element={<RequireAuth><PlanDayPage /></RequireAuth>} />
       <Route path="/plan/:day/exercise/:section/:index" element={<RequireAuth><ExerciseDetailPage /></RequireAuth>} />
       <Route path="/chat-history" element={<RequireAuth><ChatHistoryPage /></RequireAuth>} />
+      {import.meta.env.DEV || isFeatureEnabled('designSystem') ? (
+        <Route path="/design-system" element={<RequireAuth><Suspense fallback={null}><DesignSystemPage /></Suspense></RequireAuth>} />
+      ) : null}
 
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

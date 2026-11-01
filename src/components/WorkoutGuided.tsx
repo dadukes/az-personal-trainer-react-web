@@ -422,7 +422,7 @@ export default function WorkoutGuided({
             size="lg"
             onClick={onPrimary}
             leftIcon={
-              primaryLabel === 'Finish workout' ? <Dumbbell size={16} color="#06224D" /> : undefined
+              primaryLabel === 'Finish workout' ? <Dumbbell size={16} color="var(--on-aqua)" /> : undefined
             }
           >
             {primaryLabel}
@@ -556,14 +556,14 @@ function ExerciseDemo({
       {videoUrl && !playing ? (
         <div className="absolute inset-0 flex items-center justify-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: 'rgba(255,255,255,0.92)' }}>
-            <Play size={22} color="#06224D" fill="#06224D" />
+            <Play size={22} color="var(--on-aqua)" fill="var(--on-aqua)" />
           </div>
         </div>
       ) : null}
 
       <span
         className="absolute left-3 top-3 rounded-md px-2 py-1 text-[10px] font-extrabold tracking-[0.08em] text-white"
-        style={{ background: 'rgba(6,34,77,0.5)' }}
+        style={{ background: 'var(--scrim)' }}
       >
         FORM DEMO
       </span>
@@ -575,7 +575,7 @@ function ExerciseDemo({
         // no catalog match there is no image at all. White-on-light either way.
         <span
           className="relative m-3.5 max-w-[calc(100%-28px)] truncate rounded-lg px-2.5 py-1 text-[18px] font-extrabold text-white"
-          style={{ background: 'rgba(6,34,77,0.5)' }}
+          style={{ background: 'var(--scrim)' }}
         >
           {name}
         </span>
@@ -1099,13 +1099,13 @@ function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabe
   return (
     <div
       className="fixed inset-0 z-40 flex flex-col items-center justify-center gap-4"
-      style={{ background: 'rgba(6,34,77,0.72)', backdropFilter: 'blur(2px)' }}
+      style={{ background: 'var(--solid-scrim)' }}
     >
       <span className="text-[12px] font-extrabold tracking-[0.12em]" style={{ color: 'var(--accent)' }}>
         REST
       </span>
       <span className="tabular text-[64px] font-extrabold leading-none text-white">{formatClock(remaining)}</span>
-      {nextLabel ? <span className="text-[13.5px]" style={{ color: 'var(--forma-mint, #7BE3D3)' }}>Up next · {nextLabel}</span> : null}
+      {nextLabel ? <span className="text-[13.5px]" style={{ color: 'var(--hero-sub)' }}>Up next · {nextLabel}</span> : null}
       <div className="mt-1.5 flex gap-2.5">
         <button
           onClick={() => {
@@ -1120,7 +1120,7 @@ function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabe
         <button
           onClick={skip}
           className="rounded-xl px-[22px] py-2.5 text-[14px] font-extrabold"
-          style={{ background: 'var(--accent)', color: '#06224D' }}
+          style={{ background: 'var(--accent)', color: 'var(--on-aqua)' }}
         >
           Skip
         </button>
@@ -1147,7 +1147,7 @@ function ProgramSheet({
     <div
       onClick={onClose}
       className="fixed inset-0 z-50 flex items-end justify-center"
-      style={{ background: 'rgba(6,34,77,0.55)' }}
+      style={{ background: 'var(--scrim)' }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
@@ -1194,14 +1194,14 @@ function ProgramSheet({
                           className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-[12px] font-extrabold"
                           style={
                             isDone
-                              ? { background: 'var(--accent)', color: '#06224D' }
+                              ? { background: 'var(--accent)', color: 'var(--on-aqua)' }
                               : {
                                   border: `${isCurrent ? 2 : 1}px solid ${isCurrent ? 'var(--accent)' : 'var(--border-strong)'}`,
                                   color: isCurrent ? 'var(--accent-text)' : 'var(--text-muted)',
                                 }
                           }
                         >
-                          {isDone ? <Check size={15} color="#06224D" strokeWidth={3} /> : index + 1}
+                          {isDone ? <Check size={15} color="var(--on-aqua)" strokeWidth={3} /> : index + 1}
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>

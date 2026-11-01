@@ -6,7 +6,7 @@ import Confetti from '@/components/Confetti';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
-import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
+import { Badge, Button, Card, Eyebrow, Segmented } from '@/components/ui';
 import { getDashboard, getLastPerformance, userSafeError, type WeightUnit } from '@/lib/api';
 import { formatExerciseName, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
 import { isFeatureEnabled } from '@/lib/featureFlags';
@@ -500,7 +500,7 @@ export default function WorkoutSessionPage() {
         <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
           {error ?? 'There is no workout planned for this day. Enjoy your rest!'}
         </p>
-        <Button variant="secondary" onClick={() => navigate('/')}>
+        <Button variant="quiet" onClick={() => navigate('/')}>
           Back to Home
         </Button>
       </div>
@@ -521,7 +521,7 @@ export default function WorkoutSessionPage() {
     return (
       <div className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-5 p-8 pt-16 text-center">
         <Confetti />
-        <div className="flex h-20 w-20 items-center justify-center rounded-full text-[38px]" style={{ background: 'var(--forma-mint)' }}>
+        <div className="flex h-20 w-20 items-center justify-center rounded-full text-[38px]" style={{ background: 'var(--bg-selected)' }}>
           💪
         </div>
         <div className="text-[28px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
@@ -553,7 +553,7 @@ export default function WorkoutSessionPage() {
             ) : null}
             {session?.access_token ? (
               <Button
-                variant="secondary"
+                variant="quiet"
                 onClick={() => void retryWorkoutSave(clientSessionId, session.access_token)}
               >
                 Try again
@@ -643,7 +643,7 @@ export default function WorkoutSessionPage() {
         <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
           The logbook flag is on in this browser, and the screen isn&rsquo;t built yet.
         </p>
-        <Button variant="secondary" onClick={() => navigate('/')}>
+        <Button variant="quiet" onClick={() => navigate('/')}>
           Back to Home
         </Button>
       </div>
@@ -683,8 +683,7 @@ export default function WorkoutSessionPage() {
               <Info size={17} color="var(--accent-text)" />
             </button>
           ) : null}
-          <SegmentedToggle
-            tone="mint"
+          <Segmented
             size="sm"
             value={view}
             onChange={(v) => changeView(v as WorkoutView)}
@@ -828,7 +827,7 @@ export default function WorkoutSessionPage() {
                       border: set.completed ? 'none' : '1.5px solid var(--border-strong)',
                     }}
                   >
-                    {set.completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
+                    {set.completed ? <Check size={16} color="var(--on-aqua)" strokeWidth={3} /> : null}
                   </button>
                 </div>
               ),
@@ -852,7 +851,7 @@ export default function WorkoutSessionPage() {
           <div className="tabular flex-1 text-[13px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
             {completedSets}/{totalSets} sets · {formatClock(elapsed)}
           </div>
-          <Button size="lg" onClick={() => void finish()} leftIcon={<Dumbbell size={16} color="#06224D" />}>
+          <Button size="lg" onClick={() => void finish()} leftIcon={<Dumbbell size={16} color="var(--on-aqua)" />}>
             Finish workout
           </Button>
         </div>
@@ -931,7 +930,7 @@ function ExitWorkoutDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={onStay}
     >
       <div
@@ -965,11 +964,11 @@ function ExitWorkoutDialog({
             Keep going
           </Button>
           {completedSets > 0 ? (
-            <Button variant="secondary" fullWidth onClick={onLeave}>
+            <Button variant="quiet" fullWidth onClick={onLeave}>
               Save and come back later
             </Button>
           ) : null}
-          <Button variant="ghost" fullWidth onClick={onDiscard}>
+          <Button variant="link" fullWidth onClick={onDiscard}>
             <span style={{ color: 'var(--forma-danger)' }}>
               {completedSets > 0 ? 'Discard this workout' : 'Leave workout'}
             </span>
@@ -987,7 +986,7 @@ function capitalize(value: string): string {
 /** Shared frame for the two questions below. */
 function WorkoutQuestionDialog({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-5" style={{ background: 'rgba(6,34,77,0.45)' }}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-5" style={{ background: 'var(--scrim)' }}>
       <div
         role="dialog"
         aria-modal="true"
@@ -1025,10 +1024,10 @@ function OtherWorkoutDialog({
         <Button fullWidth onClick={onResume}>
           Resume {capitalize(dayKey)}
         </Button>
-        <Button variant="secondary" fullWidth onClick={onBack}>
+        <Button variant="quiet" fullWidth onClick={onBack}>
           Not now
         </Button>
-        <Button variant="ghost" fullWidth onClick={onDiscard}>
+        <Button variant="link" fullWidth onClick={onDiscard}>
           <span style={{ color: 'var(--forma-danger)' }}>Discard it and start this one</span>
         </Button>
       </div>
@@ -1057,7 +1056,7 @@ function FinishWorkoutDialog({
         <Button fullWidth onClick={onStay}>
           Keep going
         </Button>
-        <Button variant="secondary" fullWidth onClick={onFinish}>
+        <Button variant="quiet" fullWidth onClick={onFinish}>
           Finish workout
         </Button>
       </div>
@@ -1081,7 +1080,7 @@ function SessionNoteDialog({ text, onClose }: { text: string; onClose: () => voi
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={onClose}
     >
       <div
@@ -1239,7 +1238,7 @@ function TimedSetRow({
           {isRunning ? (
             <Pause size={15} color="var(--accent-text)" strokeWidth={2.4} fill="var(--accent-text)" />
           ) : (
-            <Play size={15} color="#06224D" strokeWidth={2.4} fill="#06224D" />
+            <Play size={15} color="var(--on-aqua)" strokeWidth={2.4} fill="var(--on-aqua)" />
           )}
         </button>
 
@@ -1304,7 +1303,7 @@ function TimedSetRow({
           border: completed ? 'none' : '1.5px solid var(--border-strong)',
         }}
       >
-        {completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
+        {completed ? <Check size={16} color="var(--on-aqua)" strokeWidth={3} /> : null}
       </button>
 
       <span className="sr-only">Set {index + 1}</span>
@@ -1378,7 +1377,7 @@ function CaptureRow({
           border: completed ? 'none' : '1.5px solid var(--border-strong)',
         }}
       >
-        {completed ? <Check size={16} color="#06224D" strokeWidth={3} /> : null}
+        {completed ? <Check size={16} color="var(--on-aqua)" strokeWidth={3} /> : null}
       </button>
     </div>
   );

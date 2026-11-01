@@ -54,7 +54,7 @@ export default function DeleteAccountDialog({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto p-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={() => {
         if (!submitting) onClose();
       }}
@@ -140,7 +140,7 @@ export default function DeleteAccountDialog({
           <Button variant="danger" fullWidth disabled={!canDelete} onClick={onConfirm}>
             {submitting ? 'Deleting…' : 'Delete my account'}
           </Button>
-          <Button variant="ghost" fullWidth disabled={submitting} onClick={onClose}>
+          <Button variant="link" fullWidth disabled={submitting} onClick={onClose}>
             Keep my account
           </Button>
         </div>

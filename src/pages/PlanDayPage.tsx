@@ -258,18 +258,17 @@ export default function PlanDayPage() {
         </Card>
       ) : (
         <>
-          <div className="rounded-[24px] p-1" style={{ background: 'var(--forma-aqua)' }}>
-            <div className="rounded-[20px] px-6 py-5" style={{ background: 'var(--forma-navy)' }}>
+          <div className="rounded-hero p-5 sm:p-7" style={{ background: 'var(--hero)' }}>
               <div className="flex items-center justify-between">
                 <div>
-                  <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--forma-mint)' }}>
+                  <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--hero-sub)' }}>
                     {isRest ? 'REST DAY' : 'FOCUS'}
                   </div>
-                  <div className="my-1 text-[22px] font-extrabold text-white">
+                  <div className="my-1 text-[22px] font-extrabold" style={{ color: 'var(--hero-ink)' }}>
                     {isRest ? 'Nothing scheduled' : dayPlan?.focus ?? 'Workout'}
                   </div>
-                  <div className="flex items-center gap-1.5 text-[13px]" style={{ color: '#C9F0E6' }}>
-                    <Calendar size={13} color="#C9F0E6" />
+                  <div className="flex items-center gap-1.5 text-[13px]" style={{ color: 'var(--hero-sub)' }}>
+                    <Calendar size={13} color="var(--hero-sub)" />
                     <span>
                       {dayPlan?.estimated_duration_minutes ? `${dayPlan.estimated_duration_minutes} mins` : 'Flexible'}
                     </span>
@@ -280,21 +279,18 @@ export default function PlanDayPage() {
                     onClick={() => navigate(`/workout/${dayKey}`)}
                     aria-label="Start workout"
                     className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-                    // The hero is navy in both themes, so the button can't use a surface
-                    // token — in dark that is near-black on navy. Same aqua as Home's CTA.
-                    style={{ background: 'var(--forma-aqua)', boxShadow: '0 6px 18px rgba(52,210,193,0.35)' }}
+                    style={{ background: 'var(--forma-aqua)' }}
                   >
-                    <Play size={22} color="var(--forma-navy)" fill="var(--forma-navy)" style={{ marginLeft: 2 }} />
+                    <Play size={22} color="var(--on-aqua)" fill="var(--on-aqua)" style={{ marginLeft: 2 }} />
                   </button>
                 ) : null}
               </div>
-            </div>
           </div>
 
           {dayPlan?.ai_notes ? (
             <Card variant="subtle" padding="14px 16px">
               <div className="flex items-start gap-2.5">
-                <Zap size={16} color="#34D2C1" className="mt-0.5 flex-shrink-0" />
+                <Zap size={16} color="var(--teal)" className="mt-0.5 flex-shrink-0" />
                 <div>
                   <Badge tone="mint" className="mb-1.5">
                     Coach note
@@ -347,7 +343,7 @@ export default function PlanDayPage() {
           {!isRest ? (
             <Button
               size="lg"
-              variant="secondary"
+              variant="quiet"
               fullWidth
               onClick={() => navigate(`/workout/${dayKey}`)}
               leftIcon={<Play size={16} color="var(--accent-text)" fill="var(--accent-text)" />}

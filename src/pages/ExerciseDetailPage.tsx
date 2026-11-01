@@ -5,7 +5,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import { ExerciseLookup } from '@/components/ExerciseLookup';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { NumberEntry } from '@/components/NumberEntry';
-import { Badge, Button, Card, Chip, Eyebrow, Input, SegmentedToggle } from '@/components/ui';
+import { Badge, Button, Card, Chip, Eyebrow, Input, Segmented } from '@/components/ui';
 import {
   getExerciseDetail,
   getLastPerformance,
@@ -315,7 +315,7 @@ function ExerciseInfo({ exerciseId, name }: { exerciseId: string; name: string }
                 <ul className="flex flex-col gap-1.5">
                   {detail.tips.map((tip, i) => (
                     <li key={i} className="flex gap-2.5 text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                      <Sparkles size={13} className="mt-0.5 flex-shrink-0" color="#34D2C1" />
+                      <Sparkles size={13} className="mt-0.5 flex-shrink-0" color="var(--teal)" />
                       <span>{tip}</span>
                     </li>
                   ))}
@@ -386,7 +386,7 @@ function LastPerformanceCard({
           </div>
         </div>
         {canApply && (last.weight != null || last.reps != null) ? (
-          <Button variant="secondary" size="sm" onClick={() => onApply(last)}>
+          <Button variant="quiet" size="sm" onClick={() => onApply(last)}>
             Use these
           </Button>
         ) : null}
@@ -489,7 +489,7 @@ export default function ExerciseDetailPage() {
           />
         </div>
         <div className="w-24">
-          <SegmentedToggle
+          <Segmented
             value={unit}
             onChange={(v) => patch({ weight_unit: v as WeightUnit })}
             options={[
@@ -604,7 +604,7 @@ export default function ExerciseDetailPage() {
         <div className="text-[18px] font-bold" style={{ color: 'var(--text-primary)' }}>
           Exercise not found
         </div>
-        <Button variant="secondary" onClick={backToDay}>
+        <Button variant="quiet" onClick={backToDay}>
           Back to day plan
         </Button>
       </div>
@@ -718,8 +718,7 @@ export default function ExerciseDetailPage() {
                 ))}
               </div>
 
-              <SegmentedToggle
-                tone="mint"
+              <Segmented
                 value={ex.cardio_format ?? 'steady'}
                 onChange={(v) =>
                   v === 'intervals'
@@ -905,11 +904,11 @@ export default function ExerciseDetailPage() {
         <Eyebrow className="mb-3">Change or link exercise</Eyebrow>
 
         <div className="flex flex-wrap items-center gap-2">
-          <Button variant="secondary" size="sm" onClick={() => setSwapOpen(true)} leftIcon={<Shuffle size={14} />}>
+          <Button variant="quiet" size="sm" onClick={() => setSwapOpen(true)} leftIcon={<Shuffle size={14} />}>
             {ex.exercise_id ? 'Find alternative' : 'Search the catalog'}
           </Button>
           {ex.exercise_id ? (
-            <Button variant="ghost" size="sm" onClick={() => patch({ exercise_id: undefined })} leftIcon={<Unlink size={14} />}>
+            <Button variant="link" size="sm" onClick={() => patch({ exercise_id: undefined })} leftIcon={<Unlink size={14} />}>
               Unlink
             </Button>
           ) : null}

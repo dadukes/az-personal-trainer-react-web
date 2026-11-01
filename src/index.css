@@ -3,9 +3,8 @@
 @tailwind utilities;
 
 /* ============================================================
-   Forma Fitness — design tokens (ported from the design system
-   tokens/colors.css + typography.css). Light is default; dark
-   flips via [data-theme="dark"] on <html>.
+   Forma Signal design tokens. Light is default; dark flips via
+   [data-theme="dark"] on <html>.
    ============================================================ */
 :root {
   /* Brand ramp */
@@ -21,55 +20,89 @@
   --forma-gradient-soft: linear-gradient(150deg, #5fe0d2 0%, #5bc0f5 100%);
 
   /* Functional / status */
-  --forma-sleep: #1e4f86;
-  --forma-sleep-dark: #8dbeff;
-  --forma-gold: #f5c542;
-  --forma-success: #1f8a5b;
-  --forma-danger: #ef4444;
+  --forma-gold: var(--gold-fill);
+  --forma-danger: var(--danger);
 
-  /* Light theme (default) */
-  --bg-app: var(--forma-ice);
-  --bg-surface: #ffffff;
-  --bg-subtle: #f7fbf9;
-  --bg-subtle-alt: #f4faf7;
-  --bg-selected: var(--forma-mint);
-  --bg-selected-sky: #dceffe;
+  /* Forma Signal tokens. Mirrors constants/tokens.js in the mobile app, and pairs that must
+     stay readable are checked in src/lib/designTokens.test.ts. Aqua is a fill, never text on
+     a light ground. Text and icons use --teal, but not on --sunken in light mode (4.4:1). */
+  --ground: #f3f5f8;
+  --surface: #ffffff;
+  --sunken: #e8ecf2;
+  --line: #dce2ea;
+  --line-strong: #c5ceda;
+  --ink: #06224d;
+  --ink-2: #44566f;
+  --ink-3: #5b6b83;
+  --aqua: #34d2c1;
+  --on-aqua: #06224d;
+  --teal: #0b7a72;
+  --tint: #d8f6f1;
+  --sky: #0f6fa8;
+  --sky-fill: #39b1f2;
+  --gold: #8a5f00;
+  --gold-fill: #f5c542;
+  --danger: #b3261e;
+  --danger-fill: #b3261e;
+  --on-danger: #ffffff;
+  --danger-tint: #fbeae8;
+  --sleep: #1e4f86;
+  --hero: #06224d;
+  --hero-ink: #ffffff;
+  --hero-sub: #c3d3e8;
+  --tab-on: #06224d;
+  --effort: #e08a1e;
+  --effort-bg: #fdf3e2;
+  --scrim: rgba(6, 17, 31, 0.55);
+  /* Full-screen overlays with big text on them, where the screen behind mustn't show through. */
+  --solid-scrim: rgba(6, 17, 31, 0.93);
+  --on-tint-control: rgba(255, 255, 255, 0.6);
+  --on-tint-line: rgba(6, 34, 77, 0.22);
 
-  --border-base: #d8e3dc;
-  --border-strong: #c8d6cc;
-  --border-subtle: #e2eae5;
+  --radius-control: 12px;
+  --radius-button: 16px;
+  --radius-surface: 20px;
+  --radius-hero: 24px;
 
-  --text-primary: var(--forma-navy);
-  --text-secondary: #4f6173;
-  --text-muted: #71879d;
-  --text-label: #586c80;
-  --text-on-accent: var(--forma-navy);
-  --text-on-mint: #0e4c45;
-  /* Body copy on the mint fill. The mint is identical in both themes, so this is too —
-     the theme-flipping text tokens would go white-on-mint in dark. */
-  --text-on-mint-soft: #2d6259;
-  /* Controls sitting on the mint fill (e.g. the steppers on a completed set row). */
-  --bg-on-mint: rgba(255, 255, 255, 0.6);
-  --border-on-mint: rgba(14, 76, 69, 0.22);
+  /* Older names for the tokens above. New code uses the tokens directly. */
+  --bg-app: var(--ground);
+  --bg-surface: var(--surface);
+  --bg-subtle: var(--ground);
+  --bg-subtle-alt: var(--sunken);
+  --bg-selected: var(--tint);
+  --bg-selected-sky: var(--tint);
 
-  --accent: var(--forma-aqua);
-  --accent-text: #0e4c45;
-  --accent-secondary: var(--forma-sky);
-  /* Sleep reads as a deep blue on light surfaces; dark surfaces need the lighter tint. */
-  --icon-sleep: var(--forma-sleep);
+  --border-base: var(--line);
+  --border-strong: var(--line-strong);
+  --border-subtle: var(--line);
 
-  /* Aqua on white is only 1.9:1, so light mode uses the teal text colour. */
-  --tab-active: #0b7a72;
-  --tab-inactive: #6e8094;
-  --tab-bg: #ffffff;
-  --tab-border: #d6e2db;
+  --text-primary: var(--ink);
+  --text-secondary: var(--ink-2);
+  --text-muted: var(--ink-3);
+  --text-label: var(--ink-2);
+  --text-on-accent: var(--on-aqua);
+  /* On the --bg-selected tint, which flips with the theme like everything else. */
+  --text-on-mint: var(--teal);
+  --text-on-mint-soft: var(--ink-2);
+  --bg-on-mint: var(--on-tint-control);
+  --border-on-mint: var(--on-tint-line);
 
-  /* Interval effort phases — the work/recover state is carried by colour so it
+  --accent: var(--aqua);
+  --accent-text: var(--teal);
+  --accent-secondary: var(--sky-fill);
+  --icon-sleep: var(--sleep);
+
+  --tab-active: var(--tab-on);
+  --tab-inactive: var(--ink-3);
+  --tab-bg: var(--surface);
+  --tab-border: var(--line);
+
+  /* Interval effort phases: the work/recover state is carried by colour so it
      reads at arm's length mid-effort, not by text. */
-  --effort-work: #e08a1e;
-  --effort-work-bg: #fdf3e2;
-  --effort-recover: var(--forma-aqua);
-  --effort-recover-bg: var(--bg-subtle);
+  --effort-work: var(--effort);
+  --effort-work-bg: var(--effort-bg);
+  --effort-recover: var(--aqua);
+  --effort-recover-bg: var(--ground);
 
   /* Heart-rate zones Z1 (very light) → Z5 (max). Cool easy zones, warm hard ones; always
      paired with a zone label. Mirrors ZoneColors in the mobile app's constants/theme.ts. */
@@ -84,49 +117,33 @@
   --shadow-lg: 0 18px 48px rgba(6, 34, 77, 0.14);
 
   --font-sans: 'Plus Jakarta Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-number: 'Sofia Sans Condensed', 'Arial Narrow', sans-serif;
   --font-mono: 'JetBrains Mono', 'SFMono-Regular', Menlo, Consolas, monospace;
 }
 
 [data-theme='dark'] {
-  --bg-app: #0f1714;
-  --bg-surface: #18251f;
-  --bg-subtle: #121e19;
-  --bg-subtle-alt: #121e19;
-  --bg-selected: var(--forma-mint);
-  --bg-selected-sky: #233544;
-
-  --border-base: #2e3f36;
-  --border-strong: #3a5145;
-  --border-subtle: #30463b;
-
-  --text-primary: #ffffff;
-  --text-secondary: #b7ccc0;
-  --text-muted: #8fa99a;
-  --text-label: #afd0bf;
-  --text-on-accent: var(--forma-navy);
-  --text-on-mint: #0e4c45;
-  /* Body copy on the mint fill. The mint is identical in both themes, so this is too —
-     the theme-flipping text tokens would go white-on-mint in dark. */
-  --text-on-mint-soft: #2d6259;
-  /* Controls sitting on the mint fill (e.g. the steppers on a completed set row). */
-  --bg-on-mint: rgba(255, 255, 255, 0.6);
-  --border-on-mint: rgba(14, 76, 69, 0.22);
-
-  --accent: var(--forma-aqua);
-  --accent-text: #34d2c1;
-  --accent-secondary: var(--forma-sky);
-  /* Sleep reads as a deep blue on light surfaces; dark surfaces need the lighter tint. */
-  --icon-sleep: var(--forma-sleep-dark);
-
-  --tab-active: var(--forma-aqua);
-  --tab-inactive: #91a99e;
-  --tab-bg: #18251f;
-  --tab-border: #2d4137;
-
-  --effort-work: var(--forma-gold);
-  --effort-work-bg: #2b2416;
-  --effort-recover: var(--forma-aqua);
-  --effort-recover-bg: var(--bg-subtle);
+  --ground: #06111f;
+  --surface: #0e1c30;
+  --sunken: #16273f;
+  --line: #22354f;
+  --line-strong: #2f4563;
+  --ink: #f2f6fb;
+  --ink-2: #b4c3d6;
+  --ink-3: #8fa2ba;
+  --teal: #4fddcd;
+  --tint: #11363a;
+  --sky: #7ccbf7;
+  --gold: #f5c542;
+  --danger: #ff8a7a;
+  --danger-tint: #33191a;
+  --sleep: #8dbeff;
+  --hero: #12305c;
+  --tab-on: #4fddcd;
+  --effort: #f5c542;
+  --effort-bg: #2b2416;
+  --scrim: rgba(3, 9, 17, 0.75);
+  --on-tint-control: rgba(255, 255, 255, 0.08);
+  --on-tint-line: rgba(255, 255, 255, 0.22);
 
   --zone-1: #6f8496;
   --zone-4: var(--forma-gold);
@@ -153,6 +170,51 @@ body {
   color: var(--text-primary);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* The type scale. `type-live`, `type-display` and `type-stat` are for big numbers and names. */
+@layer components {
+  .type-live,
+  .type-display,
+  .type-stat {
+    font-family: var(--font-number);
+    line-height: 1;
+    letter-spacing: -0.01em;
+    font-variant-numeric: tabular-nums;
+  }
+  .type-live {
+    font-size: 88px;
+    font-weight: 800;
+  }
+  .type-display {
+    font-size: 52px;
+    font-weight: 800;
+  }
+  .type-stat {
+    font-size: 30px;
+    font-weight: 700;
+  }
+  .type-screen-title {
+    font-size: 24px;
+    line-height: 30px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .type-section-title {
+    font-size: 16px;
+    line-height: 22px;
+    font-weight: 700;
+  }
+  .type-body {
+    font-size: 15px;
+    line-height: 22px;
+    font-weight: 500;
+  }
+  .type-meta {
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 500;
+  }
 }
 
 /* Swipeable rows (e.g. the mobile week strip) keep the gesture, drop the bar */

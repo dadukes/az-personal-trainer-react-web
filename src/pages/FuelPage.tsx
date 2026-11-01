@@ -129,7 +129,7 @@ export default function FuelPage() {
         <div className="flex">
           <div className="flex-1 text-center">
             <div className="mb-2 flex items-center justify-center gap-1.5">
-              <Flame size={14} color="#39B1F2" />
+              <Flame size={14} color="var(--sky)" />
               <Eyebrow>Burned</Eyebrow>
             </div>
             <div className="tabular text-[26px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
@@ -142,7 +142,7 @@ export default function FuelPage() {
           <div className="mx-3 w-px" style={{ background: 'var(--border-base)' }} />
           <div className="flex-1 text-center">
             <div className="mb-2 flex items-center justify-center gap-1.5">
-              <Apple size={14} color="#34D2C1" />
+              <Apple size={14} color="var(--teal)" />
               <Eyebrow>Eaten</Eyebrow>
             </div>
             <div className="tabular text-[26px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
@@ -196,9 +196,9 @@ export default function FuelPage() {
               <div className="flex items-start gap-3">
                 <div
                   className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
-                  style={{ background: 'var(--forma-mint)' }}
+                  style={{ background: 'var(--bg-selected)' }}
                 >
-                  <Utensils size={18} color="#34D2C1" />
+                  <Utensils size={18} color="var(--teal)" />
                 </div>
                 <div className="flex-1">
                   <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -256,9 +256,9 @@ export default function FuelPage() {
                 <>
                   <div
                     className="mb-3.5 flex h-[60px] w-[60px] items-center justify-center rounded-full"
-                    style={{ background: 'var(--forma-mint)' }}
+                    style={{ background: 'var(--bg-selected)' }}
                   >
-                    <Upload size={26} color="#34D2C1" />
+                    <Upload size={26} color="var(--teal)" />
                   </div>
                   <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
                     {canDragAndDrop ? <>Drag &amp; drop a photo</> : 'Add a photo of your meal'}
@@ -267,7 +267,7 @@ export default function FuelPage() {
                     AI estimates macros and suggests healthy additions — no manual logging.
                   </div>
                   <div className="mt-4">
-                    <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
+                    <Button variant="quiet" onClick={() => fileInputRef.current?.click()}>
                       {canDragAndDrop ? 'Browse files' : 'Choose a photo'}
                     </Button>
                   </div>

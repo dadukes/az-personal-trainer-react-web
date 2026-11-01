@@ -100,7 +100,7 @@ export default function DeleteAccountPage() {
             </div>
             <div className="mt-5">
               <Link to="/login">
-                <Button variant="secondary" leftIcon={<ArrowLeft size={16} />}>
+                <Button variant="quiet" leftIcon={<ArrowLeft size={16} />}>
                   Back to sign in
                 </Button>
               </Link>
@@ -166,7 +166,7 @@ export default function DeleteAccountPage() {
                   <Button
                     variant="danger"
                     fullWidth
-                    leftIcon={<Trash2 size={16} color="#fff" />}
+                    leftIcon={<Trash2 size={16} color="var(--on-danger)" />}
                     onClick={() => {
                       setDeleteError(null);
                       setDialogOpen(true);

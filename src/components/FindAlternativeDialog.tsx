@@ -230,7 +230,7 @@ export default function FindAlternativeDialog({
   return createPortal(
     <div
       className="fixed inset-0 z-[60] flex justify-center sm:items-center sm:p-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={onClose}
     >
       <div
@@ -292,7 +292,7 @@ export default function FindAlternativeDialog({
                     <ExerciseOptionRow key={r.id} item={r} onPick={() => onPick(toPick(r))} />
                   ))}
                   {results.length < total ? (
-                    <Button variant="secondary" size="sm" fullWidth onClick={loadMore} disabled={loadingMore}>
+                    <Button variant="quiet" size="sm" fullWidth onClick={loadMore} disabled={loadingMore}>
                       {loadingMore ? 'Loading…' : 'Load more results'}
                     </Button>
                   ) : null}

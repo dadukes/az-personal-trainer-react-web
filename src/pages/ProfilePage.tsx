@@ -274,7 +274,7 @@ export default function ProfilePage() {
         title="Edit profile"
         subtitle="Update how Forma plans and coaches you. Changes apply to your next plan and chats."
         rightActions={
-          <Button variant="secondary" size="sm" leftIcon={<ArrowLeft size={16} />} onClick={() => navigate('/')}>
+          <Button variant="quiet" size="sm" leftIcon={<ArrowLeft size={16} />} onClick={() => navigate('/')}>
             Home
           </Button>
         }
@@ -331,7 +331,7 @@ export default function ProfilePage() {
                 </div>
                 <div
                   className="mt-1 text-[13px] leading-[1.4]"
-                  style={{ color: active ? '#0E4C45cc' : 'var(--text-muted)' }}
+                  style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
                 >
                   {p.blurb}
                 </div>
@@ -557,7 +557,7 @@ export default function ProfilePage() {
             </p>
           </div>
           <Button
-            variant="secondary"
+            variant="quiet"
             leftIcon={<Trash2 size={16} color="var(--forma-danger)" />}
             style={{ color: 'var(--forma-danger)', borderColor: 'var(--forma-danger)' }}
             onClick={() => {

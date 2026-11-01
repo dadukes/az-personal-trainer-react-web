@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import ChatMarkdown from '@/components/ChatMarkdown';
-import { Badge, Card, Eyebrow } from '@/components/ui';
+import { Badge, Card, Eyebrow, Row, Surface } from '@/components/ui';
 import {
   getChatHistory,
   getChatSessions,
@@ -153,44 +153,28 @@ export default function ChatHistoryPage() {
                 </p>
               </Card>
             ) : (
-              sessions.map((s) => {
-                const active = selected?.id === s.id;
-                return (
-                  <button
-                    key={s.id}
-                    onClick={() => openSession(s.id)}
-                    className="rounded-2xl p-4 text-left transition-transform active:scale-[0.99]"
-                    style={{
-                      background: active ? 'var(--bg-selected)' : 'var(--bg-surface)',
-                      border: `1px solid ${active ? 'var(--accent)' : 'var(--border-base)'}`,
-                    }}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="truncate text-[14px] font-bold"
-                        style={{ color: active ? 'var(--text-on-mint)' : 'var(--text-primary)' }}
-                      >
-                        {s.title ?? formatSessionDate(s.session_date)}
-                      </span>
-                      {s.status === 'open' ? <Badge tone="mint">Open</Badge> : null}
-                    </div>
-                    <div
-                      className="mt-1 text-[12px]"
-                      style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
-                    >
-                      {formatSessionDate(s.session_date)} · {s.message_count} messages
-                    </div>
-                    {s.summary_json?.one_line || s.summary ? (
-                      <p
-                        className="mt-2 line-clamp-2 text-[12.5px] leading-[1.45]"
-                        style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-secondary)' }}
-                      >
-                        {s.summary_json?.one_line ?? s.summary}
-                      </p>
-                    ) : null}
-                  </button>
-                );
-              })
+              <Surface padding="0" className="overflow-hidden">
+                {sessions.map((s, index) => {
+                  const summary = s.summary_json?.one_line ?? s.summary;
+                  return (
+                    <Row
+                      key={s.id}
+                      first={index === 0}
+                      selected={selected?.id === s.id}
+                      title={<span className="block truncate">{s.title ?? formatSessionDate(s.session_date)}</span>}
+                      meta={
+                        <>
+                          {s.title ? `${formatSessionDate(s.session_date)} · ` : ''}
+                          {s.message_count} messages
+                          {summary ? <span className="mt-1 line-clamp-2">{summary}</span> : null}
+                        </>
+                      }
+                      trailing={s.status === 'open' ? <Badge tone="mint">Open</Badge> : undefined}
+                      onClick={() => openSession(s.id)}
+                    />
+                  );
+                })}
+              </Surface>
             )}
           </div>
 
@@ -212,7 +196,8 @@ export default function ChatHistoryPage() {
                     {selected.title ?? formatSessionDate(selected.session_date)}
                   </div>
                   <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                    {formatSessionDate(selected.session_date)} · {selected.message_count} messages
+                    {selected.title ? `${formatSessionDate(selected.session_date)} · ` : ''}
+                    {selected.message_count} messages
                   </div>
                 </div>
                 {/* Mobile scrolls the document (so the URL bar can hide); only the
@@ -236,7 +221,7 @@ export default function ChatHistoryPage() {
                               className="mr-2 mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
                               style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-strong)' }}
                             >
-                              <Zap size={13} color="#34D2C1" />
+                              <Zap size={13} color="var(--teal)" />
                             </div>
                           ) : null}
                           <div

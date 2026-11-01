@@ -9,7 +9,7 @@ import {
   YAxis,
 } from 'recharts';
 
-import { SegmentedToggle } from '@/components/ui';
+import { Segmented } from '@/components/ui';
 import type { HealthLog } from '@/lib/api';
 import { useAppTheme } from '@/providers/ThemeProvider';
 
@@ -183,7 +183,7 @@ export default function HealthTrendChart({ logs }: { logs: HealthLog[] }) {
             onChange={(v) => setDimBKey(v)}
           />
         </div>
-        <SegmentedToggle
+        <Segmented
           className="w-full lg:w-[240px]"
           options={RANGE_OPTIONS}
           value={rangeDays}

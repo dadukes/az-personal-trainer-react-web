@@ -257,7 +257,7 @@ function DurationSheet({
     // Top-anchored on phones: the on-screen keyboard covers the bottom half.
     <div
       className="fixed inset-0 z-[70] flex items-start justify-center p-5 pt-[max(64px,env(safe-area-inset-top))] sm:items-center sm:pt-5"
-      style={{ background: 'rgba(6,34,77,0.45)' }}
+      style={{ background: 'var(--scrim)' }}
       onClick={onClose}
     >
       <div
@@ -279,7 +279,7 @@ function DurationSheet({
           {field('s', 'sec')}
         </div>
         <div className="mt-5 flex gap-2.5">
-          <Button variant="secondary" fullWidth onClick={onClose}>
+          <Button variant="quiet" fullWidth onClick={onClose}>
             Cancel
           </Button>
           <Button fullWidth onClick={() => onDone(total())}>

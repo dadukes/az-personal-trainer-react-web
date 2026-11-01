@@ -322,7 +322,7 @@ export function CardioCaptureCard({ block, onCapture }: CaptureProps) {
             rather than doing mental arithmetic afterwards. */}
         <div className="flex items-center gap-2.5">
           <Button
-            variant={stopwatch.running ? 'secondary' : 'ghost'}
+            variant={stopwatch.running ? 'quiet' : 'link'}
             size="sm"
             onClick={stopwatch.toggle}
             leftIcon={
@@ -551,7 +551,7 @@ export function IntervalPlayer({
       <Card padding="18px">
         <div className="flex flex-col items-center gap-3 py-4">
           <div className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: 'var(--accent)' }}>
-            <Check size={26} color="#06224D" strokeWidth={3} />
+            <Check size={26} color="var(--on-aqua)" strokeWidth={3} />
           </div>
           <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
             {completed.filter(Boolean).length} of {rounds} rounds
@@ -647,7 +647,7 @@ export function IntervalPlayer({
 
           <div className="flex flex-wrap items-center justify-center gap-2">
             <Button
-              variant="secondary"
+              variant="quiet"
               size="sm"
               onClick={running ? pause : status === 'paused' ? resume : start}
               disabled={status === 'idle'}
@@ -662,7 +662,7 @@ export function IntervalPlayer({
               {running ? 'Pause' : 'Resume'}
             </Button>
             <Button
-              variant="secondary"
+              variant="quiet"
               size="sm"
               onClick={() => advancePhase(false)}
               disabled={!running}
@@ -670,7 +670,7 @@ export function IntervalPlayer({
             >
               Skip
             </Button>
-            <Button variant="ghost" size="sm" onClick={endEarly}>
+            <Button variant="link" size="sm" onClick={endEarly}>
               End early
             </Button>
           </div>
