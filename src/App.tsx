@@ -2,6 +2,7 @@ import type { ReactElement } from 'react';
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom';
 
 import AppShell from '@/components/AppShell';
+import { WorkoutSyncHost } from '@/components/WorkoutStatus';
 import { useAuth } from '@/providers/AuthProvider';
 import ActivitiesPage from '@/pages/ActivitiesPage';
 import ActivityDetailPage from '@/pages/ActivityDetailPage';
@@ -47,7 +48,12 @@ function RequireAuth({ children }: { children: ReactElement }) {
   if (!isAuthenticated) return <Navigate to="/login" replace state={{ from: location }} />;
   if (!hasCompletedOnboarding) return <Navigate to="/onboarding" replace />;
 
-  return <AppShell>{children}</AppShell>;
+  return (
+    <>
+      <WorkoutSyncHost />
+      <AppShell>{children}</AppShell>
+    </>
+  );
 }
 
 export default function App() {

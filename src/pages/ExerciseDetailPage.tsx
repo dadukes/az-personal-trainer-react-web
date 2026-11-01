@@ -28,6 +28,8 @@ import {
   usesCountdown,
   usesWeight,
   type ExercisePick,
+  formatExerciseName,
+  formatMuscle,
 } from '@/lib/exercise';
 import { roundTo } from '@/lib/numberEntry';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
@@ -278,10 +280,10 @@ function ExerciseInfo({ exerciseId, name }: { exerciseId: string; name: string }
               <div className="flex flex-wrap gap-1.5">
                 {muscles.map((m) => (
                   <Badge key={m} tone="mint">
-                    {m}
+                    {formatMuscle(m)}
                   </Badge>
                 ))}
-                {detail.equipment ? <Badge tone="neutral">{detail.equipment}</Badge> : null}
+                {detail.equipment ? <Badge tone="neutral">{formatMuscle(detail.equipment)}</Badge> : null}
               </div>
             ) : null}
 
@@ -635,7 +637,7 @@ export default function ExerciseDetailPage() {
             )}
           </div>
           <div className="mt-1 truncate text-[22px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-            {type === 'class' ? (ex.class_name ?? ex.name) : ex.name}
+            {type === 'class' ? (ex.class_name ?? ex.name) : formatExerciseName(ex.name)}
           </div>
           {ex.swapped_from ? (
             <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>

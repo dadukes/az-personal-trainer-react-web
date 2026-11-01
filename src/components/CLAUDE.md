@@ -59,6 +59,7 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   reps / weight / time, add or remove sets; a not-logged exercise is seeded from the plan, ticked.
   Presentational (the page owns the call); rules in `src/lib/workoutEdit.ts`, kept identical to the
   mobile `lib/workout-edit.ts`. Mobile twin: `workout-exercise-sheet`.
+- **`WorkoutStatus.tsx`** — `WorkoutSyncHost` (runs the save queue, mounted once with the shell) plus Home's `WorkoutResumeCard` and `PendingWorkoutsCard`. Mobile twins: `workout-sync-host`, `workout/home-workout-status`.
 - **`GeneralHeartRateCard.tsx`** — "General HR data" on a guided workout the watch didn't record
   (`general_heart_rate`, sent by the phone): avg bpm and the smoothed all-day curve on
   `HeartRateChart` with `zoneModel={null}` (no bands). Deliberately no max, zones or XP — the

@@ -346,3 +346,41 @@ export function isTimedExercise(
 ): boolean {
   return (ex.duration_seconds ?? 0) > 0;
 }
+
+const LOWERCASE_NAME_WORDS = new Set(['a', 'an', 'and', 'in', 'of', 'on', 'or', 'the', 'to', 'with']);
+const UPPERCASE_NAME_WORDS = new Set(['ez', 'trx', 'bosu']);
+
+/**
+ * A catalog name for display. One catalog source writes names in lower case ("cable face
+ * press") and the other doesn't, and a name someone typed may already be cased how they
+ * want it, so anything with a capital in it is left alone. Stored names aren't changed.
+ */
+export function formatExerciseName(name: string): string {
+  const cleaned = name.replace(/_/g, ' ').trim();
+  if (/[A-Z]/.test(cleaned)) {
+    return cleaned;
+  }
+  return cleaned
+    .split(/\s+/)
+    .map((word, index) => {
+      const open = word.startsWith('(') ? '(' : '';
+      const bare = word.slice(open.length);
+      if (UPPERCASE_NAME_WORDS.has(bare.replace(/\W/g, ''))) {
+        return `${open}${bare.toUpperCase()}`;
+      }
+      if (index > 0 && !open && LOWERCASE_NAME_WORDS.has(bare)) {
+        return word;
+      }
+      return `${open}${bare.charAt(0).toUpperCase()}${bare.slice(1)}`;
+    })
+    .join(' ');
+}
+
+/**
+ * A catalog muscle or piece of equipment for display. Older records say "lats" and newer
+ * ones "LATISSIMUS DORSI", so both come out in sentence case.
+ */
+export function formatMuscle(value: string): string {
+  const lower = value.replace(/_/g, ' ').trim().toLowerCase();
+  return lower.charAt(0).toUpperCase() + lower.slice(1);
+}

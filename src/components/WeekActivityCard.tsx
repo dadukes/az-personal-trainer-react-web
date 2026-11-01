@@ -50,7 +50,7 @@ export default function WeekActivityCard({ weekActivities, isPlanDone, unitSyste
 
   const items = weekActivities[selected] ?? [];
   const emptyCopy = isPlanDone(selected)
-    ? 'Planned workout done 💪 Nothing else logged.'
+    ? 'Planned workout done. Nothing else logged.'
     : selected === today
       ? 'Nothing logged yet today.'
       : `Nothing logged on ${weekdayName(selected)}.`;

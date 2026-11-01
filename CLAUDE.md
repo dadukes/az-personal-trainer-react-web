@@ -62,6 +62,7 @@ npm run dev         # Vite dev server (http://localhost:5173)
 npm run build       # tsc -b && vite build  → dist/
 npm run preview     # preview the production build
 npm run typecheck   # tsc --noEmit
+npm test            # Vitest: pure logic only (no component tests)
 ```
 
 Run **`npm run typecheck`** (and ideally `npm run build`) before considering a change done.
@@ -98,6 +99,9 @@ Only `VITE_*` vars reach the browser bundle (read in `src/lib/env.ts`); copy `.e
 - `VITE_SUPABASE_URL`, `VITE_SUPABASE_PUBLISHABLE_KEY`
 - `VITE_API_BASE_URL` (Azure Functions base, e.g. `https://<app>.azurewebsites.net/api`)
 - `VITE_AZURE_FUNCTION_KEY`
+
+Feature flags are off unless `VITE_FLAG_<NAME>` is `1`, and one browser can override them with
+`localStorage.setItem('forma:flag:logbook', '1')` ([src/lib/featureFlags.ts](src/lib/featureFlags.ts)).
 
 The app degrades gracefully when config is missing (`env.hasApiConfig` / `env.hasSupabaseConfig`
 gates surface a clear error instead of crashing).

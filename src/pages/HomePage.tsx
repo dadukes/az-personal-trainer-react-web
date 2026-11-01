@@ -1,4 +1,4 @@
-import { Activity, Calendar, Dumbbell, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, Ruler, ShieldCheck, Zap } from 'lucide-react';
+import { Activity, Calendar, Check, Dumbbell, Flame, HeartPulse, MessageCircle, Moon, Play, RotateCcw, Ruler, ShieldCheck, Zap } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -9,6 +9,7 @@ import QuickLogDialog from '@/components/QuickLogDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import UserMenu from '@/components/UserMenu';
 import WeekActivityCard from '@/components/WeekActivityCard';
+import { PendingWorkoutsCard, WorkoutResumeCard } from '@/components/WorkoutStatus';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import {
   getDashboard,
@@ -87,6 +88,7 @@ export default function HomePage() {
     completedWorkouts,
     addXp,
   } = useAppStore();
+  const workoutDraft = useAppStore((s) => s.workoutDraft);
   const [planId, setPlanId] = useState<string | undefined>();
   /** Authoritative completed dates (local `YYYY-MM-DD`) from the dashboard's `completed_days`. */
   const [serverCompletedDates, setServerCompletedDates] = useState<Set<string>>(() => new Set());
@@ -381,7 +383,10 @@ export default function HomePage() {
       </Card>
 
       {/* Today's plan or CTA */}
-      {hasPlan ? (
+      <PendingWorkoutsCard />
+      {workoutDraft ? (
+        <WorkoutResumeCard draft={workoutDraft} />
+      ) : hasPlan ? (
         <div className="rounded-[24px] p-1" style={{ background: 'var(--forma-aqua)' }}>
           <div
             className="flex items-center justify-between rounded-[20px] px-6 py-6 sm:px-7"
@@ -393,8 +398,8 @@ export default function HomePage() {
                   className="mb-2 inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[11px] font-extrabold tracking-[0.04em]"
                   style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
                 >
+                  <Check size={13} strokeWidth={3} />
                   <span>COMPLETED</span>
-                  <span aria-hidden className="text-[13px] leading-none">💪</span>
                 </div>
               ) : (
                 <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--forma-mint)' }}>
@@ -497,19 +502,13 @@ export default function HomePage() {
                 >
                   {completed ? (
                     <>
-                      {/* Faint muscle watermark */}
-                      <span
-                        aria-hidden
-                        className="pointer-events-none absolute -bottom-2 -right-1 text-[52px] leading-none opacity-[0.12] select-none"
-                      >
-                        💪
-                      </span>
                       {/* Corner "Done" ribbon */}
                       <span
                         className="absolute right-0 top-0 inline-flex items-center gap-1 rounded-bl-[12px] px-2 py-1 text-[9.5px] font-extrabold tracking-[0.04em]"
                         style={{ background: 'var(--forma-aqua)', color: '#06224D' }}
                       >
-                        DONE 💪
+                        <Check size={10} strokeWidth={3} />
+                        DONE
                       </span>
                     </>
                   ) : null}

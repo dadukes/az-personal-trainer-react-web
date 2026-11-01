@@ -10,7 +10,7 @@ import {
   type CatalogExerciseSummary,
   type CoachAlternative,
 } from '@/lib/api';
-import { coachAlternativePick, isCoachAlternativeFor, type ExercisePick } from '@/lib/exercise';
+import { coachAlternativePick, isCoachAlternativeFor, type ExercisePick, formatExerciseName, formatMuscle } from '@/lib/exercise';
 
 /**
  * The provider's name search returns a small bounded window (~10 max), so keep the page
@@ -398,11 +398,11 @@ function ExerciseOptionRow({
         {/* Catalog names run long ("assisted seated pectoralis major stretch…") and the
             distinguishing word is often last, so they get two lines, not an ellipsis. */}
         <div className="line-clamp-2 text-[14px] font-bold leading-snug" style={{ color: 'var(--text-primary)' }}>
-          {item.name}
+          {formatExerciseName(item.name)}
         </div>
-        {/* `why` is a sentence from the backend; only the bare catalog fields get title case. */}
-        <div className={`line-clamp-2 text-[12px] ${why ? '' : 'capitalize'}`} style={{ color: 'var(--text-muted)' }}>
-          {why ?? [item.target, item.equipment].filter(Boolean).join(' · ')}
+        {/* `why` is a sentence from the backend; only the bare catalog fields get formatted. */}
+        <div className="line-clamp-2 text-[12px]" style={{ color: 'var(--text-muted)' }}>
+          {why ?? [item.target, item.equipment].filter((v): v is string => Boolean(v)).map(formatMuscle).join(' · ')}
         </div>
       </div>
       <ChevronRight size={17} color="var(--text-muted)" className="flex-shrink-0" />

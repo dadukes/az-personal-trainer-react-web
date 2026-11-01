@@ -2,6 +2,7 @@ import { Activity, ChevronDown, ChevronUp, Dumbbell, HeartPulse, Pencil, Plus, R
 import type { ComponentType } from 'react';
 import { useMemo, useState } from 'react';
 
+import { formatExerciseName } from '@/lib/exercise';
 import { Card, Eyebrow } from '@/components/ui';
 import ZoneBar from '@/components/ZoneBar';
 import type { BodyMeasurement, BodyMetric, MeasurementChange, ProgressSnapshot, SignalTrend } from '@/lib/api';
@@ -126,7 +127,7 @@ export default function ProgressSnapshotSection({
                     return (
                       <div key={g.name} className="flex items-baseline justify-between gap-3">
                         <span className="min-w-0 flex-1 truncate text-[14px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                          {g.name}
+                          {formatExerciseName(g.name)}
                         </span>
                         <span className="tabular text-[14px] font-bold" style={{ color: 'var(--accent-text)' }}>
                           {fmt(g.from)} → {fmt(g.to)}{' '}

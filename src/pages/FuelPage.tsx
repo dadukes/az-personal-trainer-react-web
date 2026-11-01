@@ -36,6 +36,8 @@ function formatMealTime(iso: string): string {
 }
 
 export default function FuelPage() {
+  // Dragging a file in only works with a mouse, so a phone gets different wording.
+  const canDragAndDrop = typeof window !== 'undefined' && window.matchMedia('(hover: hover) and (pointer: fine)').matches;
   const { session } = useAuth();
   const { healthSnapshot } = useAppStore();
 
@@ -259,14 +261,14 @@ export default function FuelPage() {
                     <Upload size={26} color="#34D2C1" />
                   </div>
                   <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                    Drag &amp; drop a photo
+                    {canDragAndDrop ? <>Drag &amp; drop a photo</> : 'Add a photo of your meal'}
                   </div>
                   <div className="mt-1.5 max-w-[340px] text-center text-[12.5px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
                     AI estimates macros and suggests healthy additions — no manual logging.
                   </div>
                   <div className="mt-4">
                     <Button variant="secondary" onClick={() => fileInputRef.current?.click()}>
-                      Browse files
+                      {canDragAndDrop ? 'Browse files' : 'Choose a photo'}
                     </Button>
                   </div>
                 </>

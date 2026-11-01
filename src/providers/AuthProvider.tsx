@@ -13,6 +13,7 @@ import { deleteAccount as deleteAccountRequest, getProfile, type UserProfileData
 import { env } from '@/lib/env';
 import { getOnboardingStorageKey, supabase } from '@/lib/supabase';
 import { syncDeviceTimezone } from '@/lib/timezone';
+import { clearWorkoutLocal } from '@/lib/workoutSync';
 import { INITIAL_PROFILE, useAppStore, type UserProfile } from '@/store/useAppStore';
 
 // ─── Profile persistence helpers (localStorage) ───────────────────────────────
@@ -259,6 +260,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
     // dead token — drop the session locally instead. The JWT is void either way.
     await supabase.auth.signOut({ scope: 'local' });
     resetLocalUserState(userId);
+    clearWorkoutLocal(userId);
     useAppStore.getState().clearUserData();
     clearAppLocalData();
   }, [resetLocalUserState, session]);

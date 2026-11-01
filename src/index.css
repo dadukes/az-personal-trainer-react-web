@@ -58,7 +58,8 @@
   /* Sleep reads as a deep blue on light surfaces; dark surfaces need the lighter tint. */
   --icon-sleep: var(--forma-sleep);
 
-  --tab-active: var(--forma-aqua);
+  /* Aqua on white is only 1.9:1, so light mode uses the teal text colour. */
+  --tab-active: #0b7a72;
   --tab-inactive: #6e8094;
   --tab-bg: #ffffff;
   --tab-border: #d6e2db;

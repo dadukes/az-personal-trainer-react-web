@@ -849,6 +849,8 @@ export interface LoggedExercise {
 }
 
 export interface WorkoutLogPayload {
+  /** Generated when the workout starts. A repeat with the same id can't add a second workout. */
+  client_session_id?: string;
   plan_id?: string;
   day?: string;
   started_at: string;
@@ -868,6 +870,10 @@ export interface XpBreakdownEntry {
 
 export interface WorkoutLogResponse {
   success: boolean;
+  /** The saved workout's id. */
+  session_id?: string;
+  /** This id was already saved, so nothing new was written. */
+  already_saved?: boolean;
   /**
    * ⚠ Variable — XP is effort-based (mobility 5, reps/timed 10, class 75, cardio
    * proportional to distance/time), so never assume a flat value.
@@ -971,6 +977,8 @@ export interface SessionExercise {
   /** False on a watch-completed day's main block: the recording earned that XP. */
   earns_xp: boolean;
   sets: WorkoutSetLogEntry[];
+  /** Logged distance in km. Null when none was logged, or it predates storing it. */
+  distance_km?: number | null;
   target: SessionExerciseTarget | null;
 }
 
@@ -1090,6 +1098,17 @@ function createNetworkErrorMessage(targetUrl: string): string {
   ].join(' ');
 }
 
+/** The server answered with an error. Anything else thrown means no answer arrived. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 async function apiFetch<T>(
   path: string,
   accessToken: string,
@@ -1128,7 +1147,7 @@ async function apiFetch<T>(
     } catch {
       errorMessage = response.statusText || errorMessage;
     }
-    throw new Error(errorMessage);
+    throw new ApiError(errorMessage, response.status);
   }
 
   return (await response.json()) as T;
@@ -1461,37 +1480,18 @@ export async function getLastPerformance(
 }
 
 /**
- * Logs a completed guided workout with per-set actuals.
- * Falls back to POST /activity/log (full_workout) when /workouts/log is not
- * available on the backend, so XP still awards.
+ * Saves a finished workout with per-set actuals. Throws on any failure: there's no quieter
+ * fallback, because the workout has to stay on this device until this succeeds (see
+ * `workoutSync.ts`). Sending `client_session_id` makes a repeat safe.
  */
 export async function logWorkout(
   accessToken: string,
   payload: WorkoutLogPayload,
 ): Promise<WorkoutLogResponse> {
-  const totalSets = payload.exercises.reduce(
-    (acc, ex) => acc + ex.sets.filter((s) => s.completed).length,
-    0,
-  );
-
-  try {
-    return await apiFetch<WorkoutLogResponse>('/workouts/log', accessToken, {
-      method: 'POST',
-      body: JSON.stringify(payload),
-    });
-  } catch {
-    const fallback = await logActivity(accessToken, {
-      activity_type: 'full_workout',
-      duration_minutes: Math.max(1, Math.round(payload.duration_seconds / 60)),
-    });
-    return {
-      success: fallback.status === 'success',
-      xp_earned: fallback.xp_earned,
-      new_total_xp: fallback.new_total_xp,
-      leveled_up: fallback.leveled_up,
-      summary: { total_sets: totalSets, duration_seconds: payload.duration_seconds },
-    };
-  }
+  return apiFetch<WorkoutLogResponse>('/workouts/log', accessToken, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
 }
 
 /** Recent completed workout sessions (most-recent first) for the Progress history list. */

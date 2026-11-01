@@ -8,8 +8,10 @@ import type {
   FitnessLevel,
   PrimaryGoal,
   ProgressSnapshot,
+  XpBreakdownEntry,
 } from '@/lib/api';
 import { completionKey } from '@/lib/workout';
+import type { PendingWorkoutSave, WorkoutDraft } from '@/lib/workoutDraft';
 
 export type { CoachPersonality, FitnessLevel, PrimaryGoal };
 
@@ -141,6 +143,23 @@ interface ProgressSlice {
   setProgressSnapshot: (snapshot: ProgressSnapshot | null) => void;
 }
 
+/** What the server said about a saved workout, for the finished screen. */
+export interface WorkoutSaveResult {
+  xpEarned: number;
+  xpBreakdown: XpBreakdownEntry[] | null;
+  watchLinked: boolean;
+  sessionId: string | null;
+}
+
+/** A copy of what's stored on this device. `lib/workoutSync.ts` owns the real thing. */
+interface WorkoutLocalSlice {
+  workoutDraft: WorkoutDraft | null;
+  workoutPending: PendingWorkoutSave[];
+  workoutSaveResults: Record<string, WorkoutSaveResult>;
+  setWorkoutLocal: (local: { draft: WorkoutDraft | null; pending: PendingWorkoutSave[] }) => void;
+  setWorkoutSaveResult: (clientSessionId: string, result: WorkoutSaveResult) => void;
+}
+
 interface WorkoutCompletionSlice {
   /** completionKey(planId, dateISO) -> completion meta. Mirrored to localStorage. */
   completedWorkouts: Record<string, WorkoutCompletion>;
@@ -182,6 +201,7 @@ type AppStore = ProfileSlice &
   HealthSlice &
   ProgressSlice &
   WorkoutCompletionSlice &
+  WorkoutLocalSlice &
   PlanDraftSlice &
   AccountSlice;
 
@@ -313,6 +333,13 @@ export const useAppStore = create<AppStore>((set) => ({
   setProgressSnapshot: (snapshot) => set({ progressSnapshot: snapshot }),
 
   // Workout completion (client-side; see backend-gaps.md #6)
+  workoutDraft: null,
+  workoutPending: [],
+  workoutSaveResults: {},
+  setWorkoutLocal: ({ draft, pending }) => set({ workoutDraft: draft, workoutPending: pending }),
+  setWorkoutSaveResult: (clientSessionId, result) =>
+    set((state) => ({ workoutSaveResults: { ...state.workoutSaveResults, [clientSessionId]: result } })),
+
   completedWorkouts: loadCompletions(),
   markWorkoutCompleted: (planId, dateISO, xp) =>
     set((state) => {
@@ -393,5 +420,8 @@ export const useAppStore = create<AppStore>((set) => ({
       progressSnapshot: null,
       completedWorkouts: {},
       planDraft: null,
+      workoutDraft: null,
+      workoutPending: [],
+      workoutSaveResults: {},
     }),
 }));

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vitest/config';
 import react from '@vitejs/plugin-react';
 import path from 'node:path';
 
@@ -13,5 +13,10 @@ export default defineConfig({
   server: {
     port: 5173,
     host: true,
+  },
+  // Pure logic only: nothing here renders a component.
+  test: {
+    environment: 'node',
+    include: ['src/**/*.test.ts'],
   },
 });

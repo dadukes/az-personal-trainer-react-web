@@ -39,7 +39,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/delete-account` | `DeleteAccountPage` | **Public** (no auth guard, no shell): Play-required deletion URL; signs the user in, then deletes |
 | `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
 | `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link via `FindAlternativeDialog`, remove |
-| `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → `logWorkout` |
+| `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → the save queue (`workoutSync.ts`) |
 | `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts). Open session is `?session=<id>`: two screens below `lg` (list → transcript, Back returns to list), side by side from `lg` |
 
 `:day` accepts a backend day key (`monday`…`sunday`) or `today` (resolved to the current weekday).
@@ -57,6 +57,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   import from the mobile app, coach log, quick log) — never mix them, so the plan's completion stays
   truthful. Selecting a day lists its activities; a row opens `/activities/<id>`, "All activities" opens `/activities`.
   Upcoming cards carry the same "+N activity" marker. A quick log re-loads the dashboard.
+- **Workout draft**: every change is stored (`workoutSync.ts`), and the page reopens a workout in progress from that alone, so it needs neither the plan nor a network, and a plan changed since can't throw it away. Home shows **Resume workout** in place of today's start, plus anything still waiting to sync (`WorkoutStatus.tsx`). Opening a different day asks first. While that question is open, nothing may be written from the day on screen, or it would replace the workout being resumed.
 - **Workout session**: the header carries the guided/list toggle and (when the day has
   `ai_notes`) an info button. The session note is a **dialog**, auto-opened once per
   plan+day via `forma:workout-note-seen` — it must not reappear above every exercise.

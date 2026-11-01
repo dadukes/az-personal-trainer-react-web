@@ -30,7 +30,7 @@ import {
   type WorkoutSessionDetailResponse,
   type WorkoutSetLogEntry,
 } from '@/lib/api';
-import { weightText } from '@/lib/exercise';
+import { weightText, formatExerciseName } from '@/lib/exercise';
 import { exercisesFromSets } from '@/lib/workoutEdit';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
@@ -280,6 +280,7 @@ export default function WorkoutDetailPage() {
                 <Eyebrow>{SECTION_LABELS[section]}</Eyebrow>
                 {exercises.map((exercise) => (
                   <ExerciseCard
+                    unitSystem={unitSystem}
                     key={exercise.key}
                     exercise={exercise}
                     onClick={() => {
@@ -309,7 +310,15 @@ export default function WorkoutDetailPage() {
 }
 
 /** One exercise: its sets, or how it counts without them. Clicking it opens the editor. */
-function ExerciseCard({ exercise, onClick }: { exercise: SessionExercise; onClick: () => void }): ReactNode {
+function ExerciseCard({
+  exercise,
+  unitSystem,
+  onClick,
+}: {
+  exercise: SessionExercise;
+  unitSystem: Parameters<typeof formatDistance>[1];
+  onClick: () => void;
+}): ReactNode {
   const open = exercise.status === 'not_logged';
   return (
     <button
@@ -329,13 +338,19 @@ function ExerciseCard({ exercise, onClick }: { exercise: SessionExercise; onClic
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-[14.5px] font-bold" style={{ color: open ? 'var(--text-secondary)' : 'var(--text-primary)' }}>
-              {exercise.name}
+              {formatExerciseName(exercise.name)}
             </span>
             {exercise.status === 'logged' && exercise.skipped ? <Badge tone="neutral">Skipped</Badge> : null}
           </div>
           {exercise.swapped_from ? (
             <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
               Swapped from {exercise.swapped_from}
+            </div>
+          ) : null}
+          {exercise.distance_km != null && exercise.distance_km > 0 ? (
+            <div className="tabular mt-1.5 flex items-center gap-1.5 text-[13px] font-bold" style={{ color: 'var(--text-secondary)' }}>
+              <MapPin size={14} />
+              {formatDistance(exercise.distance_km, unitSystem, 2)}
             </div>
           ) : null}
           {exercise.status === 'logged' ? (

@@ -23,10 +23,17 @@ for project-wide rules.
   (treats as a text chunk), and a no-`reader` full-text fallback. Preserve this resilience and
   the `AbortController` cleanup returned to the caller. Verified event order from the live
   backend: `status(started) → status(generating) → chunk… → done`.
-- `logWorkout` falls back to `POST /activity/log` when `/workouts/log` errors, so XP still awards.
+- `logWorkout` throws on failure, with no fallback: the workout stays on the device until the server confirms it (`workoutSync.ts`).
 - The former contract gaps (writable `primary_goal`, `this_week` stats, `nutrition/logs` history,
   stable insight-icon enum, dashboard `completed_days`) are now backed and wired — see the
   resolved items in [../../backend-gaps.md](../../backend-gaps.md).
+
+## workoutDraft.ts / workoutSync.ts — workouts on this device
+
+- **A workout can't be lost, so nothing leaves the device until the server has confirmed it.** One stored value per user (`forma:workout-local-v1:<userId>`: `{ active, pending[] }`) holds the workout in progress and any finished ones waiting. Finishing moves a workout from `active` to `pending` in a single write. `workoutDraft.ts` is the pure logic, `workoutSync.ts` owns storage and the queue, and the app store has a copy (`workoutDraft`, `workoutPending`, `workoutSaveResults`) for screens. Mirrors the mobile app's `lib/workout-draft.ts` / `lib/workout-sync.ts`.
+- **Only a confirmed save** marks the day done, applies XP (always the server's `new_total_xp`) and removes the workout.
+- **Failures**: no response, 5xx, 401, 403, 408 and 429 retry with backoff (5 s up to 60 s, and straight away on the `online` event or when the tab comes back, from `WorkoutSyncHost`). Any other 4xx stops retrying and is shown with Try again and Discard.
+- A new workout can't replace a stored one with a different id until that one is discarded.
 
 ## units.ts / body.ts — body data at the edges
 

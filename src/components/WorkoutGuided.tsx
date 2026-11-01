@@ -7,7 +7,7 @@ import { NumberEntry } from '@/components/NumberEntry';
 import { CardioCaptureCard, ClassCaptureCard, IntervalPlayer } from '@/components/WorkoutCapture';
 import { Button, Card, Eyebrow } from '@/components/ui';
 import { getExerciseDetail, type ExerciseDetail, type WeightUnit } from '@/lib/api';
-import { cardioKindVerb, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
+import { cardioKindVerb, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick, formatExerciseName } from '@/lib/exercise';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
 import {
@@ -20,6 +20,7 @@ import {
   sectionLabel,
   type Block,
 } from '@/lib/workoutSession';
+import { secondsUntil } from '@/lib/workoutDraft';
 
 interface GuidedWorkoutProps {
   blocks: Block[];
@@ -392,7 +393,7 @@ export default function WorkoutGuided({
                   {blockIndex + i + 2}
                 </span>
                 <span className="truncate text-[13.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                  {b.name}
+                  {formatExerciseName(b.name)}
                 </span>
               </div>
             ))
@@ -1062,6 +1063,9 @@ function SetPips({ total, currentIndex, completed }: { total: number; currentInd
 // ─── Rest overlay ─────────────────────────────────────────────────────────────
 
 function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabel?: string; onDone: () => void }) {
+  // The end time is the source of truth, read from the real clock. Browsers throttle timers
+  // in a background tab, and a countdown that only ticks would fall behind.
+  const endsAtRef = useRef(Date.now() + seconds * 1000);
   const [remaining, setRemaining] = useState(seconds);
   const firedRef = useRef(false);
   const onDoneRef = useRef(onDone);
@@ -1071,15 +1075,20 @@ function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabe
   useWakeLock(true);
 
   useEffect(() => {
-    if (remaining <= 0) {
-      if (!firedRef.current) {
-        firedRef.current = true;
-        onDoneRef.current();
-      }
-      return;
+    const sync = () => setRemaining(secondsUntil(endsAtRef.current, Date.now()));
+    const id = setInterval(sync, 250);
+    document.addEventListener('visibilitychange', sync);
+    return () => {
+      clearInterval(id);
+      document.removeEventListener('visibilitychange', sync);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (remaining <= 0 && !firedRef.current) {
+      firedRef.current = true;
+      onDoneRef.current();
     }
-    const id = setInterval(() => setRemaining((r) => Math.max(0, r - 1)), 1000);
-    return () => clearInterval(id);
   }, [remaining]);
 
   const skip = useCallback(() => {
@@ -1099,7 +1108,10 @@ function RestOverlay({ seconds, nextLabel, onDone }: { seconds: number; nextLabe
       {nextLabel ? <span className="text-[13.5px]" style={{ color: 'var(--forma-mint, #7BE3D3)' }}>Up next · {nextLabel}</span> : null}
       <div className="mt-1.5 flex gap-2.5">
         <button
-          onClick={() => setRemaining((r) => r + 15)}
+          onClick={() => {
+            endsAtRef.current += 15_000;
+            setRemaining(secondsUntil(endsAtRef.current, Date.now()));
+          }}
           className="rounded-xl px-[18px] py-2.5 text-[14px] font-bold text-white"
           style={{ border: '1px solid rgba(255,255,255,0.5)' }}
         >
@@ -1193,7 +1205,7 @@ function ProgramSheet({
                         </span>
                         <div className="min-w-0 flex-1">
                           <div className="truncate text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                            {block.name}
+                            {formatExerciseName(block.name)}
                           </div>
                           <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
                             {blockTargetText(block)}

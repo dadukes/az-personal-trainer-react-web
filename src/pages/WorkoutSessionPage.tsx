@@ -1,17 +1,27 @@
-import { AlertTriangle, Check, ChevronLeft, Clock, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Shuffle, Sparkles, TrendingUp, Watch, X } from 'lucide-react';
+import { AlertTriangle, Check, ChevronLeft, Clock, CloudOff, Dumbbell, Info, Minus, Pause, Play, Plus, RotateCcw, Shuffle, Sparkles, TrendingUp, Watch, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import Confetti from '@/components/Confetti';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, getLastPerformance, logWorkout, type WeightUnit, type XpBreakdownEntry } from '@/lib/api';
-import { isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
+import { getDashboard, getLastPerformance, type WeightUnit } from '@/lib/api';
+import { formatExerciseName, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
+import { isFeatureEnabled } from '@/lib/featureFlags';
 import { roundTo } from '@/lib/numberEntry';
 import { stepValue, useHoldRepeat } from '@/lib/useHoldRepeat';
 import { dateForDayKey } from '@/lib/workout';
+import { createDraft, newClientSessionId, updateDraft, type WorkoutDraft } from '@/lib/workoutDraft';
+import {
+  discardActiveDraft,
+  finishActiveWorkout,
+  getActiveDraft,
+  initWorkoutLocal,
+  retryWorkoutSave,
+  saveActiveDraft,
+} from '@/lib/workoutSync';
 import {
   applyBlockSwap,
   blockTargetText,
@@ -32,7 +42,8 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const SESSION_KEY = 'forma:workout-session';
+/** Where a workout in progress lived before `workoutSync`. Only read, once, to carry it over. */
+const LEGACY_SESSION_KEY = 'forma:workout-session';
 const VIEW_KEY = 'forma:workout-view';
 /** Which session's coach note has already been shown, so it auto-opens only once. */
 const NOTE_SEEN_KEY = 'forma:workout-note-seen';
@@ -44,39 +55,33 @@ function resolveDayKey(param?: string): string {
   return DAY_KEYS[new Date().getDay()];
 }
 
-/** Only the mutable per-set progress is persisted; block structure is rebuilt from the plan. */
-interface PersistedSession {
+/** The older stored shape: per-set progress only, with the blocks rebuilt from the plan. */
+interface LegacySession {
   planId?: string;
   dayKey: string;
   startedAt: string;
   signature: string;
   sets: SetActual[][];
-  /** Mid-session exercise swaps, by block key. The plan itself is never changed. */
   swaps?: Record<string, BlockSwap>;
 }
 
-function readPersisted(): PersistedSession | null {
+/** Hands over a workout stored by the previous version of this page, and clears it. */
+function takeLegacySession(): LegacySession | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as PersistedSession) : null;
+    const raw = localStorage.getItem(LEGACY_SESSION_KEY);
+    localStorage.removeItem(LEGACY_SESSION_KEY);
+    return raw ? (JSON.parse(raw) as LegacySession) : null;
   } catch {
     return null;
   }
 }
 
-function clearPersisted() {
-  try {
-    localStorage.removeItem(SESSION_KEY);
-  } catch {
-    // ignore
-  }
-}
-
 export default function WorkoutSessionPage() {
   const { day } = useParams<{ day: string }>();
+  const [searchParams] = useSearchParams();
   const navigate = useNavigate();
   const { session } = useAuth();
-  const { profile, addXp, setTotalXp, markWorkoutCompleted } = useAppStore();
+  const profile = useAppStore((s) => s.profile);
   const unit: WeightUnit = profile.preferred_unit_system === 'imperial' ? 'lb' : 'kg';
   const dayKey = resolveDayKey(day);
 
@@ -88,13 +93,14 @@ export default function WorkoutSessionPage() {
   const [startedAt, setStartedAt] = useState<Date | null>(null);
   const [elapsed, setElapsed] = useState(0);
   const [finished, setFinished] = useState(false);
-  const [saving, setSaving] = useState(false);
-  const [xpEarned, setXpEarned] = useState<number | null>(null);
-  // Per-exercise XP tally. XP is effort-based and variable, so showing where it came
-  // from is the difference between a number and a reason to come back.
-  const [xpBreakdown, setXpBreakdown] = useState<XpBreakdownEntry[] | null>(null);
-  /** A watch recording synced from the phone joined this workout as it was logged. */
-  const [watchLinked, setWatchLinked] = useState(false);
+  const [focus, setFocus] = useState<string | undefined>();
+  const [clientSessionId, setClientSessionId] = useState(newClientSessionId);
+  // How the save is going, read from the queue: it carries on after this page closes.
+  const saveResult = useAppStore((s) => s.workoutSaveResults[clientSessionId]);
+  const pendingSave = useAppStore((s) => s.workoutPending.find((p) => p.clientSessionId === clientSessionId));
+  /** A workout in progress for a different day, which has to be dealt with before starting this one. */
+  const [otherDraft, setOtherDraft] = useState<WorkoutDraft | null>(null);
+  const [finishOpen, setFinishOpen] = useState(() => searchParams.get('finish') === '1');
   const [noteOpen, setNoteOpen] = useState(false);
   const [exitOpen, setExitOpen] = useState(false);
   const [view, setView] = useState<WorkoutView>(() => {
@@ -102,6 +108,10 @@ export default function WorkoutSessionPage() {
     return saved === 'list' ? 'list' : 'guided';
   });
   const restoredRef = useRef(false);
+  /** Once the workout is on screen, a token refresh must not reload anything under it. */
+  const openRef = useRef(false);
+  const draftRef = useRef<WorkoutDraft | null>(null);
+  const finishingRef = useRef(false);
 
   const changeView = useCallback((next: WorkoutView) => {
     setView(next);
@@ -120,6 +130,28 @@ export default function WorkoutSessionPage() {
         setLoading(false);
         return;
       }
+      if (openRef.current) return;
+      initWorkoutLocal(session.user.id);
+
+      // The workout in progress reopens as it was left: it needs neither the plan nor a
+      // network, and a plan changed since can't throw it away.
+      const draft = getActiveDraft();
+      if (draft?.dayKey === dayKey) {
+        openRef.current = true;
+        draftRef.current = draft;
+        restoredRef.current = true;
+        setOtherDraft(null);
+        setClientSessionId(draft.clientSessionId);
+        setPlanId(draft.planId);
+        setFocus(draft.focus);
+        setDayNotes(draft.dayNotes);
+        setStartedAt(new Date(draft.startedAt));
+        setBlocks(draft.blocks);
+        setLoading(false);
+        return;
+      }
+      setOtherDraft(draft);
+
       try {
         const result = await getDashboard(session.access_token);
         if (!active) return;
@@ -127,31 +159,34 @@ export default function WorkoutSessionPage() {
         const dp = plan?.plan?.[dayKey] ?? null;
         setPlanId(plan?.id);
         setDayNotes(dp?.ai_notes);
+        setFocus(dp?.focus);
         const fresh = dp && !dp.is_rest_day ? buildBlocks(dp, unit) : [];
 
-        // Restore in-progress captures from a previous (possibly backgrounded) session.
-        const persisted = readPersisted();
+        // A workout stored by the previous version of this page carries over once.
+        const legacy = takeLegacySession();
         if (
           fresh.length > 0 &&
-          persisted &&
-          persisted.dayKey === dayKey &&
-          persisted.planId === plan?.id &&
-          persisted.signature === signatureOf(fresh)
+          legacy &&
+          legacy.dayKey === dayKey &&
+          legacy.planId === plan?.id &&
+          legacy.signature === signatureOf(fresh)
         ) {
           fresh.forEach((b, bi) => {
-            const savedSets = persisted.sets[bi];
+            const savedSets = legacy.sets[bi];
             if (savedSets) {
               b.sets = b.sets.map((s, si) => savedSets[si] ?? s);
             }
-            const swap = persisted.swaps?.[b.key];
+            const swap = legacy.swaps?.[b.key];
             if (swap) fresh[bi] = applyBlockSwap(b, swap);
           });
-          setStartedAt(new Date(persisted.startedAt));
+          setStartedAt(new Date(legacy.startedAt));
         } else {
-          if (fresh.length > 0) clearPersisted();
           setStartedAt(new Date());
         }
         restoredRef.current = true;
+        // Not while another day's workout is waiting on a decision: resuming that one has to
+        // be able to load it.
+        if (fresh.length > 0 && !draft) openRef.current = true;
         setBlocks(fresh);
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load your workout.');
@@ -181,41 +216,34 @@ export default function WorkoutSessionPage() {
     setNoteOpen(true);
   }, [loading, dayNotes, blocks.length, planId, dayKey]);
 
-  // Persist captured progress so nothing is lost when the screen goes inactive.
+  // Every change is written straight away, so closing the tab at any moment loses nothing.
+  // Not while another day's workout is waiting to be resumed or discarded: this one hasn't
+  // started yet, and writing it would replace that one.
   useEffect(() => {
-    if (!restoredRef.current || finished || !startedAt || blocks.length === 0) return;
-    const payload: PersistedSession = {
-      planId,
-      dayKey,
-      startedAt: startedAt.toISOString(),
-      signature: signatureOf(blocks),
-      sets: blocks.map((b) => b.sets),
-      swaps: Object.fromEntries(
-        blocks
-          .filter((b) => b.swappedFrom)
-          .map((b) => [
-            b.key,
-            {
-              name: b.name,
-              exercise_id: b.exercise_id,
-              swappedFrom: b.swappedFrom,
-              targetMuscle: b.targetMuscle,
-              bodyPart: b.bodyPart,
-            },
-          ]),
-      ),
-    };
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(payload));
-    } catch {
-      // ignore quota/serialization errors
-    }
-  }, [blocks, planId, dayKey, startedAt, finished]);
+    if (!restoredRef.current || finished || !startedAt || blocks.length === 0 || otherDraft) return;
+    // A new workout can only take over once the stored one has been dealt with.
+    const stored = getActiveDraft();
+    if (!draftRef.current && stored && stored.clientSessionId !== clientSessionId) return;
+    const current =
+      draftRef.current ??
+      createDraft({
+        clientSessionId,
+        planId,
+        dayKey,
+        focus,
+        dayNotes,
+        startedAt: startedAt.toISOString(),
+        blocks,
+      });
+    const next = updateDraft(current, blocks, new Date().toISOString());
+    draftRef.current = next;
+    saveActiveDraft(next);
+  }, [blocks, clientSessionId, planId, dayKey, focus, dayNotes, startedAt, finished, otherDraft]);
 
   // Wall-clock timer: derive elapsed from the start time so backgrounding/screen-lock
   // (which throttles JS timers) never loses accumulated workout time.
   useEffect(() => {
-    if (finished || !startedAt) return;
+    if (finished || !startedAt || otherDraft) return;
     const tick = () => setElapsed(Math.floor((Date.now() - startedAt.getTime()) / 1000));
     tick();
     const id = setInterval(tick, 1000);
@@ -229,10 +257,10 @@ export default function WorkoutSessionPage() {
       document.removeEventListener('visibilitychange', onVisible);
       window.removeEventListener('focus', tick);
     };
-  }, [finished, startedAt]);
+  }, [finished, startedAt, otherDraft]);
 
-  /** A workout is on screen and not yet logged — leaving now throws the session away. */
-  const guardExit = !loading && !error && !finished && blocks.length > 0;
+  /** A workout is on screen and not yet logged, so leaving needs a decision about it. */
+  const guardExit = !loading && !error && !finished && !otherDraft && blocks.length > 0;
 
   /**
    * Back-navigation guard. The app nav is hidden during a workout, but the browser's
@@ -260,11 +288,19 @@ export default function WorkoutSessionPage() {
     };
   }, [guardExit]);
 
-  /** The one way out mid-session. Home rather than `-1`: `-1` is the sentinel entry. */
+  /**
+   * The one way out mid-session. Home rather than `-1`: `-1` is the sentinel entry.
+   * The sets are already stored, so this keeps the workout for Home to resume.
+   */
   const leaveWorkout = useCallback(() => {
     setExitOpen(false);
     navigate('/', { replace: true });
   }, [navigate]);
+
+  const discardAndLeave = useCallback(() => {
+    discardActiveDraft();
+    leaveWorkout();
+  }, [leaveWorkout]);
 
   const requestExit = useCallback(() => {
     if (guardExit) {
@@ -375,6 +411,9 @@ export default function WorkoutSessionPage() {
     setIndex: number;
     durationSeconds?: number;
   }) => {
+    // A double-click can't queue it twice anyway, but there's no reason to try.
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     const finalBlocks = finalCompletion
       ? blocks.map((b, bi) =>
           bi === finalCompletion.blockIndex
@@ -398,44 +437,57 @@ export default function WorkoutSessionPage() {
     // Keep the summary tiles consistent with what we're about to log.
     if (finalCompletion) setBlocks(finalBlocks);
     setFinished(true);
-    clearPersisted();
-    if (!session?.access_token) return;
-    const loggedExercises = toLoggedExercises(finalBlocks);
-    setSaving(true);
-    let earned = 0;
-    try {
-      const result = await logWorkout(session.access_token, {
-        plan_id: planId,
-        day: dayKey,
-        started_at: (startedAt ?? new Date()).toISOString(),
-        completed_at: new Date().toISOString(),
-        duration_seconds: elapsed,
-        exercises: loggedExercises,
-      });
-      earned = result.xp_earned;
-      setXpEarned(result.xp_earned);
-      setXpBreakdown(result.xp_breakdown ?? null);
-      if ((result.linked_recordings ?? 0) > 0) {
-        // It gave its XP back to this workout: the server total is net.
-        setWatchLinked(true);
-        setTotalXp(result.new_total_xp);
-      } else {
-        addXp(result.xp_earned);
-      }
-    } catch {
-      // logWorkout falls back internally
-    } finally {
-      setSaving(false);
-      // Mark the day done locally regardless of network outcome — the user finished it.
-      markWorkoutCompleted(planId, dateForDayKey(dayKey), earned);
-    }
-  }, [session, blocks, planId, dayKey, elapsed, startedAt, addXp, setTotalXp, markWorkoutCompleted]);
+    // It goes to the queue, which only lets go of it once the server has confirmed. The day
+    // is marked done, and XP applied, by the queue at that point and not before.
+    await finishActiveWorkout(
+      {
+        clientSessionId,
+        planId,
+        dayKey,
+        dateISO: dateForDayKey(dayKey),
+        focus,
+        payload: {
+          client_session_id: clientSessionId,
+          plan_id: planId,
+          day: dayKey,
+          started_at: (startedAt ?? new Date()).toISOString(),
+          completed_at: new Date().toISOString(),
+          duration_seconds: elapsed,
+          exercises: toLoggedExercises(finalBlocks),
+        },
+      },
+      session?.access_token,
+    );
+  }, [session, blocks, clientSessionId, planId, dayKey, focus, elapsed, startedAt]);
 
   if (loading) {
     return (
       <div className="flex min-h-[50vh] flex-1 items-center justify-center" style={{ background: 'var(--bg-app)' }}>
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
       </div>
+    );
+  }
+
+  if (otherDraft) {
+    return (
+      <OtherWorkoutDialog
+        dayKey={otherDraft.dayKey}
+        onResume={() => {
+          // This day's blocks are still in state until the route changes. Nothing may be
+          // written from them, or they'd replace the workout being resumed.
+          restoredRef.current = false;
+          setBlocks([]);
+          setLoading(true);
+          navigate(`/workout/${otherDraft.dayKey}`, { replace: true });
+        }}
+        onBack={() => navigate('/', { replace: true })}
+        onDiscard={() => {
+          discardActiveDraft();
+          openRef.current = true;
+          setOtherDraft(null);
+          setStartedAt(new Date());
+        }}
+      />
     );
   }
 
@@ -456,6 +508,16 @@ export default function WorkoutSessionPage() {
   }
 
   if (finished) {
+    const xpEarned = saveResult?.xpEarned ?? null;
+    const xpBreakdown = saveResult?.xpBreakdown ?? null;
+    const watchLinked = saveResult?.watchLinked === true;
+    const saveState = saveResult
+      ? 'saved'
+      : pendingSave?.needsAttention
+        ? 'refused'
+        : pendingSave && pendingSave.attempts > 0
+          ? 'waiting'
+          : 'saving';
     return (
       <div className="mx-auto flex w-full max-w-[520px] flex-col items-center gap-5 p-8 pt-16 text-center">
         <Confetti />
@@ -466,8 +528,39 @@ export default function WorkoutSessionPage() {
           Workout complete
         </div>
         <p className="text-[15px]" style={{ color: 'var(--text-secondary)' }}>
-          {saving ? 'Saving your session…' : 'That’s a win for showing up. Consistency over intensity.'}
+          {saveState === 'saving' ? 'Saving your session…' : 'That’s a win for showing up. Consistency over intensity.'}
         </p>
+        {saveState === 'waiting' ? (
+          <Card className="flex w-full items-center gap-3 text-left" padding="12px 16px">
+            <CloudOff size={16} color="var(--text-secondary)" className="flex-shrink-0" />
+            <p className="text-[13px] leading-[1.45]" style={{ color: 'var(--text-secondary)' }}>
+              Saved on this device, will sync. Your XP and this day&rsquo;s tick follow once it does.
+            </p>
+          </Card>
+        ) : null}
+        {saveState === 'refused' ? (
+          <Card className="flex w-full flex-col gap-2 text-left" padding="12px 16px">
+            <div role="alert" className="flex items-center gap-3">
+              <AlertTriangle size={16} color="var(--forma-danger)" className="flex-shrink-0" />
+              <p className="text-[13px] font-bold leading-[1.45]" style={{ color: 'var(--text-primary)' }}>
+                We couldn&rsquo;t save this workout, but it&rsquo;s still on this device.
+              </p>
+            </div>
+            {pendingSave?.lastError ? (
+              <p className="text-[12.5px] leading-[1.45]" style={{ color: 'var(--text-secondary)' }}>
+                {pendingSave.lastError}
+              </p>
+            ) : null}
+            {session?.access_token ? (
+              <Button
+                variant="secondary"
+                onClick={() => void retryWorkoutSave(clientSessionId, session.access_token)}
+              >
+                Try again
+              </Button>
+            ) : null}
+          </Card>
+        ) : null}
         <div className="flex w-full gap-3">
           <Card className="flex-1 text-center" padding="18px">
             <div className="tabular text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
@@ -512,11 +605,11 @@ export default function WorkoutSessionPage() {
               {xpBreakdown.map((entry, i) => (
                 <div key={`${entry.name}-${i}`} className="flex items-center gap-2.5 text-left">
                   <span className="min-w-0 flex-1 truncate text-[13.5px] font-semibold" style={{ color: 'var(--text-primary)' }}>
-                    {entry.name}
+                    {formatExerciseName(entry.name)}
                   </span>
                   {entry.improved ? (
                     <Badge tone="mint">
-                      <TrendingUp size={11} /> Best yet
+                      <TrendingUp size={11} /> Up from last time
                     </Badge>
                   ) : null}
                   <span className="tabular flex-shrink-0 text-[13.5px] font-extrabold" style={{ color: 'var(--accent-text)' }}>
@@ -527,7 +620,7 @@ export default function WorkoutSessionPage() {
             </div>
             {xpBreakdown.some((e) => e.improved) ? (
               <p className="mt-2.5 text-[12.5px]" style={{ color: 'var(--text-secondary)' }}>
-                You beat a previous best today. That&rsquo;s progress you can measure.
+                You&rsquo;re up on last time. That&rsquo;s progress you can measure.
               </p>
             ) : null}
           </Card>
@@ -535,6 +628,23 @@ export default function WorkoutSessionPage() {
 
         <Button size="lg" fullWidth onClick={() => navigate('/')}>
           Done
+        </Button>
+      </div>
+    );
+  }
+
+  // The logbook swaps in here once it's built (redesign phase 5). Off unless switched on.
+  if (isFeatureEnabled('logbook')) {
+    return (
+      <div className="mx-auto flex w-full max-w-[640px] flex-col items-center justify-center gap-3 p-10 text-center" style={{ minHeight: '60vh' }}>
+        <div className="text-[18px] font-bold" style={{ color: 'var(--text-primary)' }}>
+          Logbook
+        </div>
+        <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+          The logbook flag is on in this browser, and the screen isn&rsquo;t built yet.
+        </p>
+        <Button variant="secondary" onClick={() => navigate('/')}>
+          Back to Home
         </Button>
       </div>
     );
@@ -613,7 +723,7 @@ export default function WorkoutSessionPage() {
           <div className="mb-3 flex items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="text-[16px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                {block.name}
+                {formatExerciseName(block.name)}
               </div>
               <div className="mt-0.5 text-[12.5px] font-semibold" style={{ color: 'var(--accent-text)' }}>
                 {blockTargetText(block)}
@@ -774,6 +884,19 @@ export default function WorkoutSessionPage() {
           totalSets={totalSets}
           onStay={() => setExitOpen(false)}
           onLeave={leaveWorkout}
+          onDiscard={discardAndLeave}
+        />
+      ) : null}
+
+      {finishOpen ? (
+        <FinishWorkoutDialog
+          completedSets={completedSets}
+          totalSets={totalSets}
+          onStay={() => setFinishOpen(false)}
+          onFinish={() => {
+            setFinishOpen(false);
+            void finish();
+          }}
         />
       ) : null}
     </div>
@@ -781,21 +904,21 @@ export default function WorkoutSessionPage() {
 }
 
 /**
- * Confirms leaving a workout that has not been logged yet. Deliberately specific about
- * what is and isn't lost: the captures survive in `localStorage` and are restored if the
- * user comes back to the same day, but nothing reaches the backend — no session, no XP —
- * until the workout is finished.
+ * Confirms leaving a workout that has not been logged yet. Nothing is lost by leaving, since
+ * every change is already stored, so the real choice is between coming back and discarding.
  */
 function ExitWorkoutDialog({
   completedSets,
   totalSets,
   onStay,
   onLeave,
+  onDiscard,
 }: {
   completedSets: number;
   totalSets: number;
   onStay: () => void;
   onLeave: () => void;
+  onDiscard: () => void;
 }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -831,9 +954,9 @@ function ExitWorkoutDialog({
               Leave this workout?
             </div>
             <p className="mt-1.5 text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
-              Nothing is logged until you finish, so the {completedSets} of {totalSets} sets you
-              have done won&rsquo;t count and no XP is awarded. We&rsquo;ll keep them on this device
-              if you come back today.
+              {completedSets > 0
+                ? `Your ${completedSets} of ${totalSets} sets are saved on this device. You can pick this workout up again from Home.`
+                : 'You haven’t ticked anything yet.'}
             </p>
           </div>
         </div>
@@ -841,12 +964,104 @@ function ExitWorkoutDialog({
           <Button fullWidth onClick={onStay}>
             Keep going
           </Button>
-          <Button variant="ghost" fullWidth onClick={onLeave}>
-            <span style={{ color: 'var(--forma-danger)' }}>Leave workout</span>
+          {completedSets > 0 ? (
+            <Button variant="secondary" fullWidth onClick={onLeave}>
+              Save and come back later
+            </Button>
+          ) : null}
+          <Button variant="ghost" fullWidth onClick={onDiscard}>
+            <span style={{ color: 'var(--forma-danger)' }}>
+              {completedSets > 0 ? 'Discard this workout' : 'Leave workout'}
+            </span>
           </Button>
         </div>
       </div>
     </div>
+  );
+}
+
+function capitalize(value: string): string {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
+/** Shared frame for the two questions below. */
+function WorkoutQuestionDialog({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-5" style={{ background: 'rgba(6,34,77,0.45)' }}>
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
+        className="flex w-full max-w-[420px] flex-col gap-3 rounded-[24px] p-6"
+        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+      >
+        <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
+          {title}
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+/** Starting a workout while another day's is unfinished would otherwise replace it. */
+function OtherWorkoutDialog({
+  dayKey,
+  onResume,
+  onBack,
+  onDiscard,
+}: {
+  dayKey: string;
+  onResume: () => void;
+  onBack: () => void;
+  onDiscard: () => void;
+}) {
+  return (
+    <WorkoutQuestionDialog title="You have a workout in progress">
+      <p className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
+        Your {capitalize(dayKey)} workout isn&rsquo;t finished yet. Starting this one would throw it away.
+      </p>
+      <div className="mt-2 flex flex-col gap-2.5">
+        <Button fullWidth onClick={onResume}>
+          Resume {capitalize(dayKey)}
+        </Button>
+        <Button variant="secondary" fullWidth onClick={onBack}>
+          Not now
+        </Button>
+        <Button variant="ghost" fullWidth onClick={onDiscard}>
+          <span style={{ color: 'var(--forma-danger)' }}>Discard it and start this one</span>
+        </Button>
+      </div>
+    </WorkoutQuestionDialog>
+  );
+}
+
+/** Opened from "I'm done, finish it" on Home. */
+function FinishWorkoutDialog({
+  completedSets,
+  totalSets,
+  onStay,
+  onFinish,
+}: {
+  completedSets: number;
+  totalSets: number;
+  onStay: () => void;
+  onFinish: () => void;
+}) {
+  return (
+    <WorkoutQuestionDialog title="Finish this workout?">
+      <p className="text-[13.5px] leading-[1.55]" style={{ color: 'var(--text-secondary)' }}>
+        You&rsquo;ve ticked {completedSets} of {totalSets} sets. Any you haven&rsquo;t ticked are logged as skipped.
+      </p>
+      <div className="mt-2 flex flex-col gap-2.5">
+        <Button fullWidth onClick={onStay}>
+          Keep going
+        </Button>
+        <Button variant="secondary" fullWidth onClick={onFinish}>
+          Finish workout
+        </Button>
+      </div>
+    </WorkoutQuestionDialog>
   );
 }
 

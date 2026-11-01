@@ -252,6 +252,8 @@ data: {"message":"User profile was not found. Please complete onboarding first."
 
 ### GET /api/chat/history
 
+The `[tool:name]` audit rows stay in the table but aren't returned: they aren't part of the conversation.
+
 Returns the authenticated user's chat history in ascending chronological order (oldest message first), with cursor-based pagination via `limit` and `offset`.
 
 #### Request
@@ -1863,6 +1865,14 @@ through the same path as `POST /api/activity/log`, so `GET /api/progress` totals
 Use `activity/log` for quick wins (`walk`, `micro_win`, `cardio`, `class`, `other`); use this
 endpoint for full workouts.
 
+**All or nothing.** The session header, its set logs and its XP row are written in one transaction
+(the `log_workout_session` Postgres function).
+
+**Safe to retry.** Send `client_session_id`, generated once when the workout starts. A repeat with the
+same id writes nothing and answers with the saved workout (`already_saved: true`, with its stored XP),
+so a client can retry after any failure, including one where the first response was lost. Keep
+`completed_at` the same on a retry. Older clients without an id behave as before.
+
 **Effort-based XP** — tallied per exercise with at least one completed set (values live in
 `XP_CONFIG`, `src/services/gamification.service.ts`):
 
@@ -1890,7 +1900,8 @@ Content-Type: application/json
 
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
-| `plan_id` | `string` (UUID) | No | The `active_workout_plan.id` this session came from |
+| `client_session_id` | `string` (UUID) | No | Generated when the workout starts; makes a retry safe. A malformed id is a `400` |
+| `plan_id` | `string` (UUID) | No | The `active_workout_plan.id` this session came from. A plan that no longer exists is stored as no plan rather than failing the save |
 | `day` | `string` | No | Day key, e.g. `"monday"` |
 | `started_at` | `string` (ISO) | Yes | When the user started the workout |
 | `completed_at` | `string` (ISO) | Yes | When they finished |
@@ -1902,7 +1913,8 @@ Content-Type: application/json
 
 > **`type`** (optional, recommended): `"reps" | "timed" | "cardio" | "class" | "mobility"` — drives
 > the effort-XP tier. When absent, the server derives it (any set with a positive
-> `duration_seconds` → `timed`, else `reps`). `distance_km` (optional) feeds cardio XP.
+> `duration_seconds` → `timed`, else `reps`). `distance_km` (optional) feeds cardio XP and is stored
+> on the exercise's first set row (`GET /workouts/sessions/{id}` returns it as `exercises[].distance_km`).
 
 > **Units** are stored exactly as sent — no conversion.
 
@@ -1936,6 +1948,8 @@ Content-Type: application/json
 ```json
 {
   "success": true,
+  "session_id": "session-uuid-here",
+  "already_saved": false,
   "xp_earned": 25,
   "new_total_xp": 1875,
   "leveled_up": false,

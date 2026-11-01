@@ -272,7 +272,7 @@ export default function HealthTrendChart({ logs }: { logs: HealthLog[] }) {
       )}
 
       <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        Lines are scaled to a shared 0–100 range so two different metrics fit one view — hover any
+        Lines are scaled to a shared 0–100 range so two different metrics fit one view. Select any
         point for the real values.
       </p>
     </div>

@@ -31,6 +31,8 @@ import {
   resolveExerciseType,
   swapPlanExercise,
   type ExerciseIconKey,
+  formatExerciseName,
+  formatMuscle,
 } from '@/lib/exercise';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type PlanSection } from '@/store/useAppStore';
@@ -120,7 +122,7 @@ function ExerciseRow({
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
             <span className="truncate text-[14px] font-bold" style={{ color: 'var(--text-primary)' }}>
-              {type === 'class' ? (ex.class_name ?? ex.name) : ex.name}
+              {type === 'class' ? (ex.class_name ?? ex.name) : formatExerciseName(ex.name)}
             </span>
             {showUnlinkedWarning ? (
               <Link2 size={13} color="var(--forma-danger)" aria-label="Not linked to ExerciseDB" />
@@ -133,7 +135,7 @@ function ExerciseRow({
               {exerciseMeta(ex)}
               {subtitle ? ' · ' : ''}
             </span>
-            {subtitle ? <span className="capitalize">{subtitle}</span> : null}
+            {subtitle ? <span>{formatMuscle(subtitle)}</span> : null}
           </div>
         </div>
         <span className="tabular hidden flex-shrink-0 text-[13px] font-semibold sm:inline" style={{ color: 'var(--text-secondary)' }}>

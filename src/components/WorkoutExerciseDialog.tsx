@@ -1,6 +1,7 @@
 import { Check, Dumbbell, Plus, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
+import { formatExerciseName } from '@/lib/exercise';
 import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import { Button } from '@/components/ui';
 import type { LoggedSet, SessionExercise, WeightUnit, WorkoutSection } from '@/lib/api';
@@ -89,7 +90,7 @@ export default function WorkoutExerciseDialog({ exercise, preferredUnit, saving,
             </div>
             <div className="min-w-0">
               <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                {exercise.name}
+                {formatExerciseName(exercise.name)}
               </div>
               <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
                 {subtitle(exercise)}
