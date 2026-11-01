@@ -1098,18 +1098,20 @@ function ExerciseCard({
 
 function Thumb({ src, Fallback }: { src: string | null; Fallback: typeof Dumbbell }) {
   const [failed, setFailed] = useState<string | null>(null);
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
   const show = src && src !== failed;
+  // White only under a picture that has arrived, so a slow download doesn't look blank.
+  const loaded = show && src === loadedSrc;
   return (
     <span
       aria-hidden="true"
-      className={`flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] ${show ? 'bg-white' : ''}`}
-      style={{ border: '1px solid var(--line)', background: show ? undefined : 'var(--sunken)' }}
+      className={`relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-[10px] ${loaded ? 'bg-white' : ''}`}
+      style={{ border: '1px solid var(--line)', background: loaded ? undefined : 'var(--sunken)' }}
     >
+      {loaded ? null : <Fallback size={20} color="var(--ink-3)" />}
       {show ? (
-        <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} className="h-full w-full object-contain" />
-      ) : (
-        <Fallback size={20} color="var(--ink-3)" />
-      )}
+        <img src={src} alt="" loading="lazy" onLoad={() => setLoadedSrc(src)} onError={() => setFailed(src)} className="absolute inset-0 h-full w-full object-contain" />
+      ) : null}
     </span>
   );
 }

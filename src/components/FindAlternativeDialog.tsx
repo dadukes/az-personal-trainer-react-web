@@ -47,10 +47,24 @@ interface FindAlternativeDialogProps {
 /** The row's picture. Some catalog files are missing, so a failed one falls back to the icon. */
 function ExerciseThumbImage({ src }: { src: string | null }) {
   const [failed, setFailed] = useState<string | null>(null);
-  return src && src !== failed ? (
-    <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} className="h-full w-full bg-white object-contain" />
-  ) : (
-    <Dumbbell size={18} color="var(--text-muted)" />
+  const [loadedSrc, setLoadedSrc] = useState<string | null>(null);
+  const show = src && src !== failed;
+  // White only once the picture has arrived, so a slow download doesn't look blank.
+  const loaded = show && src === loadedSrc;
+  return (
+    <>
+      {loaded ? null : <Dumbbell size={18} color="var(--text-muted)" />}
+      {show ? (
+        <img
+          src={src}
+          alt=""
+          loading="lazy"
+          onLoad={() => setLoadedSrc(src)}
+          onError={() => setFailed(src)}
+          className={`absolute inset-0 h-full w-full object-contain ${loaded ? 'bg-white' : ''}`}
+        />
+      ) : null}
+    </>
   );
 }
 
@@ -464,7 +478,7 @@ function ExerciseOptionRow({
       style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
     >
       <div
-        className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg"
+        className="relative flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg"
         style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
       >
         <ExerciseThumbImage src={item.image_url} />

@@ -483,9 +483,14 @@ export function ExerciseDemo({
   showName?: boolean;
   heightClass?: string;
 }) {
-  const [imageUrl, setImageUrl] = useState<string | null>(null);
+  const [fetchedImageUrl, setImageUrl] = useState<string | null>(null);
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  const [loadedImageUrl, setLoadedImageUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  // A failed picture counts as none: catalog files can be missing, and a network can block them.
+  const imageUrl = fetchedImageUrl !== failedImageUrl ? fetchedImageUrl : null;
+  const imageLoaded = imageUrl !== null && imageUrl === loadedImageUrl;
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const onCuesRef = useRef(onCues);
   onCuesRef.current = onCues;
@@ -532,16 +537,25 @@ export function ExerciseDemo({
     <button
       onClick={togglePlay}
       disabled={!videoUrl}
-      className={`relative flex ${heightClass} w-full items-end overflow-hidden rounded-[18px] disabled:cursor-default ${imageUrl ? 'bg-white' : ''}`}
-      style={{ background: imageUrl ? undefined : 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
+      className={`relative flex ${heightClass} w-full items-end overflow-hidden rounded-[18px] disabled:cursor-default ${imageLoaded || playing ? 'bg-white' : ''}`}
+      style={{ background: imageLoaded || playing ? undefined : 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
     >
-      {/* Poster / placeholder */}
-      {imageUrl && !playing ? (
-        <img src={imageUrl} alt="" className="absolute inset-0 h-full w-full object-contain" />
-      ) : !videoUrl ? (
+      {/* Placeholder, until a picture has arrived */}
+      {!imageLoaded && !playing ? (
         <div className="absolute inset-0 flex items-center justify-center" style={{ background: 'var(--bg-subtle)' }}>
           <Dumbbell size={34} color="var(--accent)" />
         </div>
+      ) : null}
+
+      {/* Poster */}
+      {imageUrl && !playing ? (
+        <img
+          src={imageUrl}
+          alt=""
+          onLoad={() => setLoadedImageUrl(imageUrl)}
+          onError={() => setFailedImageUrl(imageUrl)}
+          className="absolute inset-0 h-full w-full object-contain"
+        />
       ) : null}
 
       {/* Video (kept mounted so playback controls work; hidden until playing) */}

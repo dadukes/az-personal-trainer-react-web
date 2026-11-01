@@ -192,12 +192,14 @@ function ExerciseInfo({ exerciseId, name }: { exerciseId: string; name: string }
   // Catalog text (overview / how-to / tips) is long — keep it collapsed by default
   // so the media demo stays the only thing on screen.
   const [showInfo, setShowInfo] = useState(false);
+  const [imageFailed, setImageFailed] = useState(false);
 
   useEffect(() => {
     let active = true;
     setLoading(true);
     setError(null);
     setDetail(null);
+    setImageFailed(false);
     void (async () => {
       if (!session?.access_token) return;
       try {
@@ -247,12 +249,17 @@ function ExerciseInfo({ exerciseId, name }: { exerciseId: string; name: string }
   return (
     <div className="flex flex-col gap-2.5">
       <Card padding="0" className="overflow-hidden">
-        {detail.video_url || detail.gif_url || detail.image_url ? (
+        {detail.video_url || ((detail.gif_url || detail.image_url) && !imageFailed) ? (
           <div className="flex aspect-video w-full items-center justify-center" style={{ background: 'var(--bg-subtle)' }}>
             {detail.video_url ? (
               <video src={detail.video_url} autoPlay loop muted playsInline className="h-full w-full object-contain" />
             ) : (
-              <img src={detail.gif_url ?? detail.image_url ?? ''} alt={detail.name} className="h-full w-full object-contain" />
+              <img
+                src={detail.gif_url ?? detail.image_url ?? ''}
+                alt={detail.name}
+                onError={() => setImageFailed(true)}
+                className="h-full w-full object-contain"
+              />
             )}
           </div>
         ) : null}
