@@ -1109,6 +1109,14 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Text fit to show a person when loading fails. A server's own message is written for them,
+ * while a failed connection's is written for developers (routing, ports, localhost).
+ */
+export function userSafeError(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.message : fallback;
+}
+
 async function apiFetch<T>(
   path: string,
   accessToken: string,

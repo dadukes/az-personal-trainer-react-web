@@ -7,7 +7,7 @@ import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, SegmentedToggle } from '@/components/ui';
-import { getDashboard, getLastPerformance, type WeightUnit } from '@/lib/api';
+import { getDashboard, getLastPerformance, userSafeError, type WeightUnit } from '@/lib/api';
 import { formatExerciseName, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 import { roundTo } from '@/lib/numberEntry';
@@ -189,7 +189,7 @@ export default function WorkoutSessionPage() {
         if (fresh.length > 0 && !draft) openRef.current = true;
         setBlocks(fresh);
       } catch (err) {
-        if (active) setError(err instanceof Error ? err.message : 'Could not load your workout.');
+        if (active) setError(userSafeError(err, 'Could not load your workout. Check your connection and try again.'));
       } finally {
         if (active) setLoading(false);
       }
