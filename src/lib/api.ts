@@ -14,6 +14,9 @@ export type PrimaryGoal =
   | 'stress_relief';
 
 export interface ProfilePayload {
+  rest_timer_enabled?: boolean | null;
+  weight_step?: number | null;
+  logbook_tip_seen?: boolean;
   coach_personality?: CoachPersonality;
   fitness_level?: FitnessLevel;
   primary_goal?: PrimaryGoal;
@@ -73,6 +76,12 @@ export interface UserProfileData {
   equipment_available: string[] | null;
   coach_personality: CoachPersonality;
   preferred_unit_system: 'metric' | 'imperial';
+  /** Saved to the account. Null means never chosen. */
+  rest_timer_enabled?: boolean | null;
+  /** How far the weight buttons move, in the user's unit. Null means the default, 1. */
+  weight_step?: number | null;
+  /** The logbook's one-time tip has been dismissed. */
+  logbook_tip_seen?: boolean;
   timezone: string;
   /** Body profile — every field is optional; `null` means "not provided". */
   birth_year: number | null;
@@ -1076,6 +1085,30 @@ export interface LastPerformance {
   performed_at?: string;
 }
 
+/** One completed set from an exercise's last workout. */
+export interface LastSessionSet {
+  set_number: number;
+  reps: number | null;
+  weight: number | null;
+  weight_unit: WeightUnit | null;
+  duration_seconds: number | null;
+  distance_km: number | null;
+}
+
+/** The last workout an exercise was done in. Echoes the request's id and name. */
+export interface LastSession {
+  exercise_id: string | null;
+  name: string;
+  session_id: string;
+  performed_at: string;
+  sets: LastSessionSet[];
+}
+
+export interface LastSessionsResponse {
+  success: boolean;
+  results: LastSession[];
+}
+
 export interface LastPerformanceResponse {
   success: boolean;
   last: LastPerformance | null;
@@ -1485,6 +1518,22 @@ export async function getLastPerformance(
     `/workouts/last-performance?exercise_id=${encodeURIComponent(exerciseId)}`,
     accessToken,
   );
+}
+
+/**
+ * Every completed set from the last workout each exercise was done in, in one call. An
+ * exercise never done is left out of the results.
+ */
+export async function getLastSessions(
+  accessToken: string,
+  exercises: { exercise_id?: string | null; name: string }[],
+  before?: string,
+): Promise<LastSession[]> {
+  const { results } = await apiFetch<LastSessionsResponse>('/workouts/last-sessions', accessToken, {
+    method: 'POST',
+    body: JSON.stringify({ exercises, ...(before ? { before } : {}) }),
+  });
+  return results;
 }
 
 /**

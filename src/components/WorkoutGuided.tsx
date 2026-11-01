@@ -467,16 +467,21 @@ export default function WorkoutGuided({
 
 // ─── Exercise demo (ExerciseDB media hero) ────────────────────────────────────
 
-function ExerciseDemo({
+export function ExerciseDemo({
   exerciseId,
   name,
   accessToken,
   onCues,
+  showName = true,
+  heightClass = 'h-[180px]',
 }: {
   exerciseId?: string;
   name: string;
   accessToken?: string;
   onCues: (cues: string[]) => void;
+  /** Off where the name is already right above the card. */
+  showName?: boolean;
+  heightClass?: string;
 }) {
   const [imageUrl, setImageUrl] = useState<string | null>(null);
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
@@ -527,8 +532,8 @@ function ExerciseDemo({
     <button
       onClick={togglePlay}
       disabled={!videoUrl}
-      className="relative flex h-[180px] w-full items-end overflow-hidden rounded-[18px] disabled:cursor-default"
-      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
+      className={`relative flex ${heightClass} w-full items-end overflow-hidden rounded-[18px] disabled:cursor-default ${imageUrl ? 'bg-white' : ''}`}
+      style={{ background: imageUrl ? undefined : 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
     >
       {/* Poster / placeholder */}
       {imageUrl && !playing ? (
@@ -568,7 +573,7 @@ function ExerciseDemo({
         FORM DEMO
       </span>
 
-      {!playing ? (
+      {!playing && showName ? (
         // Scrim chip, matching the FORM DEMO badge. A bare text-shadow is not
         // enough here: the poster is `object-contain`, so the bottom-left corner
         // this label sits in is letterboxed card background, not image — and with

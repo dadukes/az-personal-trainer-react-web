@@ -58,6 +58,11 @@ export interface UserProfile {
   height_cm: number | null;
   sex: BiologicalSex | null;
   max_heart_rate: number | null;
+  /** Workout preferences, saved to the account. Null means never chosen. */
+  rest_timer_enabled?: boolean | null;
+  weight_step?: number | null;
+  /** Undefined until the server has answered, so the one-time tip can't flash on old data. */
+  logbook_tip_seen?: boolean;
 }
 
 export interface ChatMessage {

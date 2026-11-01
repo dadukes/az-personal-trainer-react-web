@@ -80,6 +80,8 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   `getLastPerformance`), and `swapped_from` is sent to `logWorkout`. The plan is never changed.
   The coach note describes the planned exercise, so both views hide it while `swappedFrom` is set
   and it returns if the user swaps back.
+- **Logbook** (`src/components/LogbookView.tsx`, behind the `logbook` flag): `WorkoutSessionPage` still loads the workout, writes the draft and guards leaving, and picks the logbook or the old view. From `lg` every exercise is open, with inputs in Tab order and the clock in a side panel. Below that it works like the phone: one exercise open, and a footer. `src/lib/logbook.ts` is the logic, mirrored on mobile.
+  A blank weight is 0, shows "Add" and logs as no load, as there's no bodyweight type. A typed weight carries down (`carryWeight`) under the same rule as the old view. A per-side hold stores one side's seconds, and `toLogbookExercises` doubles it for the save. A rest starts only from a single-set tick, and not on the workout's last set. Preferences are on the account (`WorkoutPrefsCard` on Profile), and never-chosen means off.
 - **Profile / coach memory**: the `CoachMemory` card sits between Personalization and the save
   row and shows the AI's global memory — the same `user_memory` rows the backend pastes into the
   coach's system instruction — with edit / add / forget. It is deliberately **outside** the

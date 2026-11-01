@@ -5,7 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import CoachMemory from '@/components/CoachMemory';
 import DeleteAccountDialog from '@/components/DeleteAccountDialog';
 import ScreenHeader from '@/components/ScreenHeader';
+import { WorkoutPrefsCard } from '@/components/LogbookView';
 import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
+import { isFeatureEnabled } from '@/lib/featureFlags';
 import {
   updateProfile,
   type BiologicalSex,
@@ -342,6 +344,13 @@ export default function ProfilePage() {
       </Card>
 
       {/* Training rhythm */}
+      {isFeatureEnabled('logbook') ? (
+        <Card padding="24px">
+          <Eyebrow className="mb-4">During a workout</Eyebrow>
+          <WorkoutPrefsCard accessToken={session?.access_token} />
+        </Card>
+      ) : null}
+
       <Card padding="24px">
         <Eyebrow className="mb-4">Training rhythm</Eyebrow>
         <span className="mb-2.5 block text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: 'var(--text-label)' }}>

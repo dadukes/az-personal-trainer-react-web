@@ -6,6 +6,8 @@ import { Button, Eyebrow, Input } from '@/components/ui';
 import {
   getExerciseAlternatives,
   getExercisesBatch,
+  getWorkoutSession,
+  getWorkoutSessions,
   searchExercises,
   type CatalogExerciseSummary,
   type CoachAlternative,
@@ -18,6 +20,8 @@ import { coachAlternativePick, isCoachAlternativeFor, type ExercisePick, formatE
  */
 const SEARCH_PAGE_SIZE = 8;
 const SUGGESTION_LIMIT = 8;
+/** How far back "From your recent workouts" looks. */
+const RECENT_WORKOUTS = 3;
 
 interface Suggestion {
   item: CatalogExerciseSummary;
@@ -32,8 +36,22 @@ interface FindAlternativeDialogProps {
   /** Substitutes the coach picked; listed first, ahead of the automatic suggestions. */
   coachAlternatives?: CoachAlternative[];
   title?: string;
+  /** Replaces the "Instead of" line. */
+  subtitle?: string;
+  /** `add` is for a new exercise: recent ones replace the suggestions, as there's nothing to replace. */
+  mode?: 'swap' | 'add';
   onPick: (pick: ExercisePick) => void;
   onClose: () => void;
+}
+
+/** The row's picture. Some catalog files are missing, so a failed one falls back to the icon. */
+function ExerciseThumbImage({ src }: { src: string | null }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  return src && src !== failed ? (
+    <img src={src} alt="" loading="lazy" onError={() => setFailed(src)} className="h-full w-full bg-white object-contain" />
+  ) : (
+    <Dumbbell size={18} color="var(--text-muted)" />
+  );
 }
 
 /** What a coach alternative's row needs from the catalog; the plan has the rest. */
@@ -81,6 +99,8 @@ export default function FindAlternativeDialog({
   exerciseId,
   coachAlternatives,
   title = 'Find an alternative',
+  subtitle,
+  mode = 'swap',
   onPick,
   onClose,
 }: FindAlternativeDialogProps) {
@@ -94,6 +114,52 @@ export default function FindAlternativeDialog({
   const [searching, setSearching] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const reqIdRef = useRef(0);
+  const [recent, setRecent] = useState<{ item: CatalogExerciseSummary; pick: ExercisePick }[] | null>(null);
+
+  // Recent exercises come from the last few workouts, with pictures from the catalog. Any
+  // failure just leaves search, which is what most people opened this for anyway.
+  useEffect(() => {
+    if (mode !== 'add' || !accessToken) return;
+    let active = true;
+    void (async () => {
+      try {
+        const { sessions } = await getWorkoutSessions(accessToken, RECENT_WORKOUTS);
+        const details = await Promise.all(sessions.map((s) => getWorkoutSession(accessToken, s.id)));
+        const seen = new Map<string, ExercisePick>();
+        for (const detail of details) {
+          for (const set of detail.sets) {
+            const key = set.name.trim().toLowerCase();
+            if (set.completed && !seen.has(key)) seen.set(key, { name: set.name, exerciseId: set.exercise_id ?? undefined });
+          }
+        }
+        const picks = [...seen.values()].slice(0, SUGGESTION_LIMIT);
+        const ids = picks.flatMap((p) => (p.exerciseId ? [p.exerciseId] : []));
+        const { exercises } = ids.length > 0 ? await getExercisesBatch(accessToken, ids) : { exercises: [] };
+        if (!active) return;
+        setRecent(
+          picks.map((pick) => {
+            const found = exercises.find((e) => e.id === pick.exerciseId);
+            return {
+              pick: { ...pick, targetMuscle: found?.target ?? undefined, bodyPart: found?.body_part ?? undefined },
+              item: {
+                id: pick.exerciseId ?? pick.name,
+                name: pick.name,
+                image_url: found ? (found.image_url ?? found.gif_url) : null,
+                target: found?.target ?? null,
+                body_part: found?.body_part ?? null,
+                equipment: found?.equipment ?? null,
+              },
+            };
+          }),
+        );
+      } catch {
+        if (active) setRecent([]);
+      }
+    })();
+    return () => {
+      active = false;
+    };
+  }, [accessToken, mode]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -133,7 +199,7 @@ export default function FindAlternativeDialog({
     let active = true;
     setSuggestions(null);
     void (async () => {
-      if (!accessToken) {
+      if (!accessToken || mode === 'add') {
         setSuggestions([]);
         return;
       }
@@ -162,7 +228,7 @@ export default function FindAlternativeDialog({
     return () => {
       active = false;
     };
-  }, [accessToken, exerciseId, name]);
+  }, [accessToken, exerciseId, mode, name]);
 
   // First search page, debounced on the typed term.
   useEffect(() => {
@@ -247,7 +313,7 @@ export default function FindAlternativeDialog({
               {title}
             </div>
             <div className="truncate text-[13px]" style={{ color: 'var(--text-muted)' }}>
-              Instead of {name}
+              {subtitle ?? `Instead of ${name}`}
             </div>
           </div>
           <button
@@ -317,6 +383,19 @@ export default function FindAlternativeDialog({
                 </button>
               ) : null}
             </>
+          ) : mode === 'add' ? (
+            recent == null ? (
+              <Muted>Looking at your recent workouts…</Muted>
+            ) : recent.length === 0 ? (
+              <Muted>Search above for what you did. You can also add anything by typing its name.</Muted>
+            ) : (
+              <>
+                <Eyebrow className="mt-1">From your recent workouts</Eyebrow>
+                {recent.map((r) => (
+                  <ExerciseOptionRow key={r.item.id} item={r.item} onPick={() => onPick(r.pick)} />
+                ))}
+              </>
+            )
           ) : (
             <>
               {coach.length > 0 ? (
@@ -332,7 +411,7 @@ export default function FindAlternativeDialog({
                   ))}
                 </>
               ) : null}
-              <Eyebrow className="mt-1">{coach.length > 0 ? 'More suggestions' : 'Suggested alternatives'}</Eyebrow>
+              <Eyebrow className="mt-1">{coach.length > 0 ? 'Similar exercises' : 'Suggested alternatives'}</Eyebrow>
               {moreSuggestions == null ? (
                 Array.from({ length: 4 }).map((_, i) => (
                   <div
@@ -388,11 +467,7 @@ function ExerciseOptionRow({
         className="flex h-11 w-11 flex-shrink-0 items-center justify-center overflow-hidden rounded-lg"
         style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
       >
-        {item.image_url ? (
-          <img src={item.image_url} alt="" className="h-full w-full object-contain" />
-        ) : (
-          <Dumbbell size={18} color="var(--text-muted)" />
-        )}
+        <ExerciseThumbImage src={item.image_url} />
       </div>
       <div className="min-w-0 flex-1">
         {/* Catalog names run long ("assisted seated pectoralis major stretch…") and the

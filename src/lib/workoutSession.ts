@@ -7,6 +7,7 @@ import {
   type ExerciseIntervals,
   type ExerciseType,
   type HeartRateZone,
+  type LastSessionSet,
   type LoggedExercise,
   type WeightUnit,
   type WorkoutSection,
@@ -69,6 +70,14 @@ export interface Block {
   planned?: ExercisePick;
   /** The coach's substitutes from the plan; unchanged by a swap. */
   alternatives?: CoachAlternative[];
+  /** The plan's cues, so swapping back brings them back. */
+  plannedCues?: string[];
+  /** Logbook: left out today. It stays on the page, and logs as skipped. */
+  skipped?: boolean;
+  /** Logbook: not on the plan, added during this workout. */
+  addedToday?: boolean;
+  /** Logbook: every completed set from the last time this was done. */
+  lastSets?: LastSessionSet[];
   // ── cardio ──
   activityKind?: CardioActivityKind;
   cardioFormat?: CardioFormat;
@@ -217,6 +226,7 @@ function buildBlock(
     isPerSide: ex.is_per_side === true,
     notes: ex.notes,
     cues: ex.cues,
+    plannedCues: ex.cues,
     targetMuscle: ex.target_muscle,
     bodyPart: ex.body_part,
     planned: {

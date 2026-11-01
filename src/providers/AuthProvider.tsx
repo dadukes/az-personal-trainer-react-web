@@ -81,6 +81,9 @@ function mapApiProfileToStore(apiProfile: UserProfileData): Partial<UserProfile>
     height_cm: apiProfile.height_cm ?? null,
     sex: apiProfile.sex ?? null,
     max_heart_rate: apiProfile.max_heart_rate ?? null,
+    rest_timer_enabled: apiProfile.rest_timer_enabled ?? null,
+    weight_step: apiProfile.weight_step ?? null,
+    logbook_tip_seen: apiProfile.logbook_tip_seen === true,
   };
 }
 

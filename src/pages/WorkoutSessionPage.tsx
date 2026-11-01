@@ -4,6 +4,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 
 import Confetti from '@/components/Confetti';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
+import LogbookView from '@/components/LogbookView';
 import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import WorkoutGuided from '@/components/WorkoutGuided';
 import { Badge, Button, Card, Eyebrow, Segmented } from '@/components/ui';
@@ -235,7 +236,7 @@ export default function WorkoutSessionPage() {
         startedAt: startedAt.toISOString(),
         blocks,
       });
-    const next = updateDraft(current, blocks, new Date().toISOString());
+    const next = { ...updateDraft(current, blocks, new Date().toISOString()), startedAt: startedAt.toISOString() };
     draftRef.current = next;
     saveActiveDraft(next);
   }, [blocks, clientSessionId, planId, dayKey, focus, dayNotes, startedAt, finished, otherDraft]);
@@ -507,6 +508,36 @@ export default function WorkoutSessionPage() {
     );
   }
 
+  // Which workout screen opens. The old one stays until the logbook is proven.
+  if (isFeatureEnabled('logbook')) {
+    return (
+      <>
+        <LogbookView
+          blocks={blocks}
+          setBlocks={setBlocks}
+          planId={planId}
+          dayKey={dayKey}
+          focus={focus}
+          startedAt={startedAt ?? new Date()}
+          setStartedAt={setStartedAt}
+          elapsed={elapsed}
+          clientSessionId={clientSessionId}
+          accessToken={session?.access_token}
+          askToFinish={finishOpen}
+          finished={finished}
+          onFinished={() => setFinished(true)}
+          exitOpen={exitOpen}
+          onRequestExit={requestExit}
+          onStay={() => setExitOpen(false)}
+          onLeave={leaveWorkout}
+          onDiscard={discardAndLeave}
+          onDone={() => navigate('/')}
+        />
+        {noteOpen && dayNotes ? <SessionNoteDialog text={dayNotes} onClose={() => setNoteOpen(false)} /> : null}
+      </>
+    );
+  }
+
   if (finished) {
     const xpEarned = saveResult?.xpEarned ?? null;
     const xpBreakdown = saveResult?.xpBreakdown ?? null;
@@ -628,23 +659,6 @@ export default function WorkoutSessionPage() {
 
         <Button size="lg" fullWidth onClick={() => navigate('/')}>
           Done
-        </Button>
-      </div>
-    );
-  }
-
-  // The logbook swaps in here once it's built (redesign phase 5). Off unless switched on.
-  if (isFeatureEnabled('logbook')) {
-    return (
-      <div className="mx-auto flex w-full max-w-[640px] flex-col items-center justify-center gap-3 p-10 text-center" style={{ minHeight: '60vh' }}>
-        <div className="text-[18px] font-bold" style={{ color: 'var(--text-primary)' }}>
-          Logbook
-        </div>
-        <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
-          The logbook flag is on in this browser, and the screen isn&rsquo;t built yet.
-        </p>
-        <Button variant="quiet" onClick={() => navigate('/')}>
-          Back to Home
         </Button>
       </div>
     );
