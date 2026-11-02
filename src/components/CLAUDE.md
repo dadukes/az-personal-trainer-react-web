@@ -32,6 +32,7 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   commits on blur/Enter, Escape or an empty field reverts. `DurationEntry` shows "32:45"/"1:05:30"
   and opens an h/min/sec sheet (a numeric keypad has no ":"). Input font must stay **≥16px** or
   iOS zooms on focus. The sheet is portalled.
+- **`HoldTimer.tsx`** — the logbook's timed hold: `useHoldTimer` (clock, beeps, finish), `HoldScreen` (full screen, portalled; Escape puts it away) and `HoldBar` (the slim bar, drawn in both the footer and the side panel). Mobile twin: `workout/logbook/hold-timer`.
 - **`FindAlternativeDialog.tsx`** — "Find an alternative": the coach's `alternatives` first when the
   caller passes them (rendered at once from plan data, pictures filled in by `getExercisesBatch`), then
   suggestions on open (`GET /exercises/{id}/alternatives`; an unlinked exercise first borrows its nearest name match's

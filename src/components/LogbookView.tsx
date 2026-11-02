@@ -1,14 +1,15 @@
-import { Bike, Check, Dumbbell, Footprints, MoreHorizontal, Play, Plus, Sparkles, Square, Timer, Users, Waves, X } from 'lucide-react';
+import { Bike, Check, Dumbbell, Footprints, Maximize2, MoreHorizontal, Pause, Play, Plus, Sparkles, Timer, Users, Waves, X } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { Link } from 'react-router-dom';
 
 import Confetti from '@/components/Confetti';
 import { googleSearchUrl, youtubeSearchUrl } from '@/components/ExerciseLookup';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
+import { HoldBar, HoldScreen, useHoldTimer } from '@/components/HoldTimer';
 import { IntervalPlayer } from '@/components/WorkoutCapture';
 import { ExerciseDemo } from '@/components/WorkoutGuided';
 import { Button, Segmented, Sheet } from '@/components/ui';
-import { playAlert } from '@/lib/alertSound';
+import { playHoldCue, prepareTimerSounds, readTimerSounds, saveTimerSounds } from '@/lib/alertSound';
 import {
   getExercisesBatch,
   getLastSessions,
@@ -30,6 +31,7 @@ import {
   firstOpenIndex,
   forgotFinishAt,
   lastAndRestText,
+  lastTimeText,
   lastSessionsByKey,
   lastSetText,
   nextOpenIndex,
@@ -53,6 +55,8 @@ import {
   workoutTally,
   type SetValues,
 } from '@/lib/logbook';
+import { countdownCue, displaySeconds, holdPosition, startHold, type HoldTimer } from '@/lib/holdTimer';
+import { formatDuration, parseDurationDraft } from '@/lib/numberEntry';
 import { useWakeLock } from '@/lib/wakeLock';
 import { dateForDayKey } from '@/lib/workout';
 import { resolveRestTimer } from '@/lib/workoutPrefs';
@@ -86,14 +90,6 @@ interface LogbookViewProps {
   onLeave: () => void;
   onDiscard: () => void;
   onDone: () => void;
-}
-
-interface RunningTimer {
-  blockKey: string;
-  setIndex: number;
-  endsAt: number;
-  /** When a per-side hold changes sides. Null for everything else. */
-  switchAt: number | null;
 }
 
 type OpenSheet =
@@ -160,8 +156,10 @@ export default function LogbookView({
   const [durationSeconds, setDurationSeconds] = useState(0);
   const [now, setNow] = useState(() => Date.now());
   const [rest, setRest] = useState<{ endsAt: number; total: number } | null>(null);
-  const [timer, setTimer] = useState<RunningTimer | null>(null);
-  const [sideSwitched, setSideSwitched] = useState(false);
+  const [timer, setTimer] = useState<HoldTimer | null>(null);
+  /** The timer fills the screen until it's put away, and the bar brings it back. */
+  const [timerOpen, setTimerOpen] = useState(false);
+  const [timerSoundsOn] = useState(readTimerSounds);
   const [catalog, setCatalog] = useState<Record<string, ExerciseDetail>>({});
   const [firstTimeKeys, setFirstTimeKeys] = useState<string[]>([]);
   const finishingRef = useRef(false);
@@ -246,11 +244,27 @@ export default function LogbookView({
   // ── Rest ───────────────────────────────────────────────────────────────────────────────
   const restRemaining = rest ? secondsUntil(rest.endsAt, now) : 0;
   useEffect(() => {
-    if (rest && restRemaining <= 0) {
-      setRest(null);
-      playAlert();
-    }
+    if (rest && restRemaining <= 0) setRest(null);
   }, [rest, restRemaining]);
+
+  // Beeps for the last 3 seconds and the end, as a hold has. Its own fast check, so the list
+  // doesn't redraw five times a second.
+  const restEndsAt = rest?.endsAt ?? null;
+  useEffect(() => {
+    if (restEndsAt == null) return;
+    let last = Date.now();
+    const id = window.setInterval(() => {
+      const at = Date.now();
+      const cue = countdownCue(restEndsAt, last, at);
+      last = at;
+      if (cue) playHoldCue(cue, timerSoundsOn);
+    }, 200);
+    return () => {
+      window.clearInterval(id);
+      // The page's clock may end the rest a moment before this check sees it.
+      if (countdownCue(restEndsAt, last, Date.now()) === 'go') playHoldCue('go', timerSoundsOn);
+    };
+  }, [restEndsAt, timerSoundsOn]);
 
   // ── A finished exercise hands over to the next ─────────────────────────────────────────
   const moveOnFrom = useCallback((after: Block[], blockIndex: number) => {
@@ -268,52 +282,57 @@ export default function LogbookView({
   }, []);
 
   const tickOneSet = useCallback(
-    (blockIndex: number, setIndex: number, done: boolean) => {
-      const after = tickSet(blocks, blockIndex, setIndex, done);
+    (blockIndex: number, setIndex: number, done: boolean, base: Block[] = blocks) => {
+      const after = tickSet(base, blockIndex, setIndex, done);
       setBlocks(after);
       moveOnFrom(after, blockIndex);
       const count = workoutTally(after);
       const seconds = after[blockIndex]?.restSeconds ?? 0;
       if (done && restOn && seconds > 0 && !isIntervalBlock(after[blockIndex]) && count.done < count.total) {
+        if (timerSoundsOn) prepareTimerSounds();
         setRest({ endsAt: Date.now() + seconds * 1000, total: seconds });
       }
     },
-    [blocks, moveOnFrom, restOn, setBlocks],
+    [blocks, moveOnFrom, restOn, setBlocks, timerSoundsOn],
   );
 
   // ── Timed sets ─────────────────────────────────────────────────────────────────────────
   const stopTimer = useCallback(() => {
     setTimer(null);
-    setSideSwitched(false);
+    setTimerOpen(false);
   }, []);
 
   const startTimer = useCallback(
     (blockKey: string, setIndex: number) => {
       const block = blocks[indexOfKey(blockKey)];
       const seconds = block?.sets[setIndex]?.durationSeconds ?? block?.durationSeconds ?? 30;
-      const perSide = block?.isPerSide === true;
-      const startAt = Date.now();
-      setTimer({ blockKey, setIndex, endsAt: startAt + seconds * (perSide ? 2 : 1) * 1000, switchAt: perSide ? startAt + seconds * 1000 : null });
-      setSideSwitched(false);
+      if (timerSoundsOn) prepareTimerSounds();
+      setTimer(startHold({ blockKey, setIndex, holdSeconds: seconds, perSide: block?.isPerSide === true }, Date.now()));
+      setTimerOpen(true);
       setRest(null);
     },
-    [blocks, indexOfKey],
+    [blocks, indexOfKey, timerSoundsOn],
   );
 
-  const timerRemaining = timer ? secondsUntil(timer.endsAt, now) : 0;
-  useEffect(() => {
-    if (!timer) return;
-    if (timer.switchAt != null && !sideSwitched && now >= timer.switchAt) {
-      setSideSwitched(true);
-      playAlert();
-    }
-    if (timerRemaining <= 0 && now >= timer.endsAt) {
+  // The full time ticks the set as planned. "Done" before then logs the time actually held.
+  const finishTimer = useCallback(
+    (held: number | null) => {
+      if (!timer) return;
       const blockIndex = indexOfKey(timer.blockKey);
       stopTimer();
-      playAlert();
-      if (blockIndex !== -1) tickOneSet(blockIndex, timer.setIndex, true);
-    }
-  }, [timer, now, sideSwitched, timerRemaining, indexOfKey, stopTimer, tickOneSet]);
+      if (blockIndex === -1) return;
+      const base =
+        held != null && held >= 1 && held !== timer.holdSeconds
+          ? setSetValues(blocks, blockIndex, timer.setIndex, { durationSeconds: held }, false)
+          : blocks;
+      tickOneSet(blockIndex, timer.setIndex, true, base);
+    },
+    [blocks, indexOfKey, stopTimer, tickOneSet, timer],
+  );
+
+  const hold = useHoldTimer(timer, timerSoundsOn, setTimer, finishTimer);
+  const holdBlock = timer ? blocks[indexOfKey(timer.blockKey)] : undefined;
+  const holdName = formatExerciseName(holdBlock?.name ?? '');
 
   // ── Finishing ──────────────────────────────────────────────────────────────────────────
   const finishWorkout = useCallback(
@@ -450,6 +469,9 @@ export default function LogbookView({
     </div>
   ) : null;
 
+  const holdBarView =
+    hold && timer && !timerOpen ? <HoldBar controls={hold} name={holdName} perSide={timer.perSide} onOpen={() => setTimerOpen(true)} /> : null;
+
   const restSwitch = (
     <button
       role="switch"
@@ -574,6 +596,7 @@ export default function LogbookView({
                   const block = blocks[bi];
                   const detail = block.exercise_id ? catalog[block.exercise_id] : undefined;
                   const rowTimer = timer?.blockKey === block.key ? timer : null;
+                  const rowPosition = rowTimer ? holdPosition(rowTimer, now) : null;
                   return (
                     <ExerciseCard
                       key={block.key}
@@ -587,8 +610,9 @@ export default function LogbookView({
                       alternativeCount={sessionCoachAlternatives(block).length}
                       accessToken={accessToken}
                       timerSet={rowTimer?.setIndex ?? null}
-                      timerRemaining={timerRemaining}
-                      timerLabel={rowTimer?.switchAt == null ? '' : sideSwitched ? 'Second side' : 'First side'}
+                      timerRemaining={rowPosition ? displaySeconds(rowPosition) : 0}
+                      timerPaused={rowPosition?.paused === true}
+                      timerLabel={!rowTimer || !rowPosition ? '' : rowPosition.phase === 'switch' ? 'Switch sides' : rowTimer.perSide ? `Side ${rowPosition.side} of 2` : ''}
                       onToggle={() => setOpenKey((key) => (key === block.key ? null : block.key))}
                       onTickExercise={() => {
                         const isDone = block.sets.every((s) => s.completed) && !block.skipped;
@@ -614,7 +638,7 @@ export default function LogbookView({
                         moveOnFrom(after, bi);
                       }}
                       onStartTimer={(si) => startTimer(block.key, si)}
-                      onStopTimer={stopTimer}
+                      onOpenTimer={() => setTimerOpen(true)}
                       onAddSet={() => setBlocks((prev) => addSet(prev, bi))}
                       onRemoveSet={() => setBlocks((prev) => removeSet(prev, bi))}
                       onInfo={() => setSheet({ kind: 'info', blockKey: block.key })}
@@ -645,18 +669,31 @@ export default function LogbookView({
             {restSwitch}
             <div className="flex">{finishButton}</div>
           </div>
+          {holdBarView ? <div className="overflow-hidden rounded-2xl">{holdBarView}</div> : null}
           {restBar ? <div className="overflow-hidden rounded-2xl">{restBar}</div> : null}
           <p className="px-1 text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>Press Tab to move through the numbers.</p>
         </aside>
       </div>
 
       <div className="sticky bottom-0 z-20 lg:hidden">
+        {holdBarView}
         {restBar}
         <footer className="flex items-center gap-2 px-4 pb-3 pt-2.5" style={{ background: 'var(--ground)', borderTop: '1px solid var(--line)' }}>
           {restSwitch}
           {finishButton}
         </footer>
       </div>
+
+      {hold && timer && timerOpen ? (
+        <HoldScreen
+          controls={hold}
+          name={holdName}
+          setLabel={`Set ${timer.setIndex + 1} of ${holdBlock?.sets.length ?? 1}`}
+          perSide={timer.perSide}
+          onMinimise={() => setTimerOpen(false)}
+          onCancel={stopTimer}
+        />
+      ) : null}
 
       {sheet?.kind === 'menu' && sheetBlock ? (
         <Sheet open title={formatExerciseName(sheetBlock.name)} onClose={() => setSheet(null)}>
@@ -925,6 +962,7 @@ interface ExerciseCardProps {
   accessToken?: string;
   timerSet: number | null;
   timerRemaining: number;
+  timerPaused: boolean;
   timerLabel: string;
   onToggle: () => void;
   onTickExercise: () => void;
@@ -933,7 +971,7 @@ interface ExerciseCardProps {
   onWeight: (setIndex: number, weight: number) => void;
   onRounds: (rounds: number) => void;
   onStartTimer: (setIndex: number) => void;
-  onStopTimer: () => void;
+  onOpenTimer: () => void;
   onAddSet: () => void;
   onRemoveSet: () => void;
   onInfo: () => void;
@@ -952,6 +990,7 @@ function ExerciseCard({
   accessToken,
   timerSet,
   timerRemaining,
+  timerPaused,
   timerLabel,
   onToggle,
   onTickExercise,
@@ -960,7 +999,7 @@ function ExerciseCard({
   onWeight,
   onRounds,
   onStartTimer,
-  onStopTimer,
+  onOpenTimer,
   onAddSet,
   onRemoveSet,
   onInfo,
@@ -975,9 +1014,10 @@ function ExerciseCard({
   const noMatch = catalog && !block.exercise_id;
   const interval = isIntervalBlock(block);
   const tag = block.swappedFrom ? `Swapped from ${formatExerciseName(block.swappedFrom)} for today` : block.addedToday ? 'Added today' : null;
-  const lastLine = lastAndRestText(block);
   const showFirstTime = firstTime && usesWeight(block.type) && block.sets.every((s) => s.weight <= 0);
-  const line = showFirstTime ? `First time. Pick a weight you can control.${block.restSeconds > 0 ? ` · Rest ${block.restSeconds} s` : ''}` : lastLine;
+  // Rest gets its own colour, so it's easy to find next to "Last time".
+  const line = showFirstTime ? 'First time. Pick a weight you can control.' : interval ? lastAndRestText(block) : lastTimeText(block);
+  const restLine = !interval && block.restSeconds > 0 ? `Rest ${block.restSeconds} s` : null;
   const FallbackIcon =
     block.type === 'class'
       ? Users
@@ -1058,7 +1098,13 @@ function ExerciseCard({
             <span>{block.notes}</span>
           </p>
         ) : null}
-        {line ? <span className="mx-1 text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>{line}</span> : null}
+        {line || restLine ? (
+          <span className="mx-1 text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>
+            {line}
+            {line && restLine ? ' · ' : ''}
+            {restLine ? <span className="text-[13.5px] font-bold" style={{ color: 'var(--teal)' }}>{restLine}</span> : null}
+          </span>
+        ) : null}
 
         {interval ? (
           <button
@@ -1074,12 +1120,13 @@ function ExerciseCard({
           block={block}
           timerSet={timerSet}
           timerRemaining={timerRemaining}
+          timerPaused={timerPaused}
           onTickSet={onTickSet}
           onValues={onValues}
           onWeight={onWeight}
           onRounds={onRounds}
           onStartTimer={onStartTimer}
-          onStopTimer={onStopTimer}
+          onOpenTimer={onOpenTimer}
         />
         {timerLabel ? <span className="mx-1 text-[13px] font-bold" style={{ color: 'var(--teal)' }}>{timerLabel}</span> : null}
 
@@ -1171,6 +1218,36 @@ function NumberCell({
   );
 }
 
+/** A run or class's time, typed as 32:45 or 1:05:30. A plain number is minutes. */
+function TimeCell({ seconds, label, onCommit, done }: { seconds: number; label: string; onCommit: (next: number) => void; done: boolean }) {
+  const shown = seconds > 0 ? formatDuration(seconds) : '';
+  const [draft, setDraft] = useState<string | null>(null);
+  const commit = () => {
+    if (draft == null) return;
+    const next = parseDurationDraft(draft);
+    setDraft(null);
+    if (next != null && next !== seconds) onCommit(next);
+  };
+  return (
+    <input
+      aria-label={`${label}, as minutes:seconds`}
+      // A text keyboard: a phone's number pad has no colon.
+      autoComplete="off"
+      value={draft ?? shown}
+      placeholder="mm:ss"
+      onFocus={(e) => e.target.select()}
+      onChange={(e) => setDraft(e.target.value.replace(/[^\d:.,]/g, ''))}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur();
+        if (e.key === 'Escape') setDraft(null);
+      }}
+      className="font-number tabular h-11 w-full min-w-0 rounded-[10px] text-center text-[24px] font-bold outline-none placeholder:text-[18px] focus:ring-2"
+      style={{ background: done ? 'transparent' : 'var(--ground)', color: done ? 'var(--ink)' : 'var(--ink-2)' }}
+    />
+  );
+}
+
 function SetTick({ done, label, onClick }: { done: boolean; label: string; onClick: () => void }) {
   return (
     <button aria-pressed={done} aria-label={label} onClick={onClick} className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
@@ -1212,15 +1289,16 @@ interface SetTableProps {
   block: Block;
   timerSet: number | null;
   timerRemaining: number;
+  timerPaused: boolean;
   onTickSet: (setIndex: number) => void;
   onValues: (setIndex: number, values: SetValues) => void;
   onWeight: (setIndex: number, weight: number) => void;
   onRounds: (rounds: number) => void;
   onStartTimer: (setIndex: number) => void;
-  onStopTimer: () => void;
+  onOpenTimer: () => void;
 }
 
-function SetTable({ block, timerSet, timerRemaining, onTickSet, onValues, onWeight, onRounds, onStartTimer, onStopTimer }: SetTableProps) {
+function SetTable({ block, timerSet, timerRemaining, timerPaused, onTickSet, onValues, onWeight, onRounds, onStartTimer, onOpenTimer }: SetTableProps) {
   const unit = block.weightUnit === 'lb' ? 'Lb' : 'Kg';
   const name = formatExerciseName(block.name);
   const lastOf = (i: number) => lastSetText(block.lastSets?.[i]);
@@ -1241,9 +1319,9 @@ function SetTable({ block, timerSet, timerRemaining, onTickSet, onValues, onWeig
     const set = block.sets[0];
     return (
       <div className="flex flex-col gap-1">
-        <Headings first="Minutes" second={block.type === 'cardio' ? 'Km' : undefined} />
+        <Headings first="Time" second={block.type === 'cardio' ? 'Km' : undefined} />
         <Row n={1} done={set.completed} last={lastOf(0)} tick={<SetTick done={set.completed} label={set.completed ? 'Done, select to untick' : 'Tick as done'} onClick={() => onTickSet(0)} />}>
-          <NumberCell value={Math.round((set.durationSeconds ?? 0) / 60)} label={`Minutes, ${name}`} decimals={false} done={set.completed} onCommit={(n) => onValues(0, { durationSeconds: n * 60 })} />
+          <TimeCell seconds={set.durationSeconds ?? 0} label={`Time, ${name}`} done={set.completed} onCommit={(n) => onValues(0, { durationSeconds: n })} />
           {block.type === 'cardio' ? (
             <NumberCell value={set.distanceKm ?? 0} label={`Kilometres, ${name}`} decimals done={set.completed} onCommit={(n) => onValues(0, { distanceKm: n })} />
           ) : null}
@@ -1272,14 +1350,14 @@ function SetTable({ block, timerSet, timerRemaining, onTickSet, onValues, onWeig
                 ) : null}
                 {set.completed ? null : (
                   <button
-                    aria-label={running ? `Stop the timer, ${timerRemaining} seconds left` : `Start the timer for set ${si + 1}`}
-                    onClick={running ? onStopTimer : () => onStartTimer(si)}
+                    aria-label={running ? `Open the timer, ${timerRemaining} seconds left` : `Start the timer for set ${si + 1}`}
+                    onClick={running ? onOpenTimer : () => onStartTimer(si)}
                     className={`flex h-11 flex-shrink-0 items-center justify-center gap-1.5 rounded-[10px] px-2 text-[13.5px] font-bold ${loaded ? 'min-w-[44px]' : 'min-w-[64px] flex-1'}`}
                     style={{ background: running ? 'var(--ink)' : 'var(--sunken)', color: running ? 'var(--ground)' : 'var(--ink)' }}
                   >
                     {running ? (
                       <>
-                        <Square size={12} fill="currentColor" />
+                        {timerPaused ? <Pause size={13} fill="currentColor" /> : <Maximize2 size={14} />}
                         <span className="font-number tabular text-[20px]">{formatClock(timerRemaining)}</span>
                       </>
                     ) : (
@@ -1660,6 +1738,7 @@ export function WorkoutPrefsCard({ accessToken }: { accessToken?: string }) {
   const profile = useAppStore((s) => s.profile);
   const setProfile = useAppStore((s) => s.setProfile);
   const [error, setError] = useState<string | null>(null);
+  const [soundsOn, setSoundsOn] = useState(readTimerSounds);
   const restOn = resolveRestTimer(profile.rest_timer_enabled);
   const step = profile.weight_step != null && profile.weight_step > 0 ? profile.weight_step : 1;
   const unit = profile.preferred_unit_system === 'imperial' ? 'lb' : 'kg';
@@ -1710,6 +1789,18 @@ export function WorkoutPrefsCard({ accessToken }: { accessToken?: string }) {
       <p className="text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
         Saved to your account, so the phone and web match. You can still switch the rest timer during any workout.
       </p>
+      {group(
+        'Timer sounds',
+        'Beeps for the last 3 seconds of a timed hold or a rest, when it’s time to switch sides, and at the end. Saved in this browser only.',
+        <Segmented
+          value={soundsOn ? 'on' : 'off'}
+          onChange={(v) => {
+            setSoundsOn(v === 'on');
+            saveTimerSounds(v === 'on');
+          }}
+          options={[{ value: 'off', label: 'Off' }, { value: 'on', label: 'On' }]}
+        />,
+      )}
     </div>
   );
 }

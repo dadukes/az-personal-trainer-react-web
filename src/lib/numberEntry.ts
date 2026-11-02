@@ -52,3 +52,22 @@ export function splitDuration(totalSeconds: number): { h: number; m: number; s: 
   const t = Math.max(0, Math.round(totalSeconds));
   return { h: Math.floor(t / 3600), m: Math.floor((t % 3600) / 60), s: t % 60 };
 }
+
+/**
+ * Parses a typed time: "32:45", "1:05:30", or plain minutes ("32", "32.5"). `null` when it
+ * isn't a time; 0 when it's empty.
+ */
+export function parseDurationDraft(text: string): number | null {
+  const trimmed = text.trim().replace(',', '.');
+  if (trimmed === '') return 0;
+  if (!trimmed.includes(':')) {
+    const minutes = Number(trimmed);
+    return Number.isFinite(minutes) && minutes >= 0 ? Math.round(minutes * 60) : null;
+  }
+  const parts = trimmed.split(':');
+  if (parts.length > 3 || parts.some((p) => !/^\d+$/.test(p))) return null;
+  const numbers = parts.map(Number);
+  const [h, m, s] = numbers.length === 3 ? numbers : [0, numbers[0], numbers[1]];
+  if (s > 59 || (numbers.length === 3 && m > 59)) return null;
+  return h * 3600 + m * 60 + s;
+}

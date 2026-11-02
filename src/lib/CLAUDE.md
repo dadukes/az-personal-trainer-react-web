@@ -51,6 +51,11 @@ for project-wide rules.
   duration · distance in the user's units, and the user's note on coach/quick logs. No zone maths:
   `seconds_in_zone` and `zone_model` come from `GET /activities` / the dashboard.
 
+## holdTimer.ts / alertSound.ts — the logbook's timed holds
+
+- `holdTimer.ts` is kept **identical** to the mobile app's `lib/hold-timer.ts` (one hold, or side one, a 5 s switch break and side two; pause and resume; which beep to play). `alertSound.ts` plays the beeps, for holds and for rest (`countdownCue`), through one Web Audio context opened by the click that starts the timer, and keeps the "Timer sounds" setting in this browser only (`forma:timer-sounds`, on by default). The screen and bar are `components/HoldTimer.tsx`.
+- A run or class's time is typed as `32:45` or `1:05:30` (`parseDurationDraft` in `numberEntry.ts`); a plain number is minutes.
+
 ## env.ts
 
 - Only `import.meta.env.VITE_*` vars are readable in the browser bundle. Add new config here
