@@ -32,6 +32,10 @@ interface WeekActivityCardProps {
   isPlanDone: (dateISO: string) => boolean;
   unitSystem: UnitSystem;
   onOpenActivity: (item: ActivityItem | null) => void;
+  /** A past plan day not done: its workout's name, or null. Without it, missed days aren't offered. */
+  missedPlan?: (dateISO: string) => string | null;
+  /** Logs the missed plan day for that date. */
+  onLogMissed?: (dateISO: string) => void;
 }
 
 /**
@@ -40,15 +44,17 @@ interface WeekActivityCardProps {
  * quick log — gets a separate dot, so the plan's completion stays truthful while nothing
  * the user did is invisible. Selecting a day lists its activities.
  */
-export default function WeekActivityCard({ weekActivities, isPlanDone, unitSystem, onOpenActivity }: WeekActivityCardProps) {
+export default function WeekActivityCard({ weekActivities, isPlanDone, unitSystem, onOpenActivity, missedPlan, onLogMissed }: WeekActivityCardProps) {
   const today = localISODate();
   const dates = useMemo(() => currentWeekDates(), []);
   const [selected, setSelected] = useState(today);
 
-  const hasAnything = dates.some((d) => (weekActivities[d]?.length ?? 0) > 0 || isPlanDone(d));
+  const missedOn = (d: string) => (missedPlan && onLogMissed && d < today ? missedPlan(d) : null);
+  const hasAnything = dates.some((d) => (weekActivities[d]?.length ?? 0) > 0 || isPlanDone(d) || missedOn(d) != null);
   if (!hasAnything) return null;
 
   const items = weekActivities[selected] ?? [];
+  const missed = isPlanDone(selected) ? null : missedOn(selected);
   const emptyCopy = isPlanDone(selected)
     ? 'Planned workout done. Nothing else logged.'
     : selected === today
@@ -136,6 +142,15 @@ export default function WeekActivityCard({ weekActivities, isPlanDone, unitSyste
             {emptyCopy}
           </p>
         )}
+
+        {missed && onLogMissed ? (
+          <button type="button" onClick={() => onLogMissed(selected)} className="flex min-h-[44px] items-center justify-between gap-3 text-left">
+            <span className="text-[13.5px] leading-[19px]" style={{ color: 'var(--text-secondary)' }}>
+              {weekdayName(selected)}&rsquo;s {missed} isn&rsquo;t ticked. Did it?
+            </span>
+            <span className="flex-shrink-0 text-[14px] font-bold" style={{ color: 'var(--accent-text)' }}>Log it</span>
+          </button>
+        ) : null}
       </div>
     </Card>
   );

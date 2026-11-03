@@ -78,6 +78,10 @@ export interface Block {
   addedToday?: boolean;
   /** Logbook: every completed set from the last time this was done. */
   lastSets?: LastSessionSet[];
+  /** Edit: the saved workout has sets for this, so saving always sends it. */
+  wasLogged?: boolean;
+  /** Edit: counted as done with no sets, by the coach or a watch recording. */
+  doneBy?: 'coach' | 'watch';
   // ── cardio ──
   activityKind?: CardioActivityKind;
   cardioFormat?: CardioFormat;
@@ -202,7 +206,7 @@ export function blockTargetText(block: Block): string {
   return `${sets}${block.repText ?? 'reps'}`;
 }
 
-function buildBlock(
+export function buildBlock(
   ex: DashboardExercise,
   section: WorkoutSection,
   index: number,

@@ -320,7 +320,10 @@ export function exerciseSummary(block: Block): string {
   if (block.skipped) return 'Skipped';
   const { sets } = block;
   const done = sets.filter((s) => s.completed);
-  if (done.length === 0) return exerciseTarget(block);
+  if (done.length === 0) {
+    if (block.doneBy) return block.doneBy === 'watch' ? 'Recorded on your watch' : 'Done, logged with your coach';
+    return exerciseTarget(block);
+  }
   if (isIntervalBlock(block)) {
     return done.length === sets.length
       ? plural(done.length, 'round')

@@ -40,6 +40,8 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 | `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
 | `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link via `FindAlternativeDialog`, remove |
 | `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → the save queue (`workoutSync.ts`) |
+| `/workout/log` | `WorkoutLogPage` | The logbook in Log mode (`?date=YYYY-MM-DD`, `&day=` a plan day or `none`): a finished workout, saved through the same queue. Behind the `logbook` flag |
+| `/workout/edit/:id` | `WorkoutEditPage` | The logbook in Edit mode: the whole workout saved with `PUT /workouts/sessions/{id}`, or deleted. Behind the `logbook` flag |
 | `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts). Open session is `?session=<id>`: two screens below `lg` (list → transcript, Back returns to list), side by side from `lg` |
 
 `:day` accepts a backend day key (`monday`…`sunday`) or `today` (resolved to the current weekday).
@@ -82,6 +84,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   and it returns if the user swaps back.
 - **Logbook** (`src/components/LogbookView.tsx`, behind the `logbook` flag): `WorkoutSessionPage` still loads the workout, writes the draft and guards leaving, and picks the logbook or the old view. From `lg` every exercise is open, with inputs in Tab order and the clock in a side panel. Below that it works like the phone: one exercise open, and a footer. `src/lib/logbook.ts` is the logic, mirrored on mobile.
   A blank weight is 0, shows "Add" and logs as no load, as there's no bodyweight type. A typed weight carries down (`carryWeight`) under the same rule as the old view. A per-side hold stores one side's seconds, and `toLogbookExercises` doubles it for the save. A rest starts only from a single-set tick, and not on the workout's last set. Preferences are on the account (`WorkoutPrefsCard` on Profile), and never-chosen means off.
+- **Log and Edit** (`past` on `LogbookView`, pages `WorkoutLogPage` / `WorkoutEditPage`): the same page with no clock, rest or timers, the date and times at the top (`LogbookPast.tsx`), and Save in the footer or side panel. The page owns the exercises and times; `LogbookView` owns saving. Nothing is stored until Save, so there's no sentinel history entry: the X asks first once something changed, and `beforeunload` covers reload. Edit leaves with `-1`, or to the workout's page when opened directly or from a summary's "Fix something" (`state.fromSummary`). Rules in `src/lib/logbookPast.ts`, mirrored on mobile. With the flag on, the workout page's exercises open Edit instead of `WorkoutExerciseDialog` (removed in Phase 10).
 - **Profile / coach memory**: the `CoachMemory` card sits between Personalization and the save
   row and shows the AI's global memory — the same `user_memory` rows the backend pastes into the
   coach's system instruction — with edit / add / forget. It is deliberately **outside** the

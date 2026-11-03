@@ -24,6 +24,8 @@ import { useNavigate, useParams } from 'react-router-dom';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import { getWorkoutPlan, updatePlanDay, type DashboardExercise } from '@/lib/api';
+import { isFeatureEnabled } from '@/lib/featureFlags';
+import { lastDateForDayKey } from '@/lib/logbookPast';
 import {
   exerciseIconKey,
   exerciseMeta,
@@ -349,6 +351,11 @@ export default function PlanDayPage() {
               leftIcon={<Play size={16} color="var(--accent-text)" fill="var(--accent-text)" />}
             >
               Start workout
+            </Button>
+          ) : null}
+          {!isRest && isFeatureEnabled('logbook') ? (
+            <Button variant="link" fullWidth onClick={() => navigate(`/workout/log?day=${dayKey}&date=${lastDateForDayKey(dayKey, new Date())}`)}>
+              Already did it? Log it
             </Button>
           ) : null}
         </>

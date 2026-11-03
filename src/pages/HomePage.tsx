@@ -14,6 +14,7 @@ import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import {
   getDashboard,
   getHealthLog,
+  getWorkoutSessions,
   logActivity,
   saveBodyMeasurements,
   syncHealth,
@@ -27,6 +28,8 @@ import {
   saveManualCapture,
   type ManualHealthCapture,
 } from '@/lib/health';
+import { isFeatureEnabled } from '@/lib/featureFlags';
+import { dayKeyForDate, planDayTitles, workoutsOnDate } from '@/lib/logbookPast';
 import { completionKey, currentWeekDateForDayKey, localISODate } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
@@ -90,6 +93,8 @@ export default function HomePage() {
   } = useAppStore();
   const workoutDraft = useAppStore((s) => s.workoutDraft);
   const [planId, setPlanId] = useState<string | undefined>();
+  /** Every workout day on the plan, by day key: the week row only shows the next five. */
+  const [planTitles, setPlanDayTitles] = useState<Record<string, string>>({});
   /** Authoritative completed dates (local `YYYY-MM-DD`) from the dashboard's `completed_days`. */
   const [serverCompletedDates, setServerCompletedDates] = useState<Set<string>>(() => new Set());
   /** Dashboard `week_activities`: this week's activities outside guided workouts, by local date. */
@@ -113,6 +118,7 @@ export default function HomePage() {
       const result = await getDashboard(session.access_token);
       const plan = result.data.active_workout_plan;
       setPlanId(plan?.id);
+      setPlanDayTitles(planDayTitles(plan?.plan));
       setServerCompletedDates(
         new Set(
           Object.keys(result.data.completed_days ?? {}).map((dayKey) =>
@@ -196,6 +202,32 @@ export default function HomePage() {
   );
   const todayHasWorkout = Boolean(todayWorkout && todayWorkout.duration !== '-');
   const todayCompleted = todayWorkout ? isDayCompleted(todayWorkout.date) : false;
+
+  // ── Logging afterwards (the logbook flag) ─────────────────────────────────
+  const logbookOn = isFeatureEnabled('logbook');
+  const logWorkout = (params: { date?: string; day?: string } = {}) => {
+    const query = new URLSearchParams(Object.entries(params).filter((entry): entry is [string, string] => entry[1] != null));
+    navigate(`/workout/log${query.size > 0 ? `?${query.toString()}` : ''}`);
+  };
+  const [openingToday, setOpeningToday] = useState(false);
+  const openTodaysWorkout = async () => {
+    if (!session?.access_token || openingToday) return;
+    setOpeningToday(true);
+    try {
+      const { sessions } = await getWorkoutSessions(session.access_token, 10);
+      const found = workoutsOnDate(sessions, localISODate(new Date()))[0];
+      navigate(found ? `/activities/workout/${found.id}` : '/activities');
+    } catch {
+      navigate('/activities');
+    } finally {
+      setOpeningToday(false);
+    }
+  };
+  /** A past day this week whose planned workout isn't ticked: its name, for "Log it". */
+  const missedPlan = (dateISO: string): string | null => {
+    const title = planTitles[dayKeyForDate(dateISO)];
+    return title && !isDayCompleted(dateISO) ? title : null;
+  };
 
   const startTodayWorkout = () => {
     if (todayCompleted) {
@@ -387,7 +419,8 @@ export default function HomePage() {
       {workoutDraft ? (
         <WorkoutResumeCard draft={workoutDraft} />
       ) : hasPlan ? (
-        <div className="flex items-center justify-between rounded-hero p-5 sm:p-7" style={{ background: 'var(--hero)' }}>
+        <div className="flex flex-col gap-4 rounded-hero p-5 sm:p-7" style={{ background: 'var(--hero)' }}>
+        <div className="flex items-center justify-between">
             <div className="min-w-0">
               {todayCompleted ? (
                 <div
@@ -441,6 +474,35 @@ export default function HomePage() {
                 </button>
               ) : null}
             </div>
+        </div>
+        {logbookOn && todayHasWorkout ? (
+          todayCompleted ? (
+            <div className="flex gap-2">
+              <button
+                onClick={() => void openTodaysWorkout()}
+                className="h-12 flex-1 rounded-control text-[14.5px] font-bold transition-transform active:scale-[0.98]"
+                style={{ background: 'var(--forma-aqua)', color: 'var(--on-aqua)' }}
+              >
+                {openingToday ? 'Opening…' : 'View or edit'}
+              </button>
+              <button
+                onClick={() => logWorkout({ day: 'none' })}
+                className="h-12 flex-1 rounded-control text-[14.5px] font-bold transition-transform active:scale-[0.98]"
+                style={{ border: '1px solid var(--hero-sub)', color: 'var(--hero-ink)' }}
+              >
+                Log another
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={() => logWorkout({ day: todayWorkout?.key, date: localISODate(new Date()) })}
+              className="-my-2 min-h-[44px] self-start text-[14px] font-semibold"
+              style={{ color: 'var(--hero-ink)' }}
+            >
+              Already did it? Log it
+            </button>
+          )
+        ) : null}
         </div>
       ) : (
         <Card onClick={handlePlanCTA} className="hover:brightness-[0.99]">
@@ -547,15 +609,20 @@ export default function HomePage() {
         isPlanDone={isDayCompleted}
         unitSystem={profile.preferred_unit_system}
         onOpenActivity={(item) => navigate(item ? `/activities/${item.id}` : '/activities')}
+        missedPlan={logbookOn && hasPlan ? missedPlan : undefined}
+        onLogMissed={logbookOn ? (date) => logWorkout({ date, day: dayKeyForDate(date) }) : undefined}
       />
 
       {/* Every manual-capture flow lives on one FAB so the header and the snapshot card
           stay clean (and competing "Log" buttons don't pile up). */}
       <QuickActionsFab
         actions={[
+          ...(logbookOn
+            ? [{ id: 'finished-workout', label: 'Finished workout', icon: <Check size={16} color="var(--accent-text)" />, onSelect: () => logWorkout() }]
+            : []),
           {
             id: 'activity',
-            label: 'Log workout',
+            label: logbookOn ? 'Run, class or walk' : 'Log workout',
             icon: <Dumbbell size={16} color="var(--accent-text)" />,
             onSelect: () => {
               setQuickLogError(null);

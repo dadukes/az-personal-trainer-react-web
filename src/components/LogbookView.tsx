@@ -10,16 +10,22 @@ import { IntervalPlayer } from '@/components/WorkoutCapture';
 import { ExerciseDemo } from '@/components/WorkoutGuided';
 import { Button, Segmented, Sheet } from '@/components/ui';
 import { playHoldCue, prepareTimerSounds, readTimerSounds, saveTimerSounds } from '@/lib/alertSound';
+import { DateTimesSheet, DeleteSheet, DiscardSheet, SourceSheet, WhenCard, shortDate } from '@/components/LogbookPast';
 import {
+  deleteWorkoutSession,
   getExercisesBatch,
   getLastSessions,
   getWorkoutPlan,
   patchProfile,
   updatePlanDay,
+  updateWorkoutSession,
   userSafeError,
+  type DashboardDayPlan,
   type ExerciseDetail,
   type ProfilePayload,
   type WorkoutSection,
+  type WorkoutSessionSource,
+  type WorkoutSessionSummary,
 } from '@/lib/api';
 import { formatExerciseName, formatMuscle, isCatalogExercise, sessionCoachAlternatives, usesWeight, type ExercisePick } from '@/lib/exercise';
 import {
@@ -55,12 +61,21 @@ import {
   workoutTally,
   type SetValues,
 } from '@/lib/logbook';
+import {
+  dayKeyForDate,
+  sessionName,
+  tickedSetCount,
+  timesProblem,
+  toEditExercises,
+  workoutsOnDate,
+  type PlanDayChoice,
+} from '@/lib/logbookPast';
 import { countdownCue, displaySeconds, holdPosition, startHold, type HoldTimer } from '@/lib/holdTimer';
 import { formatDuration, parseDurationDraft } from '@/lib/numberEntry';
 import { useWakeLock } from '@/lib/wakeLock';
-import { dateForDayKey } from '@/lib/workout';
+import { dateForDayKey, localISODate } from '@/lib/workout';
 import { resolveRestTimer } from '@/lib/workoutPrefs';
-import { formatClock, isCountdownBlock, isIntervalBlock, type Block } from '@/lib/workoutSession';
+import { buildBlocks, formatClock, isCountdownBlock, isIntervalBlock, type Block } from '@/lib/workoutSession';
 import { secondsUntil } from '@/lib/workoutDraft';
 import { finishActiveWorkout, getActiveDraft, retryWorkoutSave } from '@/lib/workoutSync';
 import { useAppStore } from '@/store/useAppStore';
@@ -69,6 +84,43 @@ const SECTIONS: WorkoutSection[] = ['warmup', 'main', 'cooldown'];
 /** The API takes 50 ids a call, and no workout comes close. */
 const MAX_CATALOG_IDS = 50;
 const MAX_LOOKUPS = 60;
+
+/**
+ * Logging a workout afterwards, or editing a saved one. The same page as a live workout, with
+ * no clock, rest or timers, the date and times at the top, and Save at the bottom. The page
+ * owns the exercises and the times; this owns saving.
+ */
+export type LogbookPast =
+  | {
+      kind: 'log';
+      planId?: string;
+      choices: PlanDayChoice[];
+      plan: Record<string, DashboardDayPlan> | null;
+      /** The plan day it starts from, or null for an empty workout. */
+      initialDay: string | null;
+      end: Date;
+      setEnd: (date: Date) => void;
+      /** Recent workouts, to warn about one already on the chosen date. */
+      recent: WorkoutSessionSummary[];
+    }
+  | {
+      kind: 'edit';
+      sessionId: string;
+      title: string;
+      end: Date;
+      setEnd: (date: Date) => void;
+      /** When it ended before this edit, for the day's local "done" mark. */
+      originalEnd: Date;
+      /** A watch recording owns the times. */
+      timesLocked: boolean;
+      source: WorkoutSessionSource;
+      planId?: string;
+      planDay: string | null;
+      hasRecording: boolean;
+      /** Whether anything that would be saved has changed. */
+      changed: boolean;
+      onClosed: (how: 'saved' | 'deleted') => void;
+    };
 
 interface LogbookViewProps {
   blocks: Block[];
@@ -90,6 +142,8 @@ interface LogbookViewProps {
   onLeave: () => void;
   onDiscard: () => void;
   onDone: () => void;
+  /** Log or Edit. Without it, this is a workout being trained live. */
+  past?: LogbookPast;
 }
 
 type OpenSheet =
@@ -100,7 +154,10 @@ type OpenSheet =
   | { kind: 'interval'; blockKey: string }
   | { kind: 'finish' }
   | { kind: 'forgot'; lastTick: string }
-  | { kind: 'times'; from: 'finish' | 'forgot' };
+  | { kind: 'times'; from: 'finish' | 'forgot' }
+  | { kind: 'when' }
+  | { kind: 'source' }
+  | { kind: 'delete' };
 
 function clockText(date: Date): string {
   return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
@@ -137,7 +194,9 @@ export default function LogbookView({
   onLeave,
   onDiscard,
   onDone,
+  past,
 }: LogbookViewProps) {
+  const live = !past;
   const profile = useAppStore((s) => s.profile);
   const setProfile = useAppStore((s) => s.setProfile);
   const saveResult = useAppStore((s) => s.workoutSaveResults[clientSessionId]);
@@ -162,6 +221,14 @@ export default function LogbookView({
   const [timerSoundsOn] = useState(readTimerSounds);
   const [catalog, setCatalog] = useState<Record<string, ExerciseDetail>>({});
   const [firstTimeKeys, setFirstTimeKeys] = useState<string[]>([]);
+  // ── Log and Edit ──
+  const [logDay, setLogDay] = useState<string | null>(() => (past?.kind === 'log' ? past.initialDay : null));
+  const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [pastError, setPastError] = useState<string | null>(null);
+  const [savedPast, setSavedPast] = useState<{ start: Date; end: Date } | null>(null);
+  const setTotalXp = useAppStore((s) => s.setTotalXp);
+  const unmarkWorkoutCompleted = useAppStore((s) => s.unmarkWorkoutCompleted);
   const finishingRef = useRef(false);
   const dismissedTickRef = useRef<string | null>(null);
   const cardRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -236,6 +303,8 @@ export default function LogbookView({
     [accessToken, setBlocks],
   );
   useEffect(() => {
+    // An edit's "last time" would be this very workout, so it isn't looked up.
+    if (past?.kind === 'edit') return;
     lookUpLastTime(blocks.filter((b) => !b.lastSets));
     // Once for the workout. A swap or an added exercise asks for itself.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -288,12 +357,12 @@ export default function LogbookView({
       moveOnFrom(after, blockIndex);
       const count = workoutTally(after);
       const seconds = after[blockIndex]?.restSeconds ?? 0;
-      if (done && restOn && seconds > 0 && !isIntervalBlock(after[blockIndex]) && count.done < count.total) {
+      if (live && done && restOn && seconds > 0 && !isIntervalBlock(after[blockIndex]) && count.done < count.total) {
         if (timerSoundsOn) prepareTimerSounds();
         setRest({ endsAt: Date.now() + seconds * 1000, total: seconds });
       }
     },
-    [blocks, moveOnFrom, restOn, setBlocks, timerSoundsOn],
+    [blocks, live, moveOnFrom, restOn, setBlocks, timerSoundsOn],
   );
 
   // ── Timed sets ─────────────────────────────────────────────────────────────────────────
@@ -378,13 +447,14 @@ export default function LogbookView({
     }
   }, []);
   useEffect(() => {
+    if (!live) return;
     checkForgot();
     const onVisible = () => {
       if (document.visibilityState === 'visible') checkForgot();
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [checkForgot]);
+  }, [checkForgot, live]);
 
   // ── Numbers ────────────────────────────────────────────────────────────────────────────
   const setValues = useCallback(
@@ -422,13 +492,108 @@ export default function LogbookView({
     [blocks, lookUpLastTime, setBlocks, weightUnit],
   );
 
+  // ── Log: which workout ─────────────────────────────────────────────────────────────────
+  const logChoice = past?.kind === 'log' && logDay ? past.choices.find((c) => c.key === logDay) : undefined;
+  const pastTitle =
+    past?.kind === 'edit' ? past.title : logChoice ? (logChoice.plan.focus ?? `${logChoice.key.charAt(0).toUpperCase()}${logChoice.key.slice(1)} workout`) : 'Empty workout';
+  const pastEnd = past?.end ?? new Date();
+
+  const pickSource = (key: string | null) => {
+    if (past?.kind !== 'log') return;
+    const choice = key ? past.choices.find((c) => c.key === key) : undefined;
+    const next = choice ? buildBlocks(choice.plan, weightUnit) : [];
+    setBlocks(next);
+    setLogDay(choice ? choice.key : null);
+    setFirstTimeKeys([]);
+    setFolded({ warmup: true });
+    const first = firstOpenIndex(next);
+    setOpenKey(first == null ? null : next[first].key);
+    lookUpLastTime(next);
+    setSheet(null);
+  };
+
+  // ── Log: save. Through the same queue as a finished workout, so no signal loses nothing ──
+  const saveLog = () => {
+    if (past?.kind !== 'log' || finishingRef.current) return;
+    finishingRef.current = true;
+    const start = startedAt;
+    const end = past.end;
+    const dateISO = localISODate(end);
+    const seconds = Math.max(0, Math.round((end.getTime() - start.getTime()) / 1000));
+    const onPlan = logDay != null && past.planId != null;
+    setSavedPast({ start, end });
+    setDurationSeconds(seconds);
+    setSheet(null);
+    onFinished();
+    void finishActiveWorkout(
+      {
+        clientSessionId,
+        planId: onPlan ? past.planId : undefined,
+        dayKey: logDay ?? dayKeyForDate(dateISO),
+        dateISO,
+        focus: pastTitle,
+        payload: {
+          client_session_id: clientSessionId,
+          ...(onPlan ? { plan_id: past.planId, day: logDay ?? undefined } : {}),
+          started_at: start.toISOString(),
+          completed_at: end.toISOString(),
+          duration_seconds: seconds,
+          exercises: toLogbookExercises(blocks),
+        },
+      },
+      accessToken,
+    );
+  };
+
+  // ── Edit: save the whole workout, or delete it ─────────────────────────────────────────
+  const saveEdit = async () => {
+    if (past?.kind !== 'edit' || !accessToken || saving) return;
+    if (!past.changed) {
+      past.onClosed('saved');
+      return;
+    }
+    setSaving(true);
+    setPastError(null);
+    try {
+      const result = await updateWorkoutSession(accessToken, past.sessionId, {
+        started_at: startedAt.toISOString(),
+        completed_at: past.end.toISOString(),
+        exercises: toEditExercises(blocks),
+      });
+      setTotalXp(result.new_total_xp);
+      // The day it was on may not be done any more. The server says, once Home reads again.
+      unmarkWorkoutCompleted(past.planId, localISODate(past.originalEnd));
+      past.onClosed('saved');
+    } catch (err) {
+      setSaving(false);
+      setPastError(userSafeError(err, 'No connection right now. Your changes are still here, so try again in a moment.'));
+    }
+  };
+
+  const deleteWorkout = async () => {
+    if (past?.kind !== 'edit' || !accessToken || deleting) return;
+    setDeleting(true);
+    setPastError(null);
+    try {
+      const result = await deleteWorkoutSession(accessToken, past.sessionId);
+      setTotalXp(result.new_total_xp);
+      unmarkWorkoutCompleted(past.planId, localISODate(past.originalEnd));
+      setSheet(null);
+      past.onClosed('deleted');
+    } catch (err) {
+      setDeleting(false);
+      setPastError(userSafeError(err, 'No connection right now, so the workout wasn\u2019t deleted. Try again in a moment.'));
+    }
+  };
+
   if (finished) {
     return (
       <LogbookSummary
         blocks={blocks}
-        title={focus}
+        title={past?.kind === 'log' ? pastTitle : focus}
         dayKey={dayKey}
-        planId={planId}
+        planId={live ? planId : undefined}
+        logged={savedPast}
         accessToken={accessToken}
         durationSeconds={durationSeconds}
         xpEarned={saveResult?.xpEarned ?? null}
@@ -446,7 +611,44 @@ export default function LogbookView({
   const sheetIndex = sheet && 'blockKey' in sheet ? indexOfKey(sheet.blockKey) : -1;
   const sheetBlock = sheetIndex === -1 ? null : blocks[sheetIndex];
   const allDone = tally.total > 0 && tally.done === tally.total;
-  const showTip = profile.logbook_tip_seen === false && !tipClosed;
+  const showTip = live && profile.logbook_tip_seen === false && !tipClosed;
+  const ticked = tickedSetCount(blocks);
+  const problem = live ? null : timesProblem(startedAt, pastEnd, new Date());
+  const sameDay = past?.kind === 'log' ? workoutsOnDate(past.recent, localISODate(pastEnd))[0] : undefined;
+  const whenNotice =
+    past?.kind === 'edit' && past.timesLocked
+      ? 'Your watch recorded this workout, so its times stay as the watch has them.'
+      : sameDay && past?.kind === 'log'
+        ? `You already logged ${sessionName(sameDay, past.planId, past.plan)} on this date. Saving adds a second workout. It won\u2019t replace that one.`
+        : null;
+  // An app workout must keep a ticked set: removing everything is what Delete is for.
+  const editNeedsTick = past?.kind === 'edit' && past.source === 'app' && ticked === 0;
+
+  const saveBox = past ? (
+    <div className="flex w-full flex-col gap-1.5">
+      {pastError && sheet?.kind !== 'delete' ? (
+        <p role="alert" className="text-center text-[13.5px] leading-[19px]" style={{ color: 'var(--danger)' }}>{pastError}</p>
+      ) : null}
+      {past.kind === 'log' ? (
+        ticked > 0 && !problem ? (
+          <Button fullWidth size="lg" onClick={saveLog}>Save workout · {ticked} {ticked === 1 ? 'set' : 'sets'}</Button>
+        ) : (
+          <Button fullWidth size="lg" variant="quiet" disabled>{problem ?? 'Tick at least one set to save'}</Button>
+        )
+      ) : (
+        <>
+          {editNeedsTick ? null : (
+            <p className="text-center text-[12.5px] leading-[17px]" style={{ color: 'var(--ink-2)' }}>XP, trends and the watch link update when you save.</p>
+          )}
+          {editNeedsTick || problem ? (
+            <Button fullWidth size="lg" variant="quiet" disabled>{problem ?? 'Tick a set, or delete the workout'}</Button>
+          ) : (
+            <Button fullWidth size="lg" disabled={saving} onClick={() => void saveEdit()}>{saving ? 'Saving…' : 'Save changes'}</Button>
+          )}
+        </>
+      )}
+    </div>
+  ) : null;
 
   const restBar = rest && restRemaining > 0 ? (
     <div role="timer" aria-label={`Rest, ${restRemaining} seconds left`} style={{ background: 'var(--ink)', color: 'var(--ground)' }}>
@@ -503,16 +705,20 @@ export default function LogbookView({
     <div className="flex min-h-[100dvh] w-full flex-1 flex-col" style={{ background: 'var(--ground)' }}>
       <header className="sticky top-0 z-20" style={{ background: 'var(--ground)' }}>
         <div className="mx-auto flex w-full max-w-[1120px] items-center gap-1 px-2 py-1.5 lg:px-6">
-          <button aria-label="Leave workout" onClick={onRequestExit} className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
+          <button aria-label={live ? 'Leave workout' : 'Close without saving'} onClick={onRequestExit} className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
             <X size={22} color="var(--ink)" />
           </button>
           <div className="flex min-w-0 flex-1 flex-col items-center lg:items-start">
             <span className="w-full truncate text-center text-[16px] font-bold lg:text-left lg:text-[20px]" style={{ color: 'var(--ink)' }}>
-              {focus ?? 'Workout'}
+              {past?.kind === 'log' ? 'Log a workout' : past?.kind === 'edit' ? 'Edit workout' : (focus ?? 'Workout')}
             </span>
-            <span className="font-number tabular text-[17px] font-semibold lg:hidden" style={{ color: 'var(--ink-2)' }}>
-              {formatClock(elapsed)}
-            </span>
+            {past?.kind === 'edit' ? (
+              <span className="w-full truncate text-center text-[14px] font-semibold lg:text-left" style={{ color: 'var(--ink-2)' }}>{past.title}</span>
+            ) : (
+              <span className={`font-number tabular text-[17px] font-semibold ${live ? 'lg:hidden' : ''}`} style={{ color: 'var(--ink-2)' }}>
+                {live ? formatClock(elapsed) : `${tally.done} of ${tally.total} sets`}
+              </span>
+            )}
           </div>
           <button aria-label="Add an exercise" onClick={() => setSheet({ kind: 'add' })} className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
             <Plus size={22} color="var(--ink)" />
@@ -549,6 +755,49 @@ export default function LogbookView({
                 Got it
               </button>
             </aside>
+          ) : null}
+
+          {past ? (
+            <WhenCard
+              source={past.kind === 'log' ? { label: pastTitle, onChange: () => setSheet({ kind: 'source' }) } : undefined}
+              start={startedAt}
+              end={pastEnd}
+              onChangeTimes={past.kind === 'edit' && past.timesLocked ? null : () => setSheet({ kind: 'when' })}
+              notice={whenNotice}
+            />
+          ) : null}
+
+          {/* Only a plan day has a plan to tick. An empty workout is ticked as it's filled in. */}
+          {past?.kind === 'log' && logDay != null && blocks.length > 0 ? (
+            allDone ? (
+              <p className="mx-1 flex items-center justify-between gap-3 text-[14px] leading-5" style={{ color: 'var(--ink-2)' }}>
+                <span>All ticked. Change only what was different.</span>
+                <button className="-my-3 min-h-[44px] flex-shrink-0 font-bold" style={{ color: 'var(--teal)' }} onClick={() => setBlocks((prev) => tickAll(prev, false))}>
+                  Untick all
+                </button>
+              </p>
+            ) : (
+              <Button
+                variant="strong"
+                fullWidth
+                size="lg"
+                leftIcon={<Check size={18} strokeWidth={3} />}
+                onClick={() => {
+                  setBlocks((prev) => tickAll(prev, true));
+                  setOpenKey(null);
+                }}
+              >
+                Tick everything as planned
+              </Button>
+            )
+          ) : null}
+
+          {past && blocks.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 rounded-[20px] px-5 py-7 text-center" style={{ background: 'var(--surface)' }}>
+              <h2 className="text-[18px] font-bold" style={{ color: 'var(--ink)' }}>Nothing here yet</h2>
+              <p className="text-[14.5px] leading-[21px]" style={{ color: 'var(--ink-2)' }}>Add what you did. Forma fills in the weights from your last time.</p>
+              <Button className="mt-2" onClick={() => setSheet({ kind: 'add' })}>Add an exercise</Button>
+            </div>
           ) : null}
 
           {SECTIONS.map((section) => {
@@ -637,14 +886,14 @@ export default function LogbookView({
                         setBlocks(after);
                         moveOnFrom(after, bi);
                       }}
-                      onStartTimer={(si) => startTimer(block.key, si)}
+                      onStartTimer={live ? (si) => startTimer(block.key, si) : null}
                       onOpenTimer={() => setTimerOpen(true)}
                       onAddSet={() => setBlocks((prev) => addSet(prev, bi))}
                       onRemoveSet={() => setBlocks((prev) => removeSet(prev, bi))}
                       onInfo={() => setSheet({ kind: 'info', blockKey: block.key })}
                       onAlternatives={() => setSheet({ kind: 'swap', blockKey: block.key })}
                       onMenu={() => setSheet({ kind: 'menu', blockKey: block.key })}
-                      onIntervalTimer={() => setSheet({ kind: 'interval', blockKey: block.key })}
+                      onIntervalTimer={live ? () => setSheet({ kind: 'interval', blockKey: block.key }) : null}
                     />
                   );
                 })}
@@ -652,23 +901,45 @@ export default function LogbookView({
             );
           })}
 
-          <button
-            onClick={() => setSheet({ kind: 'add' })}
-            className="flex min-h-[52px] items-center justify-center gap-2 rounded-2xl text-[14.5px] font-bold"
-            style={{ background: 'var(--sunken)', color: 'var(--ink)' }}
-          >
-            <Plus size={17} /> Add an exercise
-          </button>
+          {live || blocks.length > 0 ? (
+            <button
+              onClick={() => setSheet({ kind: 'add' })}
+              className="flex min-h-[52px] items-center justify-center gap-2 rounded-2xl text-[14.5px] font-bold"
+              style={{ background: 'var(--sunken)', color: 'var(--ink)' }}
+            >
+              <Plus size={17} /> Add an exercise
+            </button>
+          ) : null}
+
+          {past?.kind === 'edit' ? (
+            <button
+              onClick={() => {
+                setPastError(null);
+                setSheet({ kind: 'delete' });
+              }}
+              className="min-h-[44px] text-[14.5px] font-bold"
+              style={{ color: 'var(--danger)' }}
+            >
+              Delete this workout
+            </button>
+          ) : null}
         </main>
 
         {/* The side panel, from `lg` up. Below that the same controls sit in the footer. */}
         <aside aria-label="Workout details" className="sticky top-[72px] hidden w-[300px] flex-shrink-0 flex-col gap-3 lg:flex">
+          {saveBox ? (
+            <div className="flex flex-col gap-3 rounded-[20px] p-4" style={{ background: 'var(--surface)' }}>
+              <span className="text-[13px] font-semibold" style={{ color: 'var(--ink-2)' }}>{tally.done} of {tally.total} sets ticked</span>
+              {saveBox}
+            </div>
+          ) : (
           <div className="flex flex-col gap-3 rounded-[20px] p-4" style={{ background: 'var(--surface)' }}>
             <span className="text-[13px] font-semibold" style={{ color: 'var(--ink-2)' }}>Time</span>
             <span className="font-number tabular -mt-2 text-[44px] font-bold leading-none" style={{ color: 'var(--ink)' }}>{formatClock(elapsed)}</span>
             {restSwitch}
             <div className="flex">{finishButton}</div>
           </div>
+          )}
           {holdBarView ? <div className="overflow-hidden rounded-2xl">{holdBarView}</div> : null}
           {restBar ? <div className="overflow-hidden rounded-2xl">{restBar}</div> : null}
           <p className="px-1 text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>Press Tab to move through the numbers.</p>
@@ -679,8 +950,12 @@ export default function LogbookView({
         {holdBarView}
         {restBar}
         <footer className="flex items-center gap-2 px-4 pb-3 pt-2.5" style={{ background: 'var(--ground)', borderTop: '1px solid var(--line)' }}>
-          {restSwitch}
-          {finishButton}
+          {saveBox ?? (
+            <>
+              {restSwitch}
+              {finishButton}
+            </>
+          )}
         </footer>
       </div>
 
@@ -753,7 +1028,7 @@ export default function LogbookView({
           exerciseId={sheetBlock.exercise_id}
           coachAlternatives={sessionCoachAlternatives(sheetBlock)}
           title={`Swap ${formatExerciseName(sheetBlock.name)}`}
-          subtitle="For today only. Keeps your sets and reps."
+          subtitle={live ? 'For today only. Keeps your sets and reps.' : 'Keeps the sets and reps.'}
           onClose={() => setSheet(null)}
           onPick={(pick) => {
             setSheet(null);
@@ -768,7 +1043,7 @@ export default function LogbookView({
           name=""
           mode="add"
           title="Add an exercise"
-          subtitle="For today only. Your plan stays as it is."
+          subtitle={live ? 'For today only. Your plan stays as it is.' : 'Your plan stays as it is.'}
           onClose={() => setSheet(null)}
           onPick={(pick) => {
             setSheet(null);
@@ -821,7 +1096,38 @@ export default function LogbookView({
         />
       ) : null}
 
-      {exitOpen ? (
+      {exitOpen && past ? <DiscardSheet mode={past.kind} onKeep={onStay} onDiscard={onDiscard} /> : null}
+
+      {sheet?.kind === 'when' ? (
+        <DateTimesSheet
+          start={startedAt}
+          end={pastEnd}
+          onClose={() => setSheet(null)}
+          onDone={(from, to) => {
+            setStartedAt(from);
+            past?.setEnd(to);
+            setSheet(null);
+          }}
+        />
+      ) : null}
+
+      {sheet?.kind === 'source' && past?.kind === 'log' ? (
+        <SourceSheet choices={past.choices} dateDayKey={dayKeyForDate(localISODate(pastEnd))} onPick={pickSource} onClose={() => setSheet(null)} />
+      ) : null}
+
+      {sheet?.kind === 'delete' && past?.kind === 'edit' ? (
+        <DeleteSheet
+          sets={ticked}
+          planDay={past.planDay}
+          hasRecording={past.hasRecording}
+          deleting={deleting}
+          error={pastError}
+          onDelete={() => void deleteWorkout()}
+          onKeep={() => setSheet(null)}
+        />
+      ) : null}
+
+      {exitOpen && live ? (
         <Sheet open title="Leave this workout?" onClose={onStay}>
           <div className="flex flex-col gap-2.5">
             <p className="mb-1.5 text-[14.5px] leading-[21px]" style={{ color: 'var(--ink-2)' }}>
@@ -970,14 +1276,15 @@ interface ExerciseCardProps {
   onValues: (setIndex: number, values: SetValues) => void;
   onWeight: (setIndex: number, weight: number) => void;
   onRounds: (rounds: number) => void;
-  onStartTimer: (setIndex: number) => void;
+  /** Null when logging afterwards or editing: there's no timer to run. */
+  onStartTimer: ((setIndex: number) => void) | null;
   onOpenTimer: () => void;
   onAddSet: () => void;
   onRemoveSet: () => void;
   onInfo: () => void;
   onAlternatives: () => void;
   onMenu: () => void;
-  onIntervalTimer: () => void;
+  onIntervalTimer: (() => void) | null;
 }
 
 function ExerciseCard({
@@ -1013,7 +1320,14 @@ function ExerciseCard({
   const catalog = isCatalogExercise(block.type);
   const noMatch = catalog && !block.exercise_id;
   const interval = isIntervalBlock(block);
-  const tag = block.swappedFrom ? `Swapped from ${formatExerciseName(block.swappedFrom)} for today` : block.addedToday ? 'Added today' : null;
+  const live = onStartTimer != null;
+  const tag = block.swappedFrom
+    ? `Swapped from ${formatExerciseName(block.swappedFrom)}${live ? ' for today' : ''}`
+    : block.addedToday
+      ? live
+        ? 'Added today'
+        : 'Not on the plan'
+      : null;
   const showFirstTime = firstTime && usesWeight(block.type) && block.sets.every((s) => s.weight <= 0);
   // Rest gets its own colour, so it's easy to find next to "Last time".
   const line = showFirstTime ? 'First time. Pick a weight you can control.' : interval ? lastAndRestText(block) : lastTimeText(block);
@@ -1106,7 +1420,7 @@ function ExerciseCard({
           </span>
         ) : null}
 
-        {interval ? (
+        {interval && onIntervalTimer ? (
           <button
             onClick={onIntervalTimer}
             className="flex h-12 items-center justify-center gap-2 rounded-[14px] text-[14.5px] font-bold"
@@ -1294,7 +1608,7 @@ interface SetTableProps {
   onValues: (setIndex: number, values: SetValues) => void;
   onWeight: (setIndex: number, weight: number) => void;
   onRounds: (rounds: number) => void;
-  onStartTimer: (setIndex: number) => void;
+  onStartTimer: ((setIndex: number) => void) | null;
   onOpenTimer: () => void;
 }
 
@@ -1348,7 +1662,7 @@ function SetTable({ block, timerSet, timerRemaining, timerPaused, onTickSet, onV
                     <NumberCell value={set.weight} label={`${unit}, set ${si + 1}, ${name}`} decimals done={set.completed} onCommit={(n) => onWeight(si, n)} />
                   </div>
                 ) : null}
-                {set.completed ? null : (
+                {set.completed || !onStartTimer ? null : (
                   <button
                     aria-label={running ? `Open the timer, ${timerRemaining} seconds left` : `Start the timer for set ${si + 1}`}
                     onClick={running ? onOpenTimer : () => onStartTimer(si)}
@@ -1590,6 +1904,7 @@ function LogbookSummary({
   saveError,
   onRetrySave,
   onDone,
+  logged,
 }: {
   blocks: Block[];
   title?: string;
@@ -1605,6 +1920,8 @@ function LogbookSummary({
   saveError?: string | null;
   onRetrySave?: () => void;
   onDone: () => void;
+  /** Logged afterwards: the times it was saved to. */
+  logged?: { start: Date; end: Date } | null;
 }) {
   const [kept, setKept] = useState<string[]>([]);
   const [keeping, setKeeping] = useState(false);
@@ -1638,10 +1955,17 @@ function LogbookSummary({
     <div className="mx-auto flex w-full max-w-[560px] flex-col gap-[22px] px-5 pb-6 pt-10">
       <Confetti />
       <header className="flex flex-col gap-2.5">
-        {title ? <span className="text-[14px] font-semibold" style={{ color: 'var(--teal)' }}>{title}</span> : null}
-        <h1 className="font-number text-[52px] font-extrabold leading-none" style={{ color: 'var(--ink)' }}>Workout complete.</h1>
+        {title ? (
+          <span className="text-[14px] font-semibold" style={{ color: 'var(--teal)' }}>
+            {title}
+            {logged ? ` · ${shortDate(logged.end)}` : ''}
+          </span>
+        ) : null}
+        <h1 className="font-number text-[52px] font-extrabold leading-none" style={{ color: 'var(--ink)' }}>{logged ? 'Logged.' : 'Workout complete.'}</h1>
         <p className="text-[16px] leading-[23px]" style={{ color: 'var(--ink-2)' }}>
-          {improved.size > 0
+          {logged
+            ? `Saved to ${logged.end.toLocaleDateString(undefined, { weekday: 'long' })}, ${clockText(logged.start)} to ${clockText(logged.end)}. It counts toward that week and your streak.`
+            : improved.size > 0
             ? `Up on ${improved.size === 1 ? 'one lift' : `${improved.size} lifts`} from last time. That’s progress you can measure.`
             : 'That’s consistency over intensity.'}
         </p>
@@ -1662,7 +1986,7 @@ function LogbookSummary({
 
       <dl className="grid grid-cols-3 gap-3">
         {[
-          ['Time', formatClock(durationSeconds), 'var(--ink)'],
+          ['Time', logged ? `${Math.round(durationSeconds / 60)} min` : formatClock(durationSeconds), 'var(--ink)'],
           ['Sets', String(setCount), 'var(--ink)'],
           ['XP earned', xpEarned == null ? '…' : `+${xpEarned}`, 'var(--gold)'],
         ].map(([label, value, color]) => (
@@ -1706,7 +2030,7 @@ function LogbookSummary({
         <div className="flex items-center justify-between">
           <h2 className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>Recap</h2>
           {sessionId ? (
-            <Link to={`/activities/workout/${sessionId}`} className="text-[14px] font-bold" style={{ color: 'var(--teal)' }}>Fix something</Link>
+            <Link to={`/workout/edit/${sessionId}`} replace state={{ fromSummary: true }} className="text-[14px] font-bold" style={{ color: 'var(--teal)' }}>Fix something</Link>
           ) : null}
         </div>
         <div className="rounded-[20px]" style={{ background: 'var(--surface)' }}>
@@ -1724,11 +2048,11 @@ function LogbookSummary({
 
       {watchLinked ? (
         <p className="text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
-          Your watch recording was added to this workout. Its heart rate is on the workout&rsquo;s page in Activities.
+          {logged ? 'A watch recording from that time was added to this workout.' : 'Your watch recording was added to this workout.'} Its heart rate is on the workout&rsquo;s page in Activities.
         </p>
       ) : null}
 
-      <Button size="lg" fullWidth disabled={keeping} onClick={() => void finish()}>{keeping ? 'Saving your plan…' : 'Back to home'}</Button>
+      <Button size="lg" fullWidth disabled={keeping} onClick={() => void finish()}>{keeping ? 'Saving your plan…' : logged ? 'Done' : 'Back to home'}</Button>
     </div>
   );
 }

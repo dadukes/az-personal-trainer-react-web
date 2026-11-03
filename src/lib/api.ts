@@ -989,6 +989,8 @@ export interface SessionExercise {
   /** Logged distance in km. Null when none was logged, or it predates storing it. */
   distance_km?: number | null;
   target: SessionExerciseTarget | null;
+  /** The plan's entry for it (cues, rest, alternatives), as it was when logged; `null` off-plan. */
+  planned?: DashboardExercise | null;
 }
 
 /** `PUT /api/workouts/sessions/{id}/exercise`. XP moves by this exercise's difference; apply `new_total_xp`. */
@@ -1020,6 +1022,35 @@ export interface WorkoutSessionDetailResponse {
   /** Every watch recording that belongs to it (a bike warm-up and the strength session), oldest first. */
   recordings: ActivityItem[];
   zone_model: ZoneModel | null;
+  /** A watch recording owns the times, so `updateWorkoutSession` can't change them. */
+  times_locked?: boolean;
+}
+
+/** `PUT /api/workouts/sessions/{id}`: the whole workout, times and every exercise. */
+export interface WorkoutSessionUpdatePayload {
+  started_at: string;
+  completed_at: string;
+  exercises: LoggedExercise[];
+}
+
+export interface WorkoutSessionUpdateResponse {
+  success: boolean;
+  session: WorkoutSessionSummary;
+  xp_earned: number;
+  xp_delta: number;
+  new_total_xp: number;
+  leveled_up: boolean;
+  exercises: SessionExercise[];
+  linked_recordings: number;
+  unlinked_recordings: number;
+}
+
+export interface WorkoutSessionDeleteResponse {
+  success: boolean;
+  xp_delta: number;
+  new_total_xp: number;
+  level: number;
+  released_recordings: number;
 }
 
 // ─── Plan viewing / editing (Day Detail) ──────────────────────────────────────
@@ -1569,6 +1600,28 @@ export async function updateWorkoutExercise(
   return apiFetch<WorkoutExerciseUpdateResponse>(`/workouts/sessions/${encodeURIComponent(sessionId)}/exercise`, accessToken, {
     method: 'PUT',
     body: JSON.stringify({ key, sets }),
+  });
+}
+
+/**
+ * Replaces a logged workout in one transaction: times and every exercise. XP moves by the
+ * difference; apply `new_total_xp`. A 409 with `times_from_recording` means a watch owns the times.
+ */
+export async function updateWorkoutSession(
+  accessToken: string,
+  sessionId: string,
+  payload: WorkoutSessionUpdatePayload,
+): Promise<WorkoutSessionUpdateResponse> {
+  return apiFetch<WorkoutSessionUpdateResponse>(`/workouts/sessions/${encodeURIComponent(sessionId)}`, accessToken, {
+    method: 'PUT',
+    body: JSON.stringify(payload),
+  });
+}
+
+/** Removes a logged workout, its sets and its XP. A joined watch recording stays as an activity. */
+export async function deleteWorkoutSession(accessToken: string, sessionId: string): Promise<WorkoutSessionDeleteResponse> {
+  return apiFetch<WorkoutSessionDeleteResponse>(`/workouts/sessions/${encodeURIComponent(sessionId)}`, accessToken, {
+    method: 'DELETE',
   });
 }
 

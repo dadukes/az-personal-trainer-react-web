@@ -8,7 +8,7 @@ import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
 import GeneralHeartRateCard from '@/components/GeneralHeartRateCard';
 import HeartRateCard from '@/components/HeartRateCard';
 import WorkoutExerciseDialog from '@/components/WorkoutExerciseDialog';
-import { Badge, Card, Eyebrow, StatTile } from '@/components/ui';
+import { Badge, Button, Card, Eyebrow, StatTile } from '@/components/ui';
 import { sourceAppLabel } from '@/lib/body';
 import {
   formatCalories,
@@ -31,6 +31,7 @@ import {
   type WorkoutSetLogEntry,
 } from '@/lib/api';
 import { weightText, formatExerciseName } from '@/lib/exercise';
+import { isFeatureEnabled } from '@/lib/featureFlags';
 import { exercisesFromSets } from '@/lib/workoutEdit';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
@@ -101,6 +102,9 @@ export default function WorkoutDetailPage() {
   const [editing, setEditing] = useState<SessionExercise | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  // Edit is the logbook, on its own page, which reads the workout again on the way back.
+  const logbookOn = isFeatureEnabled('logbook');
+  const openEdit = () => navigate(`/workout/edit/${id}`);
 
   useEffect(() => {
     if (!session?.access_token || !id) return;
@@ -165,7 +169,7 @@ export default function WorkoutDetailPage() {
           <StatTile key="distance" value={formatDistance(distanceKm, unitSystem, 2)} label="Distance" icon={<MapPin size={16} color={accent} />} />
         ) : null,
         !noSets ? (
-          <StatTile key="sets" value={String(completedSets)} label="Sets completed" icon={<Layers size={16} color={accent} />} />
+          <StatTile key="sets" value={data && data.sets.length > completedSets ? `${completedSets} of ${data.sets.length}` : String(completedSets)} label="Sets completed" icon={<Layers size={16} color={accent} />} />
         ) : null,
         volume ? <StatTile key="volume" value={volume} label="Volume" icon={<Weight size={16} color={accent} />} /> : null,
         totals.calories ? (
@@ -194,6 +198,13 @@ export default function WorkoutDetailPage() {
         eyebrow="Planned workout"
         title={data ? workoutTitle({ title: data.title, day: data.session.day }) : 'Workout'}
         onBack={goBack}
+        action={
+          logbookOn && data ? (
+            <Button variant="link" onClick={openEdit}>
+              Edit
+            </Button>
+          ) : undefined
+        }
       />
 
       {loading ? (
@@ -284,6 +295,10 @@ export default function WorkoutDetailPage() {
                     key={exercise.key}
                     exercise={exercise}
                     onClick={() => {
+                      if (logbookOn) {
+                        openEdit();
+                        return;
+                      }
                       setSaveError(null);
                       setEditing(exercise);
                     }}

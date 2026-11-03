@@ -19,6 +19,8 @@ import PlanDayPage from '@/pages/PlanDayPage';
 import ProfilePage from '@/pages/ProfilePage';
 import ProgressPage from '@/pages/ProgressPage';
 import WorkoutDetailPage from '@/pages/WorkoutDetailPage';
+import WorkoutEditPage from '@/pages/WorkoutEditPage';
+import WorkoutLogPage from '@/pages/WorkoutLogPage';
 import WorkoutSessionPage from '@/pages/WorkoutSessionPage';
 
 const DesignSystemPage = lazy(() => import('@/pages/DesignSystemPage'));
@@ -106,6 +108,8 @@ export default function App() {
       <Route path="/progress/workouts" element={<Navigate to="/activities" replace />} />
       <Route path="/progress/workouts/:id" element={<LegacyWorkoutRedirect />} />
       <Route path="/profile" element={<RequireAuth><ProfilePage /></RequireAuth>} />
+      <Route path="/workout/log" element={<RequireAuth><WorkoutLogPage /></RequireAuth>} />
+      <Route path="/workout/edit/:id" element={<RequireAuth><WorkoutEditPage /></RequireAuth>} />
       <Route path="/workout/:day" element={<RequireAuth><WorkoutSessionPage /></RequireAuth>} />
       <Route path="/plan/:day" element={<RequireAuth><PlanDayPage /></RequireAuth>} />
       <Route path="/plan/:day/exercise/:section/:index" element={<RequireAuth><ExerciseDetailPage /></RequireAuth>} />

@@ -169,6 +169,8 @@ interface WorkoutCompletionSlice {
   /** completionKey(planId, dateISO) -> completion meta. Mirrored to localStorage. */
   completedWorkouts: Record<string, WorkoutCompletion>;
   markWorkoutCompleted: (planId: string | undefined, dateISO: string, xp: number) => void;
+  /** Drops the local mark after a workout is deleted or moved, so the server's answer shows. */
+  unmarkWorkoutCompleted: (planId: string | undefined, dateISO: string) => void;
 }
 
 interface PlanDraftSlice {
@@ -352,6 +354,15 @@ export const useAppStore = create<AppStore>((set) => ({
         ...state.completedWorkouts,
         [completionKey(planId, dateISO)]: { completedAt: new Date().toISOString(), xp },
       };
+      persistCompletions(next);
+      return { completedWorkouts: next };
+    }),
+  unmarkWorkoutCompleted: (planId, dateISO) =>
+    set((state) => {
+      const key = completionKey(planId, dateISO);
+      if (!state.completedWorkouts[key]) return {};
+      const next = { ...state.completedWorkouts };
+      delete next[key];
       persistCompletions(next);
       return { completedWorkouts: next };
     }),
