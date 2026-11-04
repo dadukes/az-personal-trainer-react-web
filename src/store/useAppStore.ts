@@ -80,6 +80,13 @@ export interface ChatMessage {
   createdAt: string;
   /** A plan the coach suggested with this reply, shown as a card under it. */
   suggestion?: PlanSuggestion;
+  /** User messages: the id sent with the message, to follow or retry its turn. */
+  clientMessageId?: string;
+  /** While the reply is on its way: what the coach is doing, and since when. */
+  progressLabel?: string;
+  progressSince?: number;
+  /** The coach is changing the plan, so a placeholder card shows until the real one. */
+  planBuilding?: boolean;
 }
 
 export interface GamificationState {
@@ -125,6 +132,8 @@ interface ChatSlice {
   removeMessage: (id: string) => void;
   appendStreamChunk: (id: string, chunk: string) => void;
   finalizeStream: (id: string) => void;
+  /** Merge fields into one message. */
+  patchMessage: (id: string, patch: Partial<ChatMessage>) => void;
   setStreaming: (value: boolean) => void;
   setChatError: (error: string | null) => void;
   clearChat: () => void;
@@ -301,9 +310,13 @@ export const useAppStore = create<AppStore>((set) => ({
     })),
   finalizeStream: (id) =>
     set((state) => ({
-      messages: state.messages.map((m) => (m.id === id ? { ...m, isStreaming: false } : m)),
+      messages: state.messages.map((m) =>
+        m.id === id ? { ...m, isStreaming: false, progressLabel: undefined, planBuilding: false } : m,
+      ),
       isStreaming: false,
     })),
+  patchMessage: (id, patch) =>
+    set((state) => ({ messages: state.messages.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
   setStreaming: (value) => set({ isStreaming: value }),
   setChatError: (error) => set({ chatError: error }),
   clearChat: () => set({ messages: [], chatError: null }),

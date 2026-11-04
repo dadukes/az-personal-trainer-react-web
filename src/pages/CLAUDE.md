@@ -112,6 +112,13 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   any other refusal shows on it. While the latest card is pending, the quick replies become tweaks and the
   box reads "Tell me what to change". Coach also loads `weekPlan` itself when the store is empty, for the
   side panel. Past chats show one line per card (`historyLine`).
+  **Waiting and resuming** (phase 7.1, logic in `src/lib/chatTurn.ts`, mirrored on mobile): each message gets a
+  `clientMessageId`. While the coach works, `CoachWaiting` shows the stream's progress label (thought headings,
+  tool steps), with a "still going" line after 12 s on one label, and `PlanCardPlaceholder` shows once a plan tool
+  starts. When the stream breaks after the server may have it, goes quiet for 40 s (checked on a timer and when
+  the tab returns), or the page loads mid-turn, Coach follows the turn with `getChatTurn` every 3 s and reloads the
+  session when it's done, so cards and replaced states are exact. Leaving Coach stops listening; coming back
+  follows the turn. Retry reuses the id unless the turn failed. The coach's avatar is the Forma mark.
 - **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads
   persisted history via `getNutritionLogs` on mount and prepends new logs (survives refresh).
 - **Progress**: `getProgress` returns level/XP, `this_week` activity stats (wired to the "This

@@ -1,10 +1,11 @@
-import { Activity, ArrowDown, Calendar, History, Plus, RotateCcw, SendHorizontal, Square, Zap } from 'lucide-react';
+import { Activity, ArrowDown, Calendar, History, Plus, RotateCcw, SendHorizontal, Square } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import ChatMarkdown from '@/components/ChatMarkdown';
+import CoachWaiting from '@/components/CoachWaiting';
+import PlanCardPlaceholder from '@/components/PlanCardPlaceholder';
 import SuggestionCard from '@/components/SuggestionCard';
-import TypingDots from '@/components/TypingDots';
 import { Badge, Button, Card, Eyebrow, StatTile } from '@/components/ui';
 import {
   acceptPlanSuggestion,
@@ -12,16 +13,44 @@ import {
   createChatSession,
   getChatHistory,
   getChatSessions,
+  getChatTurn,
   getDashboard,
   streamChat,
+  type ChatHistoryMessage,
   type PlanSuggestion,
 } from '@/lib/api';
+import {
+  FOLLOWING_LABEL,
+  isStreamStalled,
+  newClientMessageId,
+  runningTurnInHistory,
+  TURN_FOLLOW_LIMIT_MS,
+  TURN_POLL_MS,
+} from '@/lib/chatTurn';
 import { markReplaced, suggestionChips } from '@/lib/planSuggestion';
 import { buildWeekPlan } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type ChatMessage } from '@/store/useAppStore';
 
 const QUICK_REPLIES = ['Let’s do it.', 'Still too much today.', 'What should I focus on?'];
+
+/** The coach's mark next to its messages (the Forma "F"). */
+function CoachAvatar({ size = 28 }: { size?: number }) {
+  return <img src="/forma_logo.png" alt="" aria-hidden="true" width={size} height={size} className="flex-shrink-0 object-contain" />;
+}
+
+function toChatMessages(rows: ChatHistoryMessage[]): ChatMessage[] {
+  return rows.map((m) => ({
+    id: m.id,
+    role: m.role,
+    content: m.content,
+    createdAt: m.created_at,
+    suggestion: m.suggestion,
+    clientMessageId: m.client_message_id ?? undefined,
+  }));
+}
+
+const wait = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, ms));
 
 function todayDateString(): string {
   const now = new Date();
@@ -48,6 +77,7 @@ export default function CoachPage() {
     removeMessage,
     appendStreamChunk,
     finalizeStream,
+    patchMessage,
     setStreaming,
     setChatError,
     clearChat,
@@ -59,7 +89,9 @@ export default function CoachPage() {
   const [draft, setDraft] = useState('');
   const [startingSession, setStartingSession] = useState(false);
   const [activeSessionDate, setActiveSessionDate] = useState<string | null>(null);
-  const [failedPrompt, setFailedPrompt] = useState<string | null>(null);
+  // A message whose reply didn't arrive, with the id a retry sends: the same one
+  // when the server never got it, a new one when its turn failed.
+  const [failedTurn, setFailedTurn] = useState<{ prompt: string; clientMessageId: string } | null>(null);
   const [atBottom, setAtBottom] = useState(true);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [acceptErrors, setAcceptErrors] = useState<Record<string, string>>({});
@@ -68,10 +100,97 @@ export default function CoachPage() {
   const atBottomRef = useRef(true);
   const abortStreamRef = useRef<(() => void) | null>(null);
   const streamingIdRef = useRef<string | null>(null);
+  // When the live stream last sent anything (pings included), to spot one that died quietly.
+  const lastActivityRef = useRef(0);
+  // The turn the live stream belongs to, for following it if the stream dies.
+  const streamTurnRef = useRef<{ clientMessageId: string; prompt: string } | null>(null);
+  const cancelFollowRef = useRef<(() => void) | null>(null);
 
-  // Load the active (open) session's messages on first mount.
+  /**
+   * Follow a turn by its id after its stream is gone: the server finishes it
+   * regardless. On done the session reloads, so the reply, its card and any
+   * cards it replaced come back exactly as saved.
+   */
+  const followTurn = useCallback(
+    (assistantId: string, clientMessageId: string, prompt: string) => {
+      const token = session?.access_token;
+      if (!token) return;
+      abortStreamRef.current?.();
+      abortStreamRef.current = null;
+      streamTurnRef.current = null;
+      cancelFollowRef.current?.();
+      let cancelled = false;
+      cancelFollowRef.current = () => {
+        cancelled = true;
+      };
+      streamingIdRef.current = assistantId;
+      setStreaming(true);
+      patchMessage(assistantId, {
+        isStreaming: true,
+        clientMessageId,
+        progressLabel: FOLLOWING_LABEL,
+        progressSince: Date.now(),
+      });
+
+      const giveUp = (message: string, retryId: string) => {
+        removeMessage(assistantId);
+        setStreaming(false);
+        streamingIdRef.current = null;
+        setChatError(message);
+        setFailedTurn({ prompt, clientMessageId: retryId });
+      };
+
+      void (async () => {
+        const startedAt = Date.now();
+        while (!cancelled && Date.now() - startedAt < TURN_FOLLOW_LIMIT_MS) {
+          try {
+            const turn = await getChatTurn(token, clientMessageId);
+            if (cancelled) return;
+            if (turn.status === 'done') {
+              if (turn.session_id) {
+                const result = await getChatHistory(token, 100, 0, turn.session_id);
+                if (cancelled) return;
+                setMessages(toChatMessages(result.messages));
+              } else {
+                finalizeStream(assistantId);
+              }
+              setStreaming(false);
+              streamingIdRef.current = null;
+              cancelFollowRef.current = null;
+              return;
+            }
+            if (turn.status === 'failed') {
+              giveUp("That reply didn't come through. Try again.", newClientMessageId());
+              return;
+            }
+          } catch (error) {
+            if (cancelled) return;
+            if (error instanceof ApiError && error.status === 404) {
+              // It never reached the server, so sending it again is safe.
+              giveUp("Your message didn't reach your coach. Try again.", clientMessageId);
+              return;
+            }
+            // No connection: keep trying until the limit.
+          }
+          await wait(TURN_POLL_MS);
+        }
+        if (!cancelled) giveUp('No reply yet. Try again.', newClientMessageId());
+      })();
+    },
+    [session, finalizeStream, patchMessage, removeMessage, setChatError, setMessages, setStreaming],
+  );
+
+  // Load the active (open) session's messages on first mount, and pick up a
+  // turn that was still running (a reload, or coming back to Coach mid-reply).
   useEffect(() => {
-    if (messages.length > 0 || !session?.access_token) return;
+    if (!session?.access_token) return;
+    const pending = useAppStore.getState().messages.find((m) => m.isStreaming && m.clientMessageId);
+    if (pending?.clientMessageId) {
+      const prompt = [...useAppStore.getState().messages].reverse().find((m) => m.role === 'user')?.content ?? '';
+      followTurn(pending.id, pending.clientMessageId, prompt);
+      return;
+    }
+    if (messages.length > 0) return;
     const token = session.access_token;
     void (async () => {
       try {
@@ -81,15 +200,13 @@ export default function CoachPage() {
         setActiveSessionDate(activeSession.session_date);
         const result = await getChatHistory(token, 100, 0, activeSession.id);
         if (result.messages.length > 0) {
-          setMessages(
-            result.messages.map((m) => ({
-              id: m.id,
-              role: m.role,
-              content: m.content,
-              createdAt: m.created_at,
-              suggestion: m.suggestion,
-            })),
-          );
+          setMessages(toChatMessages(result.messages));
+          const running = runningTurnInHistory(result.messages);
+          if (running) {
+            const assistantId = `${running}-reply`;
+            appendMessage({ id: assistantId, role: 'model', content: '', isStreaming: true, createdAt: new Date().toISOString() });
+            followTurn(assistantId, running, result.messages[result.messages.length - 1].content);
+          }
         }
       } catch {
         // Non-blocking
@@ -97,6 +214,36 @@ export default function CoachPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
+
+  // Leaving Coach stops listening; coming back follows the turn instead (above).
+  useEffect(
+    () => () => {
+      abortStreamRef.current?.();
+      abortStreamRef.current = null;
+      cancelFollowRef.current?.();
+    },
+    [],
+  );
+
+  // A stream that went quiet (a sleeping laptop, a dropped connection) is
+  // swapped for following its turn. Checked on a timer and when the tab returns.
+  useEffect(() => {
+    const check = () => {
+      const turn = streamTurnRef.current;
+      const assistantId = streamingIdRef.current;
+      if (!abortStreamRef.current || !turn || !assistantId) return;
+      if (isStreamStalled(lastActivityRef.current, Date.now())) followTurn(assistantId, turn.clientMessageId, turn.prompt);
+    };
+    const timer = window.setInterval(check, 5000);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') check();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [followTurn]);
 
   // The side panel's "Today's plan" reads the store, which only Home fills.
   // Coming straight to Coach, load it here.
@@ -136,27 +283,48 @@ export default function CoachPage() {
   }, []);
 
   const streamReply = useCallback(
-    (prompt: string) => {
+    (prompt: string, clientMessageId: string) => {
       if (!session?.access_token) {
         setChatError('You must be signed in to message your coach.');
         return;
       }
       setChatError(null);
-      setFailedPrompt(null);
+      setFailedTurn(null);
 
-      const assistantId = `${Date.now()}-reply`;
+      const assistantId = `${clientMessageId}-reply`;
       appendMessage({
         id: assistantId,
         role: 'model',
         content: '',
         isStreaming: true,
+        clientMessageId,
         createdAt: new Date().toISOString(),
       });
       streamingIdRef.current = assistantId;
+      streamTurnRef.current = { clientMessageId, prompt };
+      lastActivityRef.current = Date.now();
       setStreaming(true);
 
       abortStreamRef.current = streamChat(session.access_token, prompt, {
-        onChunk: (text) => appendStreamChunk(assistantId, text),
+        onActivity: () => {
+          lastActivityRef.current = Date.now();
+        },
+        onProgress: ({ label, plan }) => {
+          const current = useAppStore.getState().messages.find((m) => m.id === assistantId);
+          patchMessage(assistantId, {
+            progressLabel: label,
+            progressSince: Date.now(),
+            planBuilding: Boolean(current?.planBuilding) || plan,
+          });
+        },
+        onTurnExists: () => followTurn(assistantId, clientMessageId, prompt),
+        onChunk: (text) => {
+          // The reply itself is arriving, so the progress line goes.
+          if (useAppStore.getState().messages.find((m) => m.id === assistantId)?.progressLabel) {
+            patchMessage(assistantId, { progressLabel: undefined });
+          }
+          appendStreamChunk(assistantId, text);
+        },
         onSuggestion: ({ suggestion, replaces }) => {
           // Read the latest messages: chunks have landed since this closure.
           const current = useAppStore.getState().messages;
@@ -169,18 +337,26 @@ export default function CoachPage() {
           finalizeStream(assistantId);
           streamingIdRef.current = null;
           abortStreamRef.current = null;
+          streamTurnRef.current = null;
         },
-        onError: (message) => {
+        onError: (message, followable) => {
+          abortStreamRef.current = null;
+          if (followable) {
+            // The server may well be finishing it; follow the turn rather than fail.
+            followTurn(assistantId, clientMessageId, prompt);
+            return;
+          }
           removeMessage(assistantId);
           setStreaming(false);
           streamingIdRef.current = null;
-          abortStreamRef.current = null;
+          streamTurnRef.current = null;
           setChatError(message);
-          setFailedPrompt(prompt);
+          // Refused before it started (a limit, validation), so the same id is safe.
+          setFailedTurn({ prompt, clientMessageId });
         },
-      });
+      }, { clientMessageId });
     },
-    [session, appendMessage, appendStreamChunk, finalizeStream, removeMessage, setChatError, setStreaming, setMessages],
+    [session, appendMessage, appendStreamChunk, finalizeStream, followTurn, patchMessage, removeMessage, setChatError, setStreaming, setMessages],
   );
 
   const updateSuggestion = useCallback(
@@ -244,15 +420,17 @@ export default function CoachPage() {
     (presetText?: string) => {
       const value = (presetText ?? draft).trim();
       if (!value || isStreaming) return;
+      const clientMessageId = newClientMessageId();
       appendMessage({
-        id: Date.now().toString(),
+        id: clientMessageId,
         role: 'user',
         content: value,
+        clientMessageId,
         createdAt: new Date().toISOString(),
       });
       setDraft('');
       atBottomRef.current = true;
-      streamReply(value);
+      streamReply(value, clientMessageId);
     },
     [draft, isStreaming, appendMessage, streamReply],
   );
@@ -260,6 +438,9 @@ export default function CoachPage() {
   const stopStreaming = useCallback(() => {
     abortStreamRef.current?.();
     abortStreamRef.current = null;
+    streamTurnRef.current = null;
+    cancelFollowRef.current?.();
+    cancelFollowRef.current = null;
     const id = streamingIdRef.current;
     if (id) {
       finalizeStream(id);
@@ -282,7 +463,7 @@ export default function CoachPage() {
       try {
         const { session: newSession } = await createChatSession(token);
         clearChat();
-        setFailedPrompt(null);
+        setFailedTurn(null);
         setActiveSessionDate(newSession.session_date);
       } catch (error) {
         setChatError(error instanceof Error ? error.message : 'Could not start a new session.');
@@ -350,8 +531,12 @@ export default function CoachPage() {
                 <span className="flex-1 text-[12.5px]" style={{ color: 'var(--forma-danger)' }}>
                   {chatError}
                 </span>
-                {failedPrompt ? (
-                  <Button size="sm" onClick={() => streamReply(failedPrompt)} leftIcon={<RotateCcw size={13} color="var(--on-aqua)" />}>
+                {failedTurn ? (
+                  <Button
+                    size="sm"
+                    onClick={() => streamReply(failedTurn.prompt, failedTurn.clientMessageId)}
+                    leftIcon={<RotateCcw size={13} color="var(--on-aqua)" />}
+                  >
                     Retry
                   </Button>
                 ) : null}
@@ -360,12 +545,7 @@ export default function CoachPage() {
 
             {messages.length === 0 && !chatError ? (
               <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-                <div
-                  className="flex h-12 w-12 items-center justify-center rounded-full"
-                  style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-strong)' }}
-                >
-                  <Zap size={20} color="var(--teal)" />
-                </div>
+                <CoachAvatar size={44} />
                 <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
                   Your coach is ready
                 </div>
@@ -381,11 +561,8 @@ export default function CoachPage() {
                 <div key={message.id} className="flex flex-col gap-2.5">
                 <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                   {!isUser ? (
-                    <div
-                      className="mr-2 mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
-                      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-strong)' }}
-                    >
-                      <Zap size={13} color="var(--teal)" />
+                    <div className="mr-2 mt-1.5 flex h-8 w-8 flex-shrink-0 items-center justify-center">
+                      <CoachAvatar />
                     </div>
                   ) : null}
                   <div
@@ -399,12 +576,21 @@ export default function CoachPage() {
                     {isUser ? (
                       <span className="text-[14px] leading-6">{message.content}</span>
                     ) : message.isStreaming && message.content === '' ? (
-                      <TypingDots color="var(--teal)" />
+                      <CoachWaiting
+                        label={message.progressLabel}
+                        since={message.progressSince}
+                        planBuilding={message.planBuilding}
+                      />
                     ) : (
                       <ChatMarkdown content={message.content} streaming={message.isStreaming} />
                     )}
                   </div>
                 </div>
+                {!message.suggestion && message.isStreaming && message.planBuilding ? (
+                  <div className="sm:ml-10 md:max-w-[880px]">
+                    <PlanCardPlaceholder />
+                  </div>
+                ) : null}
                 {message.suggestion ? (
                   <div className="sm:ml-10 md:max-w-[880px]">
                     <SuggestionCard

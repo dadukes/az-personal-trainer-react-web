@@ -722,6 +722,32 @@ export interface ChatHistoryMessage {
   created_at: string;
   /** A plan the coach suggested in this message, in its current state. */
   suggestion?: PlanSuggestion;
+  /** User messages: the id the app gave the message. */
+  client_message_id?: string | null;
+  /** User messages: where the coach's reply stands. A turn running over 5 minutes reads failed. */
+  turn_status?: 'running' | 'done' | 'failed' | null;
+}
+
+/** GET /chat/turns/{clientMessageId}: a turn the app stopped streaming. */
+export interface ChatTurnResponse {
+  success: boolean;
+  status: 'running' | 'done' | 'failed';
+  session_id: string | null;
+  user_message_id: string;
+  reply: {
+    id: string;
+    role: 'model';
+    content: string;
+    created_at: string;
+    suggestion?: PlanSuggestion;
+  } | null;
+}
+
+/** A progress label while the coach works (`status` events that carry one). */
+export interface ChatProgressEvent {
+  label: string;
+  /** The coach is changing the plan, so a card is coming. */
+  plan: boolean;
 }
 
 // ─── Coach plan suggestions ───────────────────────────────────────────────────
@@ -1468,6 +1494,14 @@ export async function acceptPlanSuggestion(
   );
 }
 
+/**
+ * Where a coach turn stands, for a reply the app stopped streaming. 404 (an
+ * ApiError) means the server never received the message.
+ */
+export async function getChatTurn(accessToken: string, clientMessageId: string): Promise<ChatTurnResponse> {
+  return apiFetch<ChatTurnResponse>(`/chat/turns/${encodeURIComponent(clientMessageId)}`, accessToken);
+}
+
 export async function getChatSessions(
   accessToken: string,
   limit = 30,
@@ -1787,14 +1821,25 @@ export function streamChat(
   callbacks: {
     onChunk: (text: string) => void;
     onDone: () => void;
-    onError: (message: string) => void;
+    /**
+     * `followable` is true when the request may have reached the server (the
+     * connection broke or the stream failed), so the turn can be followed by
+     * its id; false when the server refused it (limits, validation).
+     */
+    onError: (message: string, followable: boolean) => void;
     /** A plan suggestion arrived with this reply (sent just before `done`). */
     onSuggestion?: (event: ChatSuggestionEvent) => void;
+    /** What the coach is doing, while it works. */
+    onProgress?: (event: ChatProgressEvent) => void;
+    /** Any event arrived, pings included: the stream is alive. */
+    onActivity?: () => void;
+    /** This message id was already sent, so follow that turn instead. */
+    onTurnExists?: () => void;
   },
-  options?: { forceNewSession?: boolean },
+  options?: { forceNewSession?: boolean; clientMessageId?: string },
 ): () => void {
   if (!env.hasApiConfig) {
-    callbacks.onError('Missing VITE_API_BASE_URL or VITE_AZURE_FUNCTION_KEY.');
+    callbacks.onError('Missing VITE_API_BASE_URL or VITE_AZURE_FUNCTION_KEY.', false);
     return () => {};
   }
 
@@ -1820,24 +1865,32 @@ export function streamChat(
         body: JSON.stringify({
           message,
           ...(options?.forceNewSession ? { forceNewSession: true } : {}),
+          ...(options?.clientMessageId ? { clientMessageId: options.clientMessageId } : {}),
         }),
       });
     } catch (error) {
       if ((error as Error)?.name === 'AbortError') return;
       const msg = error instanceof Error ? error.message : 'Network request failed';
-      callbacks.onError(`${createNetworkErrorMessage(targetUrl)} ${msg}`);
+      callbacks.onError(`${createNetworkErrorMessage(targetUrl)} ${msg}`, true);
       return;
     }
 
     if (!response.ok) {
       let errorMessage = 'The chat request failed.';
+      let errorCode: unknown;
       try {
-        const body = (await response.json()) as ApiErrorBody;
+        const body = (await response.json()) as ApiErrorBody & { code?: unknown };
         errorMessage = body.error ?? body.message ?? errorMessage;
+        errorCode = body.code;
       } catch {
         errorMessage = response.statusText || errorMessage;
       }
-      callbacks.onError(errorMessage);
+      if (response.status === 409 && errorCode === 'turn_exists' && callbacks.onTurnExists) {
+        callbacks.onTurnExists();
+        return;
+      }
+      // A gateway timeout or 5xx may have left the turn running.
+      callbacks.onError(errorMessage, response.status >= 500);
       return;
     }
 
@@ -1864,6 +1917,7 @@ export function streamChat(
 
         const dataLine = dataLines.join('\n');
         if (!dataLine) continue;
+        callbacks.onActivity?.();
 
         const resolveEventType = (parsed: Record<string, unknown>): SseEventType | null => {
           if (
@@ -1915,6 +1969,10 @@ export function streamChat(
               if (finalText.trim() !== '') callbacks.onChunk(finalText);
             }
             callbacks.onDone();
+          } else if (resolvedType === 'status') {
+            if (typeof parsed.label === 'string' && parsed.label) {
+              callbacks.onProgress?.({ label: parsed.label, plan: parsed.plan === true });
+            }
           } else if (resolvedType === 'suggestion') {
             callbacks.onSuggestion?.({
               suggestion: (parsed.suggestion as PlanSuggestion | null | undefined) ?? null,
@@ -1924,7 +1982,9 @@ export function streamChat(
             });
           } else if (resolvedType === 'error') {
             const errMsg = typeof parsed.message === 'string' ? parsed.message : 'Stream error';
-            callbacks.onError(errMsg);
+            if (parsed.code === 'turn_exists' && callbacks.onTurnExists) callbacks.onTurnExists();
+            // The server reported the turn failed; following it would only say so again.
+            else callbacks.onError(errMsg, false);
           }
         } catch {
           if (dataLine.trim() !== '') {
@@ -1946,7 +2006,7 @@ export function streamChat(
         parseSseBuffer(`${fullBody}\n\n`);
       } catch (error) {
         if ((error as Error)?.name === 'AbortError') return;
-        callbacks.onError('Unable to read chat response body.');
+        callbacks.onError('Unable to read chat response body.', true);
       }
       return;
     }
@@ -1960,7 +2020,7 @@ export function streamChat(
       }
     } catch (error) {
       if ((error as Error)?.name !== 'AbortError') {
-        callbacks.onError('Stream read failed unexpectedly.');
+        callbacks.onError('Stream read failed unexpectedly.', true);
       }
     }
   })();

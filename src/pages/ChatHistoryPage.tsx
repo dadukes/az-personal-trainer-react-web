@@ -1,4 +1,4 @@
-import { ChevronLeft, MessageSquare, Zap } from 'lucide-react';
+import { ChevronLeft, MessageSquare } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
@@ -219,11 +219,8 @@ export default function ChatHistoryPage() {
                         <div key={m.id} className="flex flex-col gap-1.5">
                         <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                           {!isUser ? (
-                            <div
-                              className="mr-2 mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
-                              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-strong)' }}
-                            >
-                              <Zap size={13} color="var(--teal)" />
+                            <div className="mr-2 mt-1.5 flex h-8 w-8 flex-shrink-0 items-center justify-center">
+                              <img src="/forma_logo.png" alt="" aria-hidden="true" width={28} height={28} className="object-contain" />
                             </div>
                           ) : null}
                           <div

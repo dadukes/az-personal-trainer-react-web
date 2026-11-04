@@ -76,6 +76,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   `Coach`): a week table (stacked below `sm`), one day's exercises with what was taken out, or a single
   exercise's before and after; then Accept, or the saved state with "See plan", or the grey "Replaced by
   your tweak" line. Presentational: the page owns accepting. Mobile twin: `coach-suggestion-card`.
+- **`CoachWaiting.tsx`** / **`PlanCardPlaceholder.tsx`** — the coach's reply on its way: dots with the progress
+  label and a "still going" line after a while; and the skeleton where the plan card will land. Mobile twins:
+  `coach-waiting`, `plan-card-placeholder`.
 
 ## Rules
 
