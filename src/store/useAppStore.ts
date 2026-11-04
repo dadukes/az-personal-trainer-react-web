@@ -6,6 +6,7 @@ import type {
   DashboardDayPlan,
   DashboardExercise,
   FitnessLevel,
+  PlanSuggestion,
   PrimaryGoal,
   ProgressSnapshot,
   XpBreakdownEntry,
@@ -77,6 +78,8 @@ export interface ChatMessage {
   };
   isStreaming?: boolean;
   createdAt: string;
+  /** A plan the coach suggested with this reply, shown as a card under it. */
+  suggestion?: PlanSuggestion;
 }
 
 export interface GamificationState {

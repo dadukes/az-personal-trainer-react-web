@@ -1,3 +1,6 @@
+import type { DashboardDayPlan } from '@/lib/api';
+import type { WorkoutDay } from '@/store/useAppStore';
+
 /**
  * Workout-completion helpers.
  *
@@ -59,4 +62,38 @@ export function currentWeekDateForDayKey(dayKey: string, base: Date = new Date()
 /** Stable key for a completed workout: scoped to the plan so a new plan resets marks. */
 export function completionKey(planId: string | undefined, dateISO: string): string {
   return `${planId ?? 'noplan'}::${dateISO}`;
+}
+
+const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/**
+ * The next five days from `today` as Home's "Upcoming week" cells, read from the
+ * active plan. Also used by Coach to refresh the store after a plan is accepted.
+ */
+export function buildWeekPlan(
+  plan: Record<string, DashboardDayPlan> | null | undefined,
+  today: Date = new Date(),
+): WorkoutDay[] {
+  if (!plan) return [];
+  const todayKey = DAY_KEYS[today.getDay()];
+  return [0, 1, 2, 3, 4].map((offset) => {
+    const d = new Date(today);
+    d.setDate(today.getDate() + offset);
+    const key = DAY_KEYS[d.getDay()];
+    const label = offset === 0 ? 'Today' : offset === 1 ? 'Tomorrow' : DAY_ABBR[d.getDay()];
+    const date = localISODate(d);
+    const dayPlan = plan[key];
+    const status = (key === todayKey ? 'today' : 'planned') as 'today' | 'planned' | 'rest';
+    if (!dayPlan || dayPlan.is_rest_day) {
+      return { day: label, key, date, status, title: 'Rest', duration: '-' };
+    }
+    return {
+      day: label,
+      key,
+      date,
+      status,
+      title: dayPlan.focus ?? 'Workout',
+      duration: dayPlan.estimated_duration_minutes ? `${dayPlan.estimated_duration_minutes}m` : '-',
+    };
+  });
 }

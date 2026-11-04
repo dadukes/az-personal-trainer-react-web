@@ -72,6 +72,10 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
 - **`ChatMarkdown.tsx`** — dependency-free, HTML-escaping markdown renderer for coach messages
   (headings, bold/italic, inline + fenced code, links, lists). Styled via `.md-body` in `index.css`.
 - **`TypingDots.tsx`** — the streaming/"thinking" indicator.
+- **`SuggestionCard.tsx`** — a coach plan suggestion under its message (boards `WebCoachPlan`, `CoachDay`,
+  `Coach`): a week table (stacked below `sm`), one day's exercises with what was taken out, or a single
+  exercise's before and after; then Accept, or the saved state with "See plan", or the grey "Replaced by
+  your tweak" line. Presentational: the page owns accepting. Mobile twin: `coach-suggestion-card`.
 
 ## Rules
 

@@ -30,23 +30,9 @@ import {
 } from '@/lib/health';
 import { isFeatureEnabled } from '@/lib/featureFlags';
 import { dayKeyForDate, planDayTitles, workoutsOnDate } from '@/lib/logbookPast';
-import { completionKey, currentWeekDateForDayKey, localISODate } from '@/lib/workout';
+import { buildWeekPlan, completionKey, currentWeekDateForDayKey, localISODate } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
-
-const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
-const DAY_ABBR = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-function buildWeekLabels(): string[] {
-  const today = new Date();
-  return [0, 1, 2, 3, 4].map((offset) => {
-    if (offset === 0) return 'Today';
-    if (offset === 1) return 'Tomorrow';
-    const d = new Date(today);
-    d.setDate(today.getDate() + offset);
-    return DAY_ABBR[d.getDay()];
-  });
-}
 
 function getTimeGreeting(hour: number): string {
   if (hour < 12) return 'Good morning';
@@ -127,32 +113,7 @@ export default function HomePage() {
         ),
       );
       setWeekActivities(result.data.week_activities ?? {});
-      if (!plan) {
-        setWeekPlan([]);
-        return;
-      }
-      const weekLabels = buildWeekLabels();
-      const todayKey = DAY_KEYS[new Date().getDay()];
-      const mapped = weekLabels.map((label, idx) => {
-        const d = new Date();
-        d.setDate(d.getDate() + idx);
-        const key = DAY_KEYS[d.getDay()];
-        const date = localISODate(d);
-        const dayPlan = plan.plan[key];
-        const status = (key === todayKey ? 'today' : 'planned') as 'today' | 'planned' | 'rest';
-        if (!dayPlan || dayPlan.is_rest_day) {
-          return { day: label, key, date, status, title: 'Rest', duration: '-' };
-        }
-        return {
-          day: label,
-          key,
-          date,
-          status,
-          title: dayPlan.focus ?? 'Workout',
-          duration: dayPlan.estimated_duration_minutes ? `${dayPlan.estimated_duration_minutes}m` : '-',
-        };
-      });
-      setWeekPlan(mapped);
+      setWeekPlan(buildWeekPlan(plan?.plan));
     } catch {
       // Non-blocking
     }

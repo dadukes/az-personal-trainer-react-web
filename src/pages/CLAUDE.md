@@ -105,6 +105,13 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   Anything on a navy hero (Home, plan day) uses aqua controls, never a surface token (near-black in dark).
 - **Coach**: consume the `streamChat` SSE helper; render incremental chunks; keep the
   stop/retry/new-session affordances and the "scroll to latest" button.
+  **Plan suggestions** (`SuggestionCard`, logic in `src/lib/planSuggestion.ts`, mirrored on mobile): the
+  `suggestion` event puts a card on the coach's reply and marks the cards it `replaces`; history brings
+  them back in their current state. Nothing is saved until Accept (`acceptPlanSuggestion`), which then
+  refreshes the store's `weekPlan` (`buildWeekPlan`, shared with Home). A 409 `replaced` collapses the card;
+  any other refusal shows on it. While the latest card is pending, the quick replies become tweaks and the
+  box reads "Tell me what to change". Coach also loads `weekPlan` itself when the store is empty, for the
+  side panel. Past chats show one line per card (`historyLine`).
 - **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads
   persisted history via `getNutritionLogs` on mount and prepends new logs (survives refresh).
 - **Progress**: `getProgress` returns level/XP, `this_week` activity stats (wired to the "This

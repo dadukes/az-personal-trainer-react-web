@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import ChatMarkdown from '@/components/ChatMarkdown';
+import { historyLine } from '@/lib/planSuggestion';
 import { Badge, Card, Eyebrow, Row, Surface } from '@/components/ui';
 import {
   getChatHistory,
@@ -215,7 +216,8 @@ export default function ChatHistoryPage() {
                     messages.map((m) => {
                       const isUser = m.role === 'user';
                       return (
-                        <div key={m.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                        <div key={m.id} className="flex flex-col gap-1.5">
+                        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                           {!isUser ? (
                             <div
                               className="mr-2 mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
@@ -238,6 +240,12 @@ export default function ChatHistoryPage() {
                               <ChatMarkdown content={m.content} />
                             )}
                           </div>
+                        </div>
+                        {m.suggestion ? (
+                          <p className="m-0 ml-10 text-[13px] font-semibold" style={{ color: 'var(--ink-2)' }}>
+                            {historyLine(m.suggestion)}
+                          </p>
+                        ) : null}
                         </div>
                       );
                     })

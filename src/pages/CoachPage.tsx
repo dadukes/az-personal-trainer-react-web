@@ -3,9 +3,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import ChatMarkdown from '@/components/ChatMarkdown';
+import SuggestionCard from '@/components/SuggestionCard';
 import TypingDots from '@/components/TypingDots';
 import { Badge, Button, Card, Eyebrow, StatTile } from '@/components/ui';
-import { createChatSession, getChatHistory, getChatSessions, streamChat } from '@/lib/api';
+import {
+  acceptPlanSuggestion,
+  ApiError,
+  createChatSession,
+  getChatHistory,
+  getChatSessions,
+  getDashboard,
+  streamChat,
+  type PlanSuggestion,
+} from '@/lib/api';
+import { markReplaced, suggestionChips } from '@/lib/planSuggestion';
+import { buildWeekPlan } from '@/lib/workout';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type ChatMessage } from '@/store/useAppStore';
 
@@ -41,6 +53,7 @@ export default function CoachPage() {
     clearChat,
     healthSnapshot,
     weekPlan,
+    setWeekPlan,
   } = useAppStore();
 
   const [draft, setDraft] = useState('');
@@ -48,6 +61,8 @@ export default function CoachPage() {
   const [activeSessionDate, setActiveSessionDate] = useState<string | null>(null);
   const [failedPrompt, setFailedPrompt] = useState<string | null>(null);
   const [atBottom, setAtBottom] = useState(true);
+  const [acceptingId, setAcceptingId] = useState<string | null>(null);
+  const [acceptErrors, setAcceptErrors] = useState<Record<string, string>>({});
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -72,6 +87,7 @@ export default function CoachPage() {
               role: m.role,
               content: m.content,
               createdAt: m.created_at,
+              suggestion: m.suggestion,
             })),
           );
         }
@@ -79,6 +95,24 @@ export default function CoachPage() {
         // Non-blocking
       }
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session]);
+
+  // The side panel's "Today's plan" reads the store, which only Home fills.
+  // Coming straight to Coach, load it here.
+  useEffect(() => {
+    if (weekPlan.length > 0 || !session?.access_token) return;
+    let active = true;
+    void getDashboard(session.access_token)
+      .then((result) => {
+        if (active) setWeekPlan(buildWeekPlan(result.data.active_workout_plan?.plan));
+      })
+      .catch(() => {
+        // Non-blocking: the panel shows its empty state.
+      });
+    return () => {
+      active = false;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session]);
 
@@ -123,6 +157,14 @@ export default function CoachPage() {
 
       abortStreamRef.current = streamChat(session.access_token, prompt, {
         onChunk: (text) => appendStreamChunk(assistantId, text),
+        onSuggestion: ({ suggestion, replaces }) => {
+          // Read the latest messages: chunks have landed since this closure.
+          const current = useAppStore.getState().messages;
+          const withCard = suggestion
+            ? current.map((m) => (m.id === assistantId ? { ...m, suggestion } : m))
+            : current;
+          setMessages(markReplaced(withCard, replaces));
+        },
         onDone: () => {
           finalizeStream(assistantId);
           streamingIdRef.current = null;
@@ -138,8 +180,65 @@ export default function CoachPage() {
         },
       });
     },
-    [session, appendMessage, appendStreamChunk, finalizeStream, removeMessage, setChatError, setStreaming],
+    [session, appendMessage, appendStreamChunk, finalizeStream, removeMessage, setChatError, setStreaming, setMessages],
   );
+
+  const updateSuggestion = useCallback(
+    (id: string, update: (s: PlanSuggestion) => PlanSuggestion) => {
+      const current = useAppStore.getState().messages;
+      setMessages(current.map((m) => (m.suggestion?.id === id ? { ...m, suggestion: update(m.suggestion) } : m)));
+    },
+    [setMessages],
+  );
+
+  const acceptSuggestion = useCallback(
+    (suggestion: PlanSuggestion) => {
+      if (!session?.access_token || acceptingId) return;
+      const token = session.access_token;
+      setAcceptingId(suggestion.id);
+      setAcceptErrors((prev) => {
+        const next = { ...prev };
+        delete next[suggestion.id];
+        return next;
+      });
+      void (async () => {
+        try {
+          const result = await acceptPlanSuggestion(token, suggestion.id);
+          updateSuggestion(suggestion.id, (s) =>
+            result.suggestion ? { ...result.suggestion } as PlanSuggestion : { ...s, status: 'accepted' },
+          );
+          // The plan changed: refresh what Coach's side panel (and Home) read.
+          try {
+            const dashboard = await getDashboard(token);
+            setWeekPlan(buildWeekPlan(dashboard.data.active_workout_plan?.plan));
+          } catch {
+            // Home reloads the dashboard when opened.
+          }
+        } catch (error) {
+          if (error instanceof ApiError && error.code === 'replaced') {
+            updateSuggestion(suggestion.id, (s) => ({ ...s, status: 'replaced' }));
+            return;
+          }
+          const message =
+            error instanceof ApiError ? error.message : 'Could not save it. Check your connection and try again.';
+          setAcceptErrors((prev) => ({ ...prev, [suggestion.id]: message }));
+        } finally {
+          setAcceptingId(null);
+        }
+      })();
+    },
+    [session, acceptingId, updateSuggestion, setWeekPlan],
+  );
+
+  // While the latest suggestion waits, the quick replies tweak it.
+  const pendingSuggestion = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      const s = messages[i].suggestion;
+      if (s) return s.status === 'pending' ? s : null;
+    }
+    return null;
+  }, [messages]);
+  const quickReplies = pendingSuggestion ? suggestionChips(pendingSuggestion) : QUICK_REPLIES;
 
   const sendMessage = useCallback(
     (presetText?: string) => {
@@ -279,7 +378,8 @@ export default function CoachPage() {
             {messages.map((message: ChatMessage) => {
               const isUser = message.role === 'user';
               return (
-                <div key={message.id} className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
+                <div key={message.id} className="flex flex-col gap-2.5">
+                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
                   {!isUser ? (
                     <div
                       className="mr-2 mt-1 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full"
@@ -304,6 +404,18 @@ export default function CoachPage() {
                       <ChatMarkdown content={message.content} streaming={message.isStreaming} />
                     )}
                   </div>
+                </div>
+                {message.suggestion ? (
+                  <div className="sm:ml-10 md:max-w-[880px]">
+                    <SuggestionCard
+                      suggestion={message.suggestion}
+                      accepting={acceptingId === message.suggestion.id}
+                      error={acceptErrors[message.suggestion.id] ?? null}
+                      onAccept={() => message.suggestion && acceptSuggestion(message.suggestion)}
+                      onSeePlan={(day) => navigate(day ? `/plan/${day}` : '/')}
+                    />
+                  </div>
+                ) : null}
                 </div>
               );
             })}
@@ -332,7 +444,7 @@ export default function CoachPage() {
         {/* Composer */}
         <div className="px-5 pb-5 pt-3.5 sm:px-10" style={{ borderTop: '1px solid var(--border-base)', background: 'var(--bg-surface)' }}>
           <div className="mb-3 flex gap-2 overflow-x-auto">
-            {QUICK_REPLIES.map((reply) => (
+            {quickReplies.map((reply) => (
               <button
                 key={reply}
                 onClick={() => sendMessage(reply)}
@@ -357,7 +469,8 @@ export default function CoachPage() {
                   sendMessage();
                 }
               }}
-              placeholder="Message your coach"
+              placeholder={pendingSuggestion ? 'Tell me what to change' : 'Message your coach'}
+              aria-label="Message your coach"
               rows={1}
               maxLength={2000}
               disabled={isStreaming}

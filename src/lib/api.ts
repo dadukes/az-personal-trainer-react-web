@@ -720,6 +720,56 @@ export interface ChatHistoryMessage {
   role: 'user' | 'model';
   content: string;
   created_at: string;
+  /** A plan the coach suggested in this message, in its current state. */
+  suggestion?: PlanSuggestion;
+}
+
+// ─── Coach plan suggestions ───────────────────────────────────────────────────
+
+export type PlanSuggestionStatus = 'pending' | 'accepted' | 'replaced';
+
+interface PlanSuggestionBase {
+  id: string;
+  user_id: string;
+  session_id: string | null;
+  message_id: string | null;
+  base_plan_id: string | null;
+  status: PlanSuggestionStatus;
+  accepted_plan_id: string | null;
+  accepted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/**
+ * A plan the coach suggested. Nothing changes until it's accepted.
+ * `week` replaces the plan; `days` changes some days of the active plan, where
+ * a day mapping to null is removed. `previous` holds those days as they were.
+ */
+export type PlanSuggestion =
+  | (PlanSuggestionBase & {
+      kind: 'week';
+      payload: { week_start: string; ai_notes: string | null; plan: Record<string, DashboardDayPlan> };
+    })
+  | (PlanSuggestionBase & {
+      kind: 'days';
+      payload: {
+        changes: Record<string, DashboardDayPlan | null>;
+        previous: Record<string, DashboardDayPlan | null>;
+      };
+    });
+
+export interface AcceptPlanSuggestionResponse {
+  success: boolean;
+  outcome: 'accepted' | 'already_accepted';
+  plan_id: string | null;
+  suggestion: PlanSuggestion | null;
+}
+
+/** The `suggestion` chat event: this turn's card, and earlier cards it replaced. */
+export interface ChatSuggestionEvent {
+  suggestion: PlanSuggestion | null;
+  replaces: string[];
 }
 
 export interface ChatHistoryResponse {
@@ -1165,11 +1215,14 @@ function createNetworkErrorMessage(targetUrl: string): string {
 /** The server answered with an error. Anything else thrown means no answer arrived. */
 export class ApiError extends Error {
   readonly status: number;
+  /** The server's machine-readable reason, when it sends one (e.g. `replaced`). */
+  readonly code?: string;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.code = code;
   }
 }
 
@@ -1213,13 +1266,15 @@ async function apiFetch<T>(
 
   if (!response.ok) {
     let errorMessage = 'The request failed.';
+    let errorCode: string | undefined;
     try {
-      const errorBody = (await response.json()) as ApiErrorBody;
+      const errorBody = (await response.json()) as ApiErrorBody & { code?: unknown };
       errorMessage = errorBody.error ?? errorBody.message ?? errorMessage;
+      if (typeof errorBody.code === 'string') errorCode = errorBody.code;
     } catch {
       errorMessage = response.statusText || errorMessage;
     }
-    throw new ApiError(errorMessage, response.status);
+    throw new ApiError(errorMessage, response.status, errorCode);
   }
 
   return (await response.json()) as T;
@@ -1394,6 +1449,22 @@ export async function getChatHistory(
   return apiFetch<ChatHistoryResponse>(
     `/chat/history?limit=${limit}&offset=${offset}${sessionParam}`,
     accessToken,
+  );
+}
+
+/**
+ * Save a coach suggestion exactly as shown. Accepting twice is harmless. A 409
+ * carries `code` 'replaced' (a newer suggestion took its place) or
+ * 'plan_changed' (the plan changed since it was suggested).
+ */
+export async function acceptPlanSuggestion(
+  accessToken: string,
+  suggestionId: string,
+): Promise<AcceptPlanSuggestionResponse> {
+  return apiFetch<AcceptPlanSuggestionResponse>(
+    `/plan-suggestions/${encodeURIComponent(suggestionId)}/accept`,
+    accessToken,
+    { method: 'POST' },
   );
 }
 
@@ -1701,7 +1772,7 @@ export async function getNutritionLogs(
 
 // ─── SSE Chat Stream ──────────────────────────────────────────────────────────
 
-export type SseEventType = 'status' | 'chunk' | 'done' | 'error' | 'ping';
+export type SseEventType = 'status' | 'chunk' | 'done' | 'error' | 'ping' | 'suggestion';
 
 /**
  * Opens an SSE stream for POST /api/chat and calls the provided callbacks as
@@ -1717,6 +1788,8 @@ export function streamChat(
     onChunk: (text: string) => void;
     onDone: () => void;
     onError: (message: string) => void;
+    /** A plan suggestion arrived with this reply (sent just before `done`). */
+    onSuggestion?: (event: ChatSuggestionEvent) => void;
   },
   options?: { forceNewSession?: boolean },
 ): () => void {
@@ -1798,7 +1871,8 @@ export function streamChat(
             eventType === 'chunk' ||
             eventType === 'done' ||
             eventType === 'error' ||
-            eventType === 'ping'
+            eventType === 'ping' ||
+            eventType === 'suggestion'
           ) {
             return eventType;
           }
@@ -1812,6 +1886,7 @@ export function streamChat(
           ) {
             return payloadType;
           }
+          if (Array.isArray(parsed.replaces)) return 'suggestion';
           if (typeof parsed.text === 'string') return 'chunk';
           if (typeof parsed.stage === 'string') return 'status';
           if (typeof parsed.success === 'boolean') return 'done';
@@ -1840,6 +1915,13 @@ export function streamChat(
               if (finalText.trim() !== '') callbacks.onChunk(finalText);
             }
             callbacks.onDone();
+          } else if (resolvedType === 'suggestion') {
+            callbacks.onSuggestion?.({
+              suggestion: (parsed.suggestion as PlanSuggestion | null | undefined) ?? null,
+              replaces: Array.isArray(parsed.replaces)
+                ? parsed.replaces.filter((id): id is string => typeof id === 'string')
+                : [],
+            });
           } else if (resolvedType === 'error') {
             const errMsg = typeof parsed.message === 'string' ? parsed.message : 'Stream error';
             callbacks.onError(errMsg);
