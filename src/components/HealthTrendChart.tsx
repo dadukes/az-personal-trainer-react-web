@@ -1,361 +1,168 @@
 import { useMemo, useState } from 'react';
-import {
-  CartesianGrid,
-  Line,
-  LineChart,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from 'recharts';
 
-import { Segmented } from '@/components/ui';
+import { CardLabel } from '@/components/ProgressSnapshotSection';
+import { Segmented, Surface } from '@/components/ui';
 import type { HealthLog } from '@/lib/api';
-import { useAppTheme } from '@/providers/ThemeProvider';
+import { addDaysISO, keysWithRecentData, trendSummary } from '@/lib/progress';
 
 /**
- * Two health dimensions plotted over the same time axis so the user can eyeball
- * how they move together (e.g. sleep quality vs steps).
- *
- * Design note: this is deliberately **not** a dual-axis chart. Two independent
- * y-scales manufacture spurious correlations (rescale one axis and any two lines
- * appear to track). Instead both series are min–max normalized to a shared 0–100
- * "relative level" over the visible window — the honest way to overlay measures
- * of different units. The tooltip always reports the **actual** captured values.
+ * One health metric over 7, 14 or 30 days, from `getHealthLogs`. One metric at a time, so
+ * the value axis is honest: there's only one unit in view. Only metrics with data get a
+ * chip. The line's average over the range sits above it. Mobile twin: `health-trend-chart`.
+ * The whole Health trends card; renders nothing without data in the last 30 days.
  */
 
 type DimensionKey =
-  | 'step_count'
   | 'sleep_hours'
-  | 'sleep_quality'
-  | 'energy_level'
-  | 'stress_level'
+  | 'step_count'
   | 'resting_heart_rate'
+  | 'energy_level'
+  | 'sleep_quality'
+  | 'stress_level'
   | 'active_calories_burned';
 
 interface Dimension {
   key: DimensionKey;
   label: string;
-  /** Suffix shown after the raw value in the tooltip/legend (e.g. "h", "/5"). */
-  unit: string;
-  /** Formats a raw captured value for display. */
   format: (v: number) => string;
 }
 
 const DIMENSIONS: Dimension[] = [
-  { key: 'step_count', label: 'Steps', unit: '', format: (v) => Math.round(v).toLocaleString() },
-  { key: 'sleep_hours', label: 'Sleep duration', unit: 'h', format: (v) => `${v}` },
-  { key: 'sleep_quality', label: 'Sleep quality', unit: '/5', format: (v) => `${v}` },
-  { key: 'energy_level', label: 'Energy level', unit: '/5', format: (v) => `${v}` },
-  { key: 'stress_level', label: 'Stress level', unit: '/5', format: (v) => `${v}` },
-  { key: 'resting_heart_rate', label: 'Resting HR', unit: 'bpm', format: (v) => `${Math.round(v)}` },
-  { key: 'active_calories_burned', label: 'Active calories', unit: 'kcal', format: (v) => `${Math.round(v)}` },
+  { key: 'sleep_hours', label: 'Sleep', format: (v) => `${v.toFixed(1)} h` },
+  { key: 'step_count', label: 'Steps', format: (v) => Math.round(v).toLocaleString() },
+  { key: 'resting_heart_rate', label: 'Resting HR', format: (v) => `${Math.round(v)} bpm` },
+  { key: 'energy_level', label: 'Energy', format: (v) => `${v.toFixed(1)} / 5` },
+  { key: 'sleep_quality', label: 'Sleep quality', format: (v) => `${v.toFixed(1)} / 5` },
+  { key: 'stress_level', label: 'Stress', format: (v) => `${v.toFixed(1)} / 5` },
+  { key: 'active_calories_burned', label: 'Active kcal', format: (v) => Math.round(v).toLocaleString() },
 ];
 
-const RANGE_OPTIONS = [
+type RangeValue = '7' | '14' | '30';
+const RANGES = [
   { value: '7', label: '7 days' },
   { value: '14', label: '14 days' },
   { value: '30', label: '30 days' },
-];
+] as const;
 
-// Categorical series colors (dataviz-validated blue + orange; CVD-safe in both
-// modes). The brand aqua stays reserved for UI chrome (toggles/selection).
-const SERIES_COLORS = {
-  a: { light: '#2a78d6', dark: '#3987e5' },
-  b: { light: '#eb6834', dark: '#d95926' },
-};
+const W = 600;
+const H = 170;
+const PAD_LEFT = 44;
+const PAD_RIGHT = 8;
+const PAD_TOP = 10;
+const PAD_BOTTOM = 22;
 
-interface ChartRow {
-  /** Local YYYY-MM-DD for the day. */
-  date: string;
-  /** Short axis label, e.g. "Jul 5". */
-  label: string;
-  aRaw: number | null;
-  bRaw: number | null;
-  aNorm: number | null;
-  bNorm: number | null;
-}
-
-/** Local YYYY-MM-DD for a Date (avoids UTC off-by-one from toISOString). */
 function localDateKey(d: Date): string {
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}-${m}-${day}`;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-/** Min–max normalize to 0–100 across the non-null values; flat series → 50. */
-function normalize(values: (number | null)[]): (number | null)[] {
-  const present = values.filter((v): v is number => v !== null);
-  if (present.length === 0) return values.map(() => null);
-  const min = Math.min(...present);
-  const max = Math.max(...present);
-  const span = max - min;
-  return values.map((v) => (v === null ? null : span === 0 ? 50 : ((v - min) / span) * 100));
-}
-
-interface TooltipPayloadItem {
-  payload: ChartRow;
+function shortLabel(dateISO: string): string {
+  return new Date(`${dateISO}T12:00:00`).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
 }
 
 export default function HealthTrendChart({ logs }: { logs: HealthLog[] }) {
-  const { isDark } = useAppTheme();
-  const [rangeDays, setRangeDays] = useState('14');
-  const [dimAKey, setDimAKey] = useState<DimensionKey>('step_count');
-  const [dimBKey, setDimBKey] = useState<DimensionKey>('sleep_quality');
+  const today = localDateKey(new Date());
+  const available = useMemo(() => {
+    const recent = keysWithRecentData(logs, DIMENSIONS.map((d) => d.key), today);
+    return DIMENSIONS.filter((d) => recent.includes(d.key));
+  }, [logs, today]);
+  const [picked, setPicked] = useState<DimensionKey | null>(null);
+  const [range, setRange] = useState<RangeValue>('14');
 
-  const dimA = DIMENSIONS.find((d) => d.key === dimAKey)!;
-  const dimB = DIMENSIONS.find((d) => d.key === dimBKey)!;
-  const colorA = isDark ? SERIES_COLORS.a.dark : SERIES_COLORS.a.light;
-  const colorB = isDark ? SERIES_COLORS.b.dark : SERIES_COLORS.b.light;
+  const dim = available.find((d) => d.key === picked) ?? available[0] ?? null;
+  const days = Number(range);
 
-  const { rows, hasData, latestA, latestB } = useMemo(() => {
-    const days = Number(rangeDays);
+  const points = useMemo(() => {
+    if (!dim) return [];
     const byDate = new Map(logs.map((log) => [log.logged_date, log]));
-
-    // Build a continuous daily axis ending today so gaps read as gaps in time.
-    const dates: Date[] = [];
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    for (let i = days - 1; i >= 0; i--) {
-      const d = new Date(today);
-      d.setDate(today.getDate() - i);
-      dates.push(d);
+    const pts: { index: number; date: string; value: number }[] = [];
+    for (let i = 0; i < days; i += 1) {
+      const date = addDaysISO(today, i - (days - 1));
+      const raw = byDate.get(date)?.[dim.key];
+      if (typeof raw === 'number') pts.push({ index: i, date, value: raw });
     }
+    return pts;
+  }, [logs, dim, days, today]);
 
-    const aRawVals: (number | null)[] = [];
-    const bRawVals: (number | null)[] = [];
-    for (const d of dates) {
-      const log = byDate.get(localDateKey(d));
-      aRawVals.push((log?.[dimAKey] ?? null) as number | null);
-      bRawVals.push((log?.[dimBKey] ?? null) as number | null);
-    }
-
-    const aNormVals = normalize(aRawVals);
-    const bNormVals = normalize(bRawVals);
-
-    const built: ChartRow[] = dates.map((d, i) => ({
-      date: localDateKey(d),
-      label: d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
-      aRaw: aRawVals[i],
-      bRaw: bRawVals[i],
-      aNorm: aNormVals[i],
-      bNorm: bNormVals[i],
-    }));
-
-    const lastA = [...built].reverse().find((r) => r.aRaw !== null)?.aRaw ?? null;
-    const lastB = [...built].reverse().find((r) => r.bRaw !== null)?.bRaw ?? null;
-
-    return {
-      rows: built,
-      hasData: aRawVals.some((v) => v !== null) || bRawVals.some((v) => v !== null),
-      latestA: lastA,
-      latestB: lastB,
-    };
-  }, [logs, rangeDays, dimAKey, dimBKey]);
-
-  const dimOptions = (excludeKey: DimensionKey) =>
-    DIMENSIONS.filter((d) => d.key !== excludeKey);
+  if (!dim) return null;
+  const summary = trendSummary(logs, dim.key, days, today);
+  const values = points.map((p) => p.value);
+  const min = values.length ? Math.min(...values) : 0;
+  const max = values.length ? Math.max(...values) : 0;
+  const span = max - min;
+  const yMin = span === 0 ? min - 1 : min - span * 0.1;
+  const yMax = span === 0 ? max + 1 : max + span * 0.1;
+  const plotW = W - PAD_LEFT - PAD_RIGHT;
+  const plotH = H - PAD_TOP - PAD_BOTTOM;
+  const xFor = (index: number) => PAD_LEFT + (days <= 1 ? plotW / 2 : (index / (days - 1)) * plotW);
+  const yFor = (value: number) => PAD_TOP + (1 - (value - yMin) / (yMax - yMin || 1)) * plotH;
+  const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${xFor(p.index).toFixed(1)} ${yFor(p.value).toFixed(1)}`).join(' ');
+  const axis = (v: number) => dim.format(v).replace(/ .*/, '');
 
   return (
-    <div className="flex flex-col gap-4">
-      {/* Controls: dimension pickers + range. Stack full-width on mobile; inline on ≥sm. */}
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-          <DimensionSelect
-            label="Compare"
-            value={dimAKey}
-            swatch={colorA}
-            options={dimOptions(dimBKey)}
-            onChange={(v) => setDimAKey(v)}
-          />
-          <span
-            className="hidden pb-2.5 text-[12px] font-semibold sm:inline"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            with
-          </span>
-          <DimensionSelect
-            label="Against"
-            value={dimBKey}
-            swatch={colorB}
-            options={dimOptions(dimAKey)}
-            onChange={(v) => setDimBKey(v)}
-          />
+    <Surface padding="18px 16px" className="flex flex-col gap-3.5" style={{ borderRadius: 'var(--radius-hero)' }}>
+      <CardLabel>Health trends</CardLabel>
+      {available.length > 1 ? (
+        <div role="radiogroup" aria-label="Metric" className="flex flex-wrap gap-2">
+          {available.map((d) => {
+            const on = d.key === dim.key;
+            return (
+              <button
+                key={d.key}
+                type="button"
+                role="radio"
+                aria-checked={on}
+                onClick={() => setPicked(d.key)}
+                className="min-h-11 rounded-control px-3.5 text-[14px] font-semibold"
+                style={{ background: on ? 'var(--ink)' : 'var(--sunken)', color: on ? 'var(--ground)' : 'var(--ink)' }}
+              >
+                {d.label}
+              </button>
+            );
+          })}
         </div>
-        <Segmented
-          className="w-full lg:w-[240px]"
-          options={RANGE_OPTIONS}
-          value={rangeDays}
-          onChange={setRangeDays}
-        />
+      ) : null}
+
+      <div className="flex flex-col gap-0.5">
+        <span className="type-stat text-[26px]" style={{ color: 'var(--ink)' }}>
+          {summary.average != null ? dim.format(summary.average) : 'No data'}
+        </span>
+        <span className="type-meta" style={{ color: 'var(--ink-3)' }}>
+          {summary.average != null
+            ? `${dim.label} average, ${summary.daysWithData} of ${days} days`
+            : `No ${dim.label.toLowerCase()} in the last ${days} days`}
+        </span>
       </div>
 
-      {/* Legend — identity is never color-alone; shows the latest captured value. */}
-      <div className="flex flex-wrap gap-x-5 gap-y-1.5">
-        <LegendItem color={colorA} label={dimA.label} value={latestA} dim={dimA} />
-        <LegendItem color={colorB} label={dimB.label} value={latestB} dim={dimB} />
-      </div>
-
-      {hasData ? (
-        <div className="h-[280px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <LineChart data={rows} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
-              <CartesianGrid vertical={false} stroke="var(--border-subtle)" strokeDasharray="0" />
-              <XAxis
-                dataKey="label"
-                tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
-                tickLine={false}
-                axisLine={{ stroke: 'var(--border-base)' }}
-                minTickGap={24}
-              />
-              {/* Shared normalized scale — axis hidden because 0–100 "relative
-                  level" is not meaningful to read; the tooltip carries real values. */}
-              <YAxis hide domain={[0, 100]} />
-              <Tooltip
-                cursor={{ stroke: 'var(--border-base)', strokeWidth: 1 }}
-                content={({ active, payload }) => {
-                  if (!active || !payload || payload.length === 0) return null;
-                  const row = (payload as unknown as TooltipPayloadItem[])[0]?.payload;
-                  if (!row) return null;
-                  return (
-                    <div
-                      className="rounded-xl px-3 py-2 text-[12px] shadow-md"
-                      style={{
-                        background: 'var(--bg-surface)',
-                        border: '1px solid var(--border-base)',
-                        color: 'var(--text-primary)',
-                      }}
-                    >
-                      <div className="mb-1 font-bold">{row.label}</div>
-                      <TooltipRow color={colorA} dim={dimA} raw={row.aRaw} />
-                      <TooltipRow color={colorB} dim={dimB} raw={row.bRaw} />
-                    </div>
-                  );
-                }}
-              />
-              <Line
-                type="monotone"
-                dataKey="aNorm"
-                stroke={colorA}
-                strokeWidth={2}
-                dot={{ r: 2.5, fill: colorA, strokeWidth: 0 }}
-                activeDot={{ r: 5 }}
-                connectNulls
-                isAnimationActive={false}
-              />
-              <Line
-                type="monotone"
-                dataKey="bNorm"
-                stroke={colorB}
-                strokeWidth={2}
-                dot={{ r: 2.5, fill: colorB, strokeWidth: 0 }}
-                activeDot={{ r: 5 }}
-                connectNulls
-                isAnimationActive={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
-        </div>
+      {points.length > 0 ? (
+        <svg role="img" aria-label={`${dim.label} over the last ${days} days`} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full">
+          {[0, 1, 2].map((i) => {
+            const gy = PAD_TOP + (i / 2) * plotH;
+            return <line key={i} x1={PAD_LEFT} y1={gy} x2={W - PAD_RIGHT} y2={gy} stroke="var(--line)" strokeWidth={1} />;
+          })}
+          <text x={PAD_LEFT - 6} y={PAD_TOP + 4} fontSize={11} fill="var(--ink-3)" textAnchor="end">
+            {axis(max)}
+          </text>
+          <text x={PAD_LEFT - 6} y={PAD_TOP + plotH + 4} fontSize={11} fill="var(--ink-3)" textAnchor="end">
+            {axis(min)}
+          </text>
+          <path d={linePath} fill="none" stroke="var(--series)" strokeWidth={2} strokeLinejoin="round" strokeLinecap="round" />
+          {points.map((p) => (
+            <circle key={p.index} cx={xFor(p.index)} cy={yFor(p.value)} r={points.length <= 14 ? 3.5 : 2} fill="var(--series)">
+              <title>{`${shortLabel(p.date)}: ${dim.format(p.value)}`}</title>
+            </circle>
+          ))}
+          <text x={PAD_LEFT} y={H - 5} fontSize={11} fill="var(--ink-3)" textAnchor="start">
+            {shortLabel(addDaysISO(today, -(days - 1)))}
+          </text>
+          <text x={W - PAD_RIGHT} y={H - 5} fontSize={11} fill="var(--ink-3)" textAnchor="end">
+            Today
+          </text>
+        </svg>
       ) : (
-        <div
-          className="flex h-[220px] flex-col items-center justify-center rounded-2xl text-center"
-          style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
-        >
-          <p className="text-[14px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-            No health data in this range yet
-          </p>
-          <p className="mt-1 max-w-[280px] text-[12px]" style={{ color: 'var(--text-muted)' }}>
-            Log sleep, steps and energy from Home to start seeing your trends here.
-          </p>
-        </div>
+        <div className="h-[100px]" />
       )}
 
-      <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-        Lines are scaled to a shared 0–100 range so two different metrics fit one view. Select any
-        point for the real values.
-      </p>
-    </div>
-  );
-}
-
-function DimensionSelect({
-  label,
-  value,
-  swatch,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: DimensionKey;
-  swatch: string;
-  options: Dimension[];
-  onChange: (v: DimensionKey) => void;
-}) {
-  return (
-    <label className="flex flex-1 flex-col gap-1.5 sm:flex-none">
-      <span
-        className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-[0.08em]"
-        style={{ color: 'var(--text-label)' }}
-      >
-        <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: swatch }} />
-        {label}
-      </span>
-      <select
-        value={value}
-        onChange={(e) => onChange(e.target.value as DimensionKey)}
-        className="h-11 w-full rounded-xl px-3 text-[14px] font-semibold outline-none focus:border-[var(--accent)] sm:w-[190px]"
-        style={{
-          background: 'var(--bg-subtle)',
-          border: '1px solid var(--border-base)',
-          color: 'var(--text-primary)',
-        }}
-      >
-        {options.map((d) => (
-          <option key={d.key} value={d.key}>
-            {d.label}
-          </option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function LegendItem({
-  color,
-  label,
-  value,
-  dim,
-}: {
-  color: string;
-  label: string;
-  value: number | null;
-  dim: Dimension;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: color }} />
-      <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-        {label}
-      </span>
-      {value !== null ? (
-        <span className="tabular text-[12.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-          {dim.format(value)}
-          {dim.unit ? ` ${dim.unit}` : ''}
-        </span>
-      ) : null}
-    </div>
-  );
-}
-
-function TooltipRow({ color, dim, raw }: { color: string; dim: Dimension; raw: number | null }) {
-  return (
-    <div className="flex items-center gap-2">
-      <span className="inline-block h-2 w-2 rounded-full" style={{ background: color }} />
-      <span style={{ color: 'var(--text-secondary)' }}>{dim.label}</span>
-      <span className="tabular ml-auto font-bold" style={{ color: 'var(--text-primary)' }}>
-        {raw !== null ? `${dim.format(raw)}${dim.unit ? ` ${dim.unit}` : ''}` : '—'}
-      </span>
-    </div>
+      <Segmented options={RANGES} value={range} onChange={setRange} />
+    </Surface>
   );
 }

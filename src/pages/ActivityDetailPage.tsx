@@ -1,13 +1,10 @@
-import { Clock, Flame, Gauge, MapPin, Mountain, Pencil, Zap } from 'lucide-react';
-import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import ActivityEditDialog from '@/components/ActivityEditDialog';
-import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
-import { ActivityIcon, SourceBadge } from '@/components/ActivityRow';
+import DetailHeader, { DetailStat, StatGrid, useBackToActivities } from '@/components/DetailHeader';
 import HeartRateCard from '@/components/HeartRateCard';
-import { Button, Card, Eyebrow, StatTile } from '@/components/ui';
+import { Surface } from '@/components/ui';
 import {
   activitySourceLabel,
   activityTitle,
@@ -19,7 +16,6 @@ import {
   isEditableActivity,
   maxSpeedText,
   paceOrSpeed,
-  statGridClass,
   timeRangeText,
 } from '@/lib/activities';
 import {
@@ -113,95 +109,56 @@ export default function ActivityDetailPage() {
 
   const pace = activity ? paceOrSpeed(activity, unitSystem) : null;
   const topSpeed = activity ? maxSpeedText(activity, unitSystem) : null;
-  const accent = 'var(--accent)';
-  const tiles: ReactNode[] = activity
-    ? [
-        <StatTile
-          key="duration"
-          value={activity.duration_minutes ? formatMinutes(activity.duration_minutes) : '—'}
-          label="Duration"
-          icon={<Clock size={16} color={accent} />}
-        />,
-        activity.distance_km != null && activity.distance_km > 0 ? (
-          <StatTile
-            key="distance"
-            value={formatDistance(activity.distance_km, unitSystem, 2)}
-            label="Distance"
-            icon={<MapPin size={16} color={accent} />}
-          />
-        ) : null,
-        pace ? <StatTile key="pace" value={pace.value} label={pace.label} icon={<Gauge size={16} color={accent} />} /> : null,
-        topSpeed ? <StatTile key="max-speed" value={topSpeed} label="Max speed" icon={<Gauge size={16} color={accent} />} /> : null,
-        activity.active_calories ? (
-          <StatTile
-            key="calories"
-            value={formatCalories(activity.active_calories)}
-            label="Active calories"
-            icon={<Flame size={16} color={accent} />}
-          />
-        ) : null,
-        activity.elevation_gain_m ? (
-          <StatTile
-            key="elevation"
-            value={formatElevation(activity.elevation_gain_m, unitSystem)}
-            label="Elevation gain"
-            icon={<Mountain size={16} color={accent} />}
-          />
-        ) : null,
-        <StatTile
-          key="xp"
-          value={activity.xp_earned > 0 ? `+${activity.xp_earned}` : '—'}
-          label="XP earned"
-          icon={<Zap size={16} color={accent} />}
-        />,
-      ].filter(Boolean)
-    : [];
   const device = activity ? isDeviceActivity(activity) : false;
   // A device title that just repeats the type ("Run") adds nothing.
   const rawNote = activity?.notes?.trim() || null;
   const note = activity && rawNote && !(device && rawNote.toLowerCase() === activityTitle(activity).toLowerCase()) ? rawNote : null;
 
+  const sourceLine = activity
+    ? device
+      ? `From ${activitySourceLabel(activity)}`
+      : activity.source === 'coach'
+        ? 'Logged with your coach'
+        : 'Quick-logged in Forma'
+    : null;
+
   return (
-    <div className="mx-auto flex w-full max-w-[760px] animate-fade-slide-up flex-col gap-5 p-5 sm:p-8">
+    <div className="mx-auto flex w-full max-w-[680px] animate-fade-slide-up flex-col gap-6 px-4 pb-28 pt-4 sm:px-10 sm:pt-8">
       <DetailHeader
-        eyebrow="Activity"
+        meta={activity ? timeRangeText(activity.started_at, activity.completed_at) : null}
         title={activity ? activityTitle(activity) : 'Activity'}
+        sub={sourceLine}
         onBack={goBack}
         action={
           activity && isEditableActivity(activity) ? (
-            <Button variant="quiet" size="sm" onClick={() => setEditing(true)}>
-              <Pencil size={14} /> Edit
-            </Button>
+            <button type="button" onClick={() => setEditing(true)} className="min-h-11 px-1 text-[15px] font-bold" style={{ color: 'var(--teal)' }}>
+              Edit
+            </button>
           ) : undefined
         }
       />
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div
-            className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-          />
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--teal)', borderTopColor: 'transparent' }} />
         </div>
       ) : error || !activity ? (
-        <Card>
-          <p className="text-[14px]" style={{ color: 'var(--forma-danger)' }}>
-            {error ?? 'This activity could not be found.'}
-          </p>
-        </Card>
+        <p className="type-body" style={{ color: 'var(--danger)' }}>
+          {error ?? 'This activity could not be found.'}
+        </p>
       ) : (
         <>
-          <div className="flex flex-wrap items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl" style={{ background: 'var(--bg-subtle)' }}>
-              <ActivityIcon item={activity} size={17} />
-            </div>
-            <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-              {timeRangeText(activity.started_at, activity.completed_at)}
-            </span>
-            <SourceBadge item={activity} />
-          </div>
-
-          <div className={`grid grid-cols-2 gap-3 ${statGridClass(tiles.length)}`}>{tiles}</div>
+          <StatGrid>
+            {activity.distance_km != null && activity.distance_km > 0 ? (
+              <DetailStat value={formatDistance(activity.distance_km, unitSystem, 2)} label="Distance" />
+            ) : null}
+            {activity.duration_minutes ? <DetailStat value={formatMinutes(activity.duration_minutes)} label="Time" /> : null}
+            {pace ? <DetailStat value={pace.value} label={pace.label} /> : null}
+            {topSpeed ? <DetailStat value={topSpeed} label="Max speed" /> : null}
+            {activity.active_calories ? <DetailStat value={formatCalories(activity.active_calories)} label="Active kcal" /> : null}
+            {activity.elevation_gain_m ? <DetailStat value={formatElevation(activity.elevation_gain_m, unitSystem)} label="Elevation" /> : null}
+            {activity.xp_earned > 0 ? <DetailStat value={`+${activity.xp_earned}`} label="XP" /> : null}
+          </StatGrid>
 
           <HeartRateCard
             avgHr={activity.avg_hr}
@@ -213,20 +170,20 @@ export default function ActivityDetailPage() {
           />
 
           {note ? (
-            <Card padding="16px 18px">
-              <Eyebrow>{device ? 'Title' : 'Note'}</Eyebrow>
-              <p className="mt-1.5 text-[14px] leading-[1.5]" style={{ color: 'var(--text-primary)' }}>
+            <Surface padding="16px" className="flex flex-col gap-1">
+              <span className="type-meta font-bold" style={{ color: 'var(--ink-3)' }}>
+                {device ? 'Title' : 'Note'}
+              </span>
+              <p className="type-body m-0" style={{ color: 'var(--ink)' }}>
                 {note}
               </p>
-            </Card>
+            </Surface>
           ) : null}
 
-          <p className="text-[12px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
+          <p className="type-meta m-0" style={{ color: 'var(--ink-3)' }}>
             {device
-              ? `Recorded by ${activitySourceLabel(activity)}. It’s read-only here: change it in that app and the next sync from your phone updates it.`
-              : activity.source === 'coach'
-                ? 'You told your coach about this one. Edit it if something’s off; XP updates to match.'
-                : 'Quick-logged in Forma. Edit it if something’s off; XP updates to match.'}
+              ? `It’s read-only here: change it in ${activitySourceLabel(activity)} and the next sync from your phone updates it.`
+              : 'Edit it if something’s off; XP updates to match.'}
           </p>
         </>
       )}

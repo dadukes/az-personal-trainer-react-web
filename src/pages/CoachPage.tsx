@@ -1,4 +1,4 @@
-import { Activity, ArrowDown, Calendar, History, Plus, RotateCcw, SendHorizontal, Square } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, Calendar, History, Plus, RotateCcw, Square } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -473,11 +473,9 @@ export default function CoachPage() {
     })();
   }, [isStreaming, startingSession, session, clearChat, setChatError]);
 
-  const sessionSubtitle = useMemo(() => {
-    if (activeSessionDate) return formatSessionLabel(activeSessionDate);
-    if (messages.length > 0) return "Today's session.";
-    return 'Conversational guidance that adapts to your day.';
-  }, [activeSessionDate, messages.length]);
+  // Only an older session needs saying; today's chat is just the Coach.
+  const sessionSubtitle =
+    activeSessionDate && activeSessionDate !== todayDateString() ? formatSessionLabel(activeSessionDate) : null;
 
   const todayWorkout = weekPlan.find((d) => d.status === 'today');
   const sleepLabel = healthSnapshot.sleep_hours != null ? `${healthSnapshot.sleep_hours}h` : '--';
@@ -487,32 +485,36 @@ export default function CoachPage() {
     <div className="flex h-[calc(100dvh-74px-env(safe-area-inset-bottom))] min-h-0 md:h-[100dvh]">
       {/* Main chat column */}
       <div className="flex min-w-0 flex-1 flex-col">
-        <div className="flex items-start justify-between gap-4 px-5 pb-4 pt-6 sm:px-10 sm:pt-8" style={{ borderBottom: '1px solid var(--border-base)' }}>
-          <div className="min-w-0">
-            <h1 className="text-[24px] font-extrabold sm:text-[26px]" style={{ color: 'var(--text-primary)' }}>
+        <div className="flex items-center justify-between gap-3 px-4 pb-2 pt-6 sm:px-10 sm:pt-8">
+          <div className="flex min-w-0 flex-col gap-0.5">
+            <h1 className="type-screen-title m-0" style={{ color: 'var(--ink)' }}>
               Coach
             </h1>
-            <p className="mt-1.5 text-[13.5px]" style={{ color: 'var(--text-secondary)' }}>
-              {sessionSubtitle}
-            </p>
+            {sessionSubtitle ? (
+              <p className="m-0 text-[14px]" style={{ color: 'var(--ink-2)' }}>
+                {sessionSubtitle}
+              </p>
+            ) : null}
           </div>
-          <div className="flex flex-shrink-0 items-center gap-2">
+          <div className="-mr-2 flex flex-shrink-0 items-center gap-1">
             <button
+              type="button"
               onClick={() => navigate('/chat-history')}
-              aria-label="View chat history"
+              aria-label="Past chats"
               className="flex h-11 w-11 items-center justify-center rounded-full"
-              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
+              style={{ color: 'var(--ink-2)' }}
             >
-              <History size={18} color="var(--text-primary)" />
+              <History size={22} aria-hidden />
             </button>
             <button
+              type="button"
               onClick={startNewSession}
               disabled={isStreaming || startingSession}
-              aria-label="Start a new session"
+              aria-label="New chat"
               className="flex h-11 w-11 items-center justify-center rounded-full disabled:opacity-50"
-              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
+              style={{ color: 'var(--ink-2)' }}
             >
-              <Plus size={18} color="var(--text-primary)" />
+              <Plus size={22} strokeWidth={2.2} aria-hidden />
             </button>
           </div>
         </div>
@@ -521,7 +523,7 @@ export default function CoachPage() {
           <div
             ref={scrollRef}
             onScroll={handleScroll}
-            className="flex h-full flex-col gap-3.5 overflow-y-auto px-5 py-6 sm:px-10"
+            className="flex h-full flex-col gap-5 overflow-y-auto px-4 py-4 sm:px-10"
           >
             {chatError ? (
               <div
@@ -559,40 +561,37 @@ export default function CoachPage() {
               const isUser = message.role === 'user';
               return (
                 <div key={message.id} className="flex flex-col gap-2.5">
-                <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                  {!isUser ? (
-                    <div className="mr-2 mt-1.5 flex h-8 w-8 flex-shrink-0 items-center justify-center">
-                      <CoachAvatar />
-                    </div>
-                  ) : null}
+                {isUser ? (
                   <div
-                    className={`max-w-[82%] rounded-2xl px-4 py-3 md:max-w-[640px] ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
-                    style={{
-                      background: isUser ? 'var(--accent)' : 'var(--bg-surface)',
-                      color: isUser ? 'var(--text-on-accent)' : 'var(--text-secondary)',
-                      border: isUser ? 'none' : '1px solid var(--border-base)',
-                    }}
+                    className="max-w-[82%] self-end whitespace-pre-wrap px-[15px] py-[11px] text-[15px] leading-[21px] md:max-w-[560px]"
+                    style={{ background: 'var(--ink)', color: 'var(--ground)', borderRadius: '20px 20px 6px 20px' }}
                   >
-                    {isUser ? (
-                      <span className="text-[14px] leading-6">{message.content}</span>
-                    ) : message.isStreaming && message.content === '' ? (
-                      <CoachWaiting
-                        label={message.progressLabel}
-                        since={message.progressSince}
-                        planBuilding={message.planBuilding}
-                      />
+                    {message.content}
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2 md:max-w-[720px]">
+                    <div className="flex items-center gap-2">
+                      <CoachAvatar size={20} />
+                      <span className="text-[13px] font-bold" style={{ color: 'var(--ink-2)' }}>
+                        Coach
+                      </span>
+                    </div>
+                    {message.isStreaming && message.content === '' ? (
+                      <CoachWaiting label={message.progressLabel} since={message.progressSince} planBuilding={message.planBuilding} />
                     ) : (
-                      <ChatMarkdown content={message.content} streaming={message.isStreaming} />
+                      <div className="text-[15.5px] leading-6" style={{ color: 'var(--ink)' }}>
+                        <ChatMarkdown content={message.content} streaming={message.isStreaming} />
+                      </div>
                     )}
                   </div>
-                </div>
+                )}
                 {!message.suggestion && message.isStreaming && message.planBuilding ? (
-                  <div className="sm:ml-10 md:max-w-[880px]">
+                  <div className="md:max-w-[880px]">
                     <PlanCardPlaceholder />
                   </div>
                 ) : null}
                 {message.suggestion ? (
-                  <div className="sm:ml-10 md:max-w-[880px]">
+                  <div className="md:max-w-[880px]">
                     <SuggestionCard
                       suggestion={message.suggestion}
                       accepting={acceptingId === message.suggestion.id}
@@ -615,8 +614,8 @@ export default function CoachPage() {
                   setAtBottom(true);
                   scrollToBottom();
                 }}
-                className="pointer-events-auto flex items-center gap-1.5 rounded-full px-3.5 py-2 shadow-md"
-                style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+                className="pointer-events-auto flex min-h-10 items-center gap-1.5 rounded-full px-3.5 shadow-md"
+                style={{ background: 'var(--surface)' }}
               >
                 <ArrowDown size={14} color="var(--text-primary)" />
                 <span className="text-[12px] font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -628,24 +627,22 @@ export default function CoachPage() {
         </div>
 
         {/* Composer */}
-        <div className="px-5 pb-5 pt-3.5 sm:px-10" style={{ borderTop: '1px solid var(--border-base)', background: 'var(--bg-surface)' }}>
-          <div className="mb-3 flex gap-2 overflow-x-auto">
+        <div className="flex flex-col gap-2.5 px-4 pb-4 pt-2 sm:px-10 sm:pb-6">
+          <div className="flex gap-2 overflow-x-auto">
             {quickReplies.map((reply) => (
               <button
                 key={reply}
+                type="button"
                 onClick={() => sendMessage(reply)}
                 disabled={isStreaming}
-                className="whitespace-nowrap rounded-full px-4 py-2 text-[13px] font-semibold disabled:opacity-50"
-                style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)', color: 'var(--text-secondary)' }}
+                className="h-11 flex-none whitespace-nowrap rounded-full px-3.5 text-[13.5px] font-semibold disabled:opacity-50"
+                style={{ background: 'var(--sunken)', color: 'var(--ink)' }}
               >
                 {reply}
               </button>
             ))}
           </div>
-          <div
-            className="flex items-end gap-2.5 rounded-[24px] px-4 py-2.5"
-            style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
-          >
+          <div className="flex items-end gap-2 rounded-[26px] py-1 pl-[18px] pr-1" style={{ background: 'var(--surface)' }}>
             <textarea
               value={draft}
               onChange={(e) => setDraft(e.target.value)}
@@ -660,27 +657,29 @@ export default function CoachPage() {
               rows={1}
               maxLength={2000}
               disabled={isStreaming}
-              className="max-h-[120px] flex-1 resize-none bg-transparent py-2 text-[15px] outline-none"
-              style={{ color: 'var(--text-primary)' }}
+              className="max-h-[120px] min-h-11 flex-1 resize-none bg-transparent py-[11px] text-[16px] leading-[22px] outline-none placeholder:text-[var(--ink-3)]"
+              style={{ color: 'var(--ink)' }}
             />
             {isStreaming ? (
               <button
+                type="button"
                 onClick={stopStreaming}
                 aria-label="Stop generating"
-                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full"
-                style={{ background: 'var(--accent)' }}
+                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full"
+                style={{ background: 'var(--aqua)' }}
               >
                 <Square size={15} color="var(--on-aqua)" fill="var(--on-aqua)" />
               </button>
             ) : (
               <button
+                type="button"
                 onClick={() => sendMessage()}
                 disabled={draft.trim().length === 0}
-                aria-label="Send message"
-                className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full disabled:opacity-50"
-                style={{ background: 'var(--accent)' }}
+                aria-label="Send"
+                className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-full"
+                style={{ background: draft.trim().length === 0 ? 'var(--sunken)' : 'var(--aqua)' }}
               >
-                <SendHorizontal size={16} color="var(--on-aqua)" />
+                <ArrowUp size={20} strokeWidth={2.6} color={draft.trim().length === 0 ? 'var(--ink-3)' : 'var(--on-aqua)'} />
               </button>
             )}
           </div>

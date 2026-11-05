@@ -1,7 +1,6 @@
-import { HeartPulse } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 
-import { Card } from '@/components/ui';
+import { Surface } from '@/components/ui';
 import type { GeneralHeartRate } from '@/lib/api';
 
 // recharts stays in its own chunk, as for the Progress trends chart.
@@ -16,32 +15,24 @@ const HeartRateChart = lazy(() => import('@/components/HeartRateChart'));
  */
 export default function GeneralHeartRateCard({ data }: { data: GeneralHeartRate }) {
   return (
-    <Card padding="18px 20px">
-      <div className="flex flex-col gap-4">
-        {/* Mixed case on purpose: HeartRateCard's uppercase eyebrow would read as a different label. */}
-        <h2 className="text-[14px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-          General HR data
+    <Surface padding="16px" className="flex flex-col gap-3.5" style={{ borderRadius: 'var(--radius-hero)' }}>
+      <div className="flex items-baseline justify-between gap-3">
+        <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+          General heart rate
         </h2>
-
-        <div className="flex items-baseline gap-1.5">
-          <HeartPulse size={16} color="var(--zone-5)" className="self-center" />
-          <span className="tabular text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-            {data.avg_hr}
-          </span>
-          <span className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-            avg bpm
-          </span>
-        </div>
-
-        <Suspense fallback={<div className="h-[180px]" />}>
-          <HeartRateChart segments={data.hr_curve} zoneModel={null} />
-        </Suspense>
-
-        <p className="text-[11.5px] leading-[17px]" style={{ color: 'var(--text-muted)' }}>
-          From your watch&rsquo;s all-day readings, not a recorded workout, so the curve is smoothed and short peaks
-          won&rsquo;t show.
-        </p>
+        <span className="type-stat text-[20px] font-semibold" style={{ color: 'var(--ink-2)' }}>
+          Avg {data.avg_hr}
+        </span>
       </div>
-    </Card>
+
+      <Suspense fallback={<div className="h-[180px]" />}>
+        <HeartRateChart segments={data.hr_curve} zoneModel={null} />
+      </Suspense>
+
+      <p className="m-0 text-[12px] leading-[17px]" style={{ color: 'var(--ink-3)' }}>
+        From your watch&rsquo;s all-day readings, not a recorded workout, so the curve is smoothed and short peaks
+        won&rsquo;t show.
+      </p>
+    </Surface>
   );
 }

@@ -487,6 +487,8 @@ export interface HistoryWorkout {
   completed_at: string;
   duration_minutes: number;
   total_sets: number;
+  /** Sets actually ticked (skipped exercises excluded). Absent before the API sends it. */
+  done_sets?: number;
   xp_earned: number;
   /** How it was logged: the guided player, told to the coach, or completed by a watch recording. */
   source: WorkoutSessionSource;

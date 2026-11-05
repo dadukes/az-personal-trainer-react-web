@@ -429,6 +429,8 @@ export function Stat({ value, label, size = 'stat', className = '' }: StatProps)
 
 interface RowProps {
   title: ReactNode;
+  /** Clamp a long title, like an AI meal description. */
+  titleLines?: number;
   meta?: ReactNode;
   leading?: ReactNode;
   /** Sits at the end of the row. A clickable row with none shows a chevron. */
@@ -440,7 +442,7 @@ interface RowProps {
 }
 
 /** One line of a list. Rows sit on a single `Surface` with hairlines between them. */
-export function Row({ title, meta, leading, trailing, first, selected, onClick }: RowProps) {
+export function Row({ title, titleLines, meta, leading, trailing, first, selected, onClick }: RowProps) {
   const layout = 'flex min-h-14 w-full items-center gap-3 px-4 py-2.5 text-left';
   const style: CSSProperties = {
     borderTop: first ? undefined : '1px solid var(--line)',
@@ -450,7 +452,13 @@ export function Row({ title, meta, leading, trailing, first, selected, onClick }
     <>
       {leading}
       <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-        <span className="type-body font-semibold" style={{ color: selected ? 'var(--teal)' : 'var(--ink)' }}>
+        <span
+          className="type-body font-semibold"
+          style={{
+            color: selected ? 'var(--teal)' : 'var(--ink)',
+            ...(titleLines ? { display: '-webkit-box', WebkitLineClamp: titleLines, WebkitBoxOrient: 'vertical', overflow: 'hidden' } : {}),
+          }}
+        >
           {title}
         </span>
         {meta ? (

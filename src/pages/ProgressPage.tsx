@@ -1,31 +1,14 @@
-import {
-  ArrowDownRight,
-  ArrowUpRight,
-  BatteryCharging,
-  Brain,
-  Dumbbell,
-  Flame,
-  Footprints,
-  Gauge,
-  HeartPulse,
-  Minus,
-  Moon,
-  Sparkles,
-  TrendingUp,
-  Trophy,
-} from 'lucide-react';
-import type { ComponentType } from 'react';
-import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
 
 import BodyMeasurementDialog, { type BodyMeasurementEntry } from '@/components/BodyMeasurementDialog';
-import ProgressSnapshotSection from '@/components/ProgressSnapshotSection';
+import HealthTrendChart from '@/components/HealthTrendChart';
+import { BodyCard, ConsistencyCard, FitnessCard, StrengthCard } from '@/components/ProgressSnapshotSection';
 import ScreenHeader from '@/components/ScreenHeader';
-import { Card, Eyebrow, ProgressBar, StatTile } from '@/components/ui';
 import {
   deleteBodyMeasurement,
   getBodyMeasurements,
   getHealthLogs,
+  getHistory,
   getProgress,
   getProgressInsights,
   saveBodyMeasurements,
@@ -34,90 +17,17 @@ import {
   type BodyMetric,
   type HealthInsight,
   type HealthLog,
-  type HealthSummary,
-  type HealthSummaryMetric,
-  type HealthTrendDirection,
-  type WeeklyActivityStats,
+  type HistoryItem,
 } from '@/lib/api';
+import { consistencyGrid, levelLine, needsOlderHistory, type GridDay } from '@/lib/progress';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
-// Lazy-loaded so recharts ships as its own chunk, loaded only when Progress renders.
-const HealthTrendChart = lazy(() => import('@/components/HealthTrendChart'));
-
-// Mirrors the backend's stable `health_insights[].icon` enum; unknown values fall back to `general`.
-const ICON_MAP: Record<string, ComponentType<{ size?: number; color?: string }>> = {
-  heart_pulse: HeartPulse,
-  sleep: Moon,
-  steps: Footprints,
-  stress: Brain,
-  energy: BatteryCharging,
-  calories: Flame,
-  workout: Dumbbell,
-  trophy: Trophy,
-  trending_up: TrendingUp,
-  general: Sparkles,
-};
-
-const ICON_COLOR: Record<string, string> = {
-  heart_pulse: 'var(--teal)',
-  sleep: 'var(--sky)',
-  steps: 'var(--teal)',
-  stress: 'var(--gold)',
-  energy: 'var(--teal)',
-  calories: 'var(--sky)',
-  workout: 'var(--teal)',
-  trophy: 'var(--gold)',
-  trending_up: 'var(--teal)',
-  general: 'var(--teal)',
-};
-
-// The deterministic 30-day averages, in display order. `avgKey` reads the value off
-// `health_summary`; `good` marks which trend direction is a *positive* change for the metric
-// (e.g. resting HR falling is good, energy rising is good) so the arrow can be colored honestly.
-interface SummaryMetricConfig {
-  metric: HealthSummaryMetric;
-  avgKey: keyof HealthSummary;
-  label: string;
-  icon: ComponentType<{ size?: number; color?: string }>;
-  format: (value: number) => string;
-  good: 'up' | 'down';
-}
-
-const SUMMARY_METRICS: SummaryMetricConfig[] = [
-  { metric: 'sleep_hours', avgKey: 'avg_sleep_hours', label: 'Avg sleep', icon: Moon, format: (v) => `${v}h`, good: 'up' },
-  { metric: 'sleep_quality', avgKey: 'avg_sleep_quality', label: 'Sleep quality', icon: Gauge, format: (v) => `${v}`, good: 'up' },
-  { metric: 'energy_level', avgKey: 'avg_energy_level', label: 'Energy', icon: BatteryCharging, format: (v) => `${v}`, good: 'up' },
-  { metric: 'stress_level', avgKey: 'avg_stress_level', label: 'Stress', icon: Brain, format: (v) => `${v}`, good: 'down' },
-  { metric: 'resting_heart_rate', avgKey: 'avg_resting_heart_rate', label: 'Resting HR', icon: HeartPulse, format: (v) => `${v} bpm`, good: 'down' },
-  { metric: 'steps', avgKey: 'avg_steps', label: 'Daily steps', icon: Footprints, format: (v) => v.toLocaleString(), good: 'up' },
-  { metric: 'active_calories', avgKey: 'avg_active_calories', label: 'Active cal', icon: Flame, format: (v) => v.toLocaleString(), good: 'up' },
-];
-
-// 1–5 subjective scales read better with the denominator shown.
-const SCALE_METRICS = new Set<HealthSummaryMetric>(['sleep_quality', 'energy_level', 'stress_level']);
-
-function TrendPill({ direction, good }: { direction: HealthTrendDirection | null; good: 'up' | 'down' }) {
-  if (!direction) return null;
-  if (direction === 'flat') {
-    return (
-      <span className="inline-flex items-center gap-0.5 text-[11px] font-bold" style={{ color: 'var(--text-muted)' }}>
-        <Minus size={13} /> flat
-      </span>
-    );
-  }
-  const isGood = direction === good;
-  const color = isGood ? 'var(--accent-text)' : 'var(--forma-gold)';
-  const Arrow = direction === 'up' ? ArrowUpRight : ArrowDownRight;
-  return (
-    <span className="inline-flex items-center gap-0.5 text-[11px] font-bold" style={{ color }}>
-      <Arrow size={13} /> {direction}
-    </span>
-  );
-}
-
-/** Body history window — enough for the 28-day sparkline plus the full entries list. */
+/** Body history window: enough for the 28-day sparkline plus the full entries list. */
 const BODY_HISTORY_DAYS = 90;
+
+/** At most this many `/history` pages for the grid (50 items each). */
+const GRID_MAX_PAGES = 4;
 
 function bodyHistoryFrom(): string {
   const d = new Date();
@@ -125,31 +35,28 @@ function bodyHistoryFrom(): string {
   return d.toISOString();
 }
 
+function localISODate(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+/** Enough of `/history` to fill the 28-day grid, newest first. */
+async function loadGridHistory(token: string): Promise<HistoryItem[]> {
+  const today = localISODate();
+  const items: HistoryItem[] = [];
+  let cursor: string | null = null;
+  for (let page = 0; page < GRID_MAX_PAGES; page += 1) {
+    const res = await getHistory(token, { before: cursor, limit: 50 });
+    items.push(...res.items);
+    cursor = res.next_cursor;
+    if (!needsOlderHistory(items, cursor, today)) break;
+  }
+  return items;
+}
+
 /** Add (`editing` null) or edit an existing manual/coach row. */
 type BodyDialogState = { editing: BodyMeasurement | null; metric: BodyMetric | null } | null;
 
-function getLevelName(level: number): string {
-  if (level <= 2) return 'Foundation';
-  if (level <= 4) return 'Momentum';
-  if (level <= 6) return 'Traction';
-  return 'Elite';
-}
-
-const FALLBACK_INSIGHTS: HealthInsight[] = [
-  {
-    title: 'Heart rate trend is improving',
-    description: 'Your resting heart rate dropped by 3 BPM this month, a strong sign of better conditioning.',
-    icon: 'heart_pulse',
-  },
-  {
-    title: 'Sleep is the limiting factor',
-    description: 'Three sessions were skipped this week due to low sleep battery. Prioritize a tighter wind-down.',
-    icon: 'sleep',
-  },
-];
-
 export default function ProgressPage() {
-  const navigate = useNavigate();
   const { session } = useAuth();
   const { gamification, setGamification } = useAppStore();
   const progressSnapshot = useAppStore((s) => s.progressSnapshot);
@@ -160,9 +67,8 @@ export default function ProgressPage() {
   const [bodySaving, setBodySaving] = useState(false);
   const [bodyError, setBodyError] = useState<string | null>(null);
   const [insights, setInsights] = useState<HealthInsight[]>([]);
-  const [insightsLoading, setInsightsLoading] = useState(false);
-  const [weekStats, setWeekStats] = useState<WeeklyActivityStats | null>(null);
-  const [healthSummary, setHealthSummary] = useState<HealthSummary | null>(null);
+  const [streakDays, setStreakDays] = useState<number | null>(null);
+  const [grid, setGrid] = useState<GridDay[] | null>(null);
   const [healthLogs, setHealthLogs] = useState<HealthLog[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -181,8 +87,7 @@ export default function ProgressPage() {
           current_xp: result.data.current_xp,
           xp_to_next_level: result.data.xp_to_next_level,
         });
-        setWeekStats(result.data.this_week ?? null);
-        setHealthSummary(result.data.health_summary ?? null);
+        setStreakDays(result.data.this_week?.consistency_streak_days ?? null);
         setProgressSnapshot(result.data.progress_snapshot ?? null);
       } catch {
         // Non-blocking
@@ -289,15 +194,30 @@ export default function ProgressPage() {
     if (!session?.access_token) return;
     const token = session.access_token;
     let mounted = true;
-    setInsightsLoading(true);
     void (async () => {
       try {
         const result = await getProgressInsights(token);
         if (mounted) setInsights(result.data.health_insights);
       } catch {
-        // Non-blocking — the section falls back to placeholder cards.
-      } finally {
-        if (mounted) setInsightsLoading(false);
+        // Non-blocking: with no insights the section doesn't show.
+      }
+    })();
+    return () => {
+      mounted = false;
+    };
+  }, [session]);
+
+  // The consistency grid's days, from the activity timeline.
+  useEffect(() => {
+    if (!session?.access_token) return;
+    const token = session.access_token;
+    let mounted = true;
+    void (async () => {
+      try {
+        const items = await loadGridHistory(token);
+        if (mounted) setGrid(consistencyGrid(items, localISODate()));
+      } catch {
+        // Non-blocking: the card shows its numbers without the grid.
       }
     })();
     return () => {
@@ -324,183 +244,85 @@ export default function ProgressPage() {
     };
   }, [session]);
 
-  const xpProgress =
-    gamification.xp_to_next_level > 0
-      ? Math.min((gamification.current_xp / gamification.xp_to_next_level) * 100, 100)
-      : 0;
-
-  // While the background call is in flight show nothing (the eyebrow carries a spinner); only
-  // fall back to placeholder cards once it resolves empty, to avoid flashing fake insights.
-  const displayInsights = insights.length > 0 ? insights : insightsLoading ? [] : FALLBACK_INSIGHTS;
-
-  // Only render summary tiles for metrics the user has actually logged (avg is non-null).
-  const summaryTiles = healthSummary
-    ? SUMMARY_METRICS.flatMap((cfg) => {
-        const value = healthSummary[cfg.avgKey];
-        if (typeof value !== 'number') return [];
-        return [{ cfg, value }];
-      })
-    : [];
+  const level = levelLine(gamification);
+  const strength = progressSnapshot?.strength ?? null;
 
   return (
-    <div className="mx-auto flex w-full max-w-[1120px] animate-fade-slide-up flex-col gap-6 p-6 sm:p-10">
-      <ScreenHeader title="Your Progress" subtitle="Consistency over intensity." />
+    <div className="mx-auto flex w-full max-w-[680px] animate-fade-slide-up flex-col gap-5 px-4 pb-28 pt-6 sm:px-10 sm:pt-10">
+      <ScreenHeader title="Progress" subtitle="Consistency over intensity." />
 
-      <div className="flex flex-col gap-5 lg:flex-row lg:items-stretch">
-        {/* Level card */}
-        <Card padding="26px 24px" className="lg:w-[360px] lg:min-w-[360px]">
-          {loading ? (
-            <div className="flex h-[150px] items-center justify-center">
-              <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-            </div>
-          ) : (
-            <div className="text-center">
-              <div className="text-[11px] font-bold tracking-[0.14em]" style={{ color: 'var(--accent-text)' }}>
-                LEVEL {gamification.current_level}
-              </div>
-              <div className="my-1.5 mb-4 text-[32px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                {getLevelName(gamification.current_level)}
-              </div>
-              <ProgressBar value={xpProgress} gradient />
-              <div className="mt-2.5 flex items-center justify-between">
-                <span className="tabular text-[12px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                  {gamification.current_xp.toLocaleString()} XP
-                </span>
-                <span className="tabular text-[12px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                  {gamification.xp_to_next_level.toLocaleString()} XP to Level {gamification.current_level + 1}
-                </span>
-              </div>
-            </div>
-          )}
-        </Card>
-
-        {/* This week */}
-        <Card className="flex-1">
-          <div className="mb-3.5 flex items-center justify-between">
-            <Eyebrow>This week</Eyebrow>
-            <button
-              onClick={() => navigate('/activities')}
-              className="text-[12px] font-bold transition-opacity hover:opacity-80"
-              style={{ color: 'var(--accent-text)' }}
-            >
-              All activities →
-            </button>
+      {/* Level: one thin bar */}
+      {loading && gamification.current_xp === 0 ? (
+        <div className="flex h-[38px] items-center justify-center">
+          <div className="h-5 w-5 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--teal)', borderTopColor: 'transparent' }} />
+        </div>
+      ) : (
+        <section aria-label="Level" className="flex flex-col gap-2">
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="text-[14px] font-bold" style={{ color: 'var(--ink)' }}>
+              Level {level.level}
+            </span>
+            <span className="type-stat text-[19px] font-semibold" style={{ color: 'var(--ink-2)' }}>
+              {level.label}
+            </span>
           </div>
-          <div className="flex gap-3">
-            <StatTile
-              value={weekStats ? `${weekStats.consistency_streak_days} days` : '--'}
-              label="Consistency streak"
-            />
-            <StatTile
-              value={weekStats ? String(weekStats.workouts_this_week) : '--'}
-              label="Workouts this week"
-              onClick={() => navigate('/activities')}
-            />
-            <StatTile
-              value={weekStats ? `${weekStats.minutes_trained_this_week}m` : '--'}
-              label="Minutes trained"
-            />
+          <div
+            role="progressbar"
+            aria-valuenow={level.percent}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-label={`${level.percent} percent of the way to level ${level.level + 1}`}
+            className="h-2 overflow-hidden rounded"
+            style={{ background: 'var(--sunken)' }}
+          >
+            <div className="h-2 rounded" style={{ width: `${level.percent}%`, background: 'var(--gold-fill)' }} />
           </div>
-        </Card>
-      </div>
+        </section>
+      )}
 
-      <ProgressSnapshotSection
+      {strength && strength.exercises_tracked > 0 ? <StrengthCard strength={strength} unitSystem={unitSystem} /> : null}
+
+      <ConsistencyCard
+        consistency={progressSnapshot?.consistency ?? null}
+        windowDays={progressSnapshot?.window_days ?? 28}
+        streakDays={streakDays}
+        grid={grid}
+      />
+
+      <BodyCard
         snapshot={progressSnapshot}
         measurements={bodyMeasurements}
-        streakDays={weekStats?.consistency_streak_days ?? null}
         unitSystem={unitSystem}
         onAdd={(metric) => openBodyDialog({ editing: null, metric })}
         onEdit={(row) => openBodyDialog({ editing: row, metric: row.metric })}
       />
 
-      {summaryTiles.length > 0 && healthSummary && (
-        <>
-          <div className="flex items-center justify-between">
-            <Eyebrow>
-              {healthSummary.window_days}-day averages
-            </Eyebrow>
-            <span className="text-[11.5px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-              {healthSummary.days_logged} {healthSummary.days_logged === 1 ? 'day' : 'days'} logged
-            </span>
-          </div>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
-            {summaryTiles.map(({ cfg, value }) => {
-              const Icon = cfg.icon;
-              const display = SCALE_METRICS.has(cfg.metric) ? `${cfg.format(value)}/5` : cfg.format(value);
-              return (
-                <div
-                  key={cfg.metric}
-                  className="rounded-2xl p-4"
-                  style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-subtle)' }}
-                >
-                  <div className="flex items-center justify-between">
-                    <Icon size={17} color="var(--accent)" />
-                    <TrendPill direction={healthSummary.trends[cfg.metric]} good={cfg.good} />
-                  </div>
-                  <div className="tabular mt-2.5 text-[22px] font-extrabold leading-tight" style={{ color: 'var(--text-primary)' }}>
-                    {display}
-                  </div>
-                  <div className="mt-1 text-[11.5px] leading-tight" style={{ color: 'var(--text-muted)' }}>
-                    {cfg.label}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </>
-      )}
+      <FitnessCard
+        snapshot={progressSnapshot}
+        unitSystem={unitSystem}
+        onAddVo2={() => openBodyDialog({ editing: null, metric: 'vo2max_ml_kg_min' })}
+      />
 
-      <Eyebrow>Health trends</Eyebrow>
-      <Card>
-        <Suspense
-          fallback={
-            <div className="flex h-[280px] items-center justify-center">
-              <div
-                className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
-                style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-              />
+      <HealthTrendChart logs={healthLogs} />
+
+      {/* From your coach: real insights only, never placeholders. */}
+      {insights.length > 0 ? (
+        <section aria-label="Insights from your coach" className="flex flex-col gap-2.5">
+          <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+            From your coach
+          </h2>
+          {insights.map((insight, i) => (
+            <div key={i} className="flex flex-col gap-1.5 rounded-surface p-4" style={{ background: 'var(--tint)' }}>
+              <span className="text-[15px] font-bold leading-[21px]" style={{ color: 'var(--ink)' }}>
+                {insight.title}
+              </span>
+              <span className="text-[14px] leading-5" style={{ color: 'var(--ink-2)' }}>
+                {insight.description}
+              </span>
             </div>
-          }
-        >
-          <HealthTrendChart logs={healthLogs} />
-        </Suspense>
-      </Card>
-
-      <div className="flex items-center gap-2">
-        <Eyebrow>AI Health Insights</Eyebrow>
-        {insightsLoading && insights.length === 0 && (
-          <div
-            className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-          />
-        )}
-      </div>
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-2">
-        {displayInsights.map((insight, i) => {
-          const Icon = ICON_MAP[insight.icon] ?? ICON_MAP.general;
-          const color = ICON_COLOR[insight.icon] ?? ICON_COLOR.general;
-          return (
-            <Card key={i} padding="18px">
-              <div className="flex gap-3">
-                <div
-                  className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-xl"
-                  style={{ background: 'var(--bg-subtle)' }}
-                >
-                  <Icon size={20} color={color} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-[14px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {insight.title}
-                  </div>
-                  <p className="mt-1 text-[12.5px] leading-5" style={{ color: 'var(--text-secondary)' }}>
-                    {insight.description}
-                  </p>
-                </div>
-              </div>
-            </Card>
-          );
-        })}
-      </div>
+          ))}
+        </section>
+      ) : null}
 
       {bodyDialog ? (
         <BodyMeasurementDialog

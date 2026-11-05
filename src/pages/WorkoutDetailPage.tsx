@@ -1,20 +1,20 @@
-import { Check, Clock, Dumbbell, Flame, Layers, MapPin, MessageCircle, Mountain, Pencil, Plus, Watch, Weight, Zap } from 'lucide-react';
+import { Check, Dumbbell, MapPin, MessageCircle, Pencil, Plus, Watch } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import ActivityRow from '@/components/ActivityRow';
-import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
+import DetailHeader, { DetailStat, StatGrid, useBackToActivities } from '@/components/DetailHeader';
 import GeneralHeartRateCard from '@/components/GeneralHeartRateCard';
 import HeartRateCard from '@/components/HeartRateCard';
-import { Badge, Button, Card, Eyebrow, StatTile } from '@/components/ui';
+import { Badge, Surface } from '@/components/ui';
+import { splitFocus } from '@/lib/home';
 import { sourceAppLabel } from '@/lib/body';
 import {
   formatCalories,
   formatDistance,
   formatElevation,
   recordingTotals,
-  statGridClass,
   timeRangeText,
   workoutDurationSeconds,
   workoutTitle,
@@ -129,78 +129,50 @@ export default function WorkoutDetailPage() {
   const shownStart = recordings[0]?.started_at ?? (source === 'coach' ? null : data?.session.started_at ?? null);
   const shownEnd = recordings.length > 0 ? recordings[recordings.length - 1].completed_at : data?.session.completed_at ?? '';
   const totals = recordingTotals(recordings);
-  const accent = 'var(--teal)';
-  const tiles: ReactNode[] = data
-    ? [
-        <StatTile
-          key="duration"
-          value={durationSeconds > 0 ? formatDuration(durationSeconds) : '—'}
-          label="Duration"
-          icon={<Clock size={16} color={accent} />}
-        />,
-        distanceKm > 0 ? (
-          <StatTile key="distance" value={formatDistance(distanceKm, unitSystem, 2)} label="Distance" icon={<MapPin size={16} color={accent} />} />
-        ) : null,
-        !noSets ? (
-          <StatTile key="sets" value={data && data.sets.length > completedSets ? `${completedSets} of ${data.sets.length}` : String(completedSets)} label="Sets completed" icon={<Layers size={16} color={accent} />} />
-        ) : null,
-        volume ? <StatTile key="volume" value={volume} label="Volume" icon={<Weight size={16} color={accent} />} /> : null,
-        totals.calories ? (
-          <StatTile key="calories" value={formatCalories(totals.calories)} label="Active calories" icon={<Flame size={16} color={accent} />} />
-        ) : null,
-        totals.elevation ? (
-          <StatTile
-            key="elevation"
-            value={formatElevation(totals.elevation, unitSystem)}
-            label="Elevation gain"
-            icon={<Mountain size={16} color={accent} />}
-          />
-        ) : null,
-        <StatTile
-          key="xp"
-          value={data.session.xp_earned > 0 ? `+${data.session.xp_earned}` : '—'}
-          label="XP earned"
-          icon={<Zap size={16} color={accent} />}
-        />,
-      ].filter(Boolean)
-    : [];
+  const name = splitFocus(data ? workoutTitle({ title: data.title, day: data.session.day }) : 'Workout');
+  const sourceLine =
+    source === 'coach' ? 'Logged with your coach' : source === 'watch' ? `Completed on ${sourceAppLabel(recordings[0]?.source_app ?? null)}` : null;
 
   return (
-    <div className="mx-auto flex w-full max-w-[760px] animate-fade-slide-up flex-col gap-5 p-5 sm:p-8">
+    <div className="mx-auto flex w-full max-w-[680px] animate-fade-slide-up flex-col gap-6 px-4 pb-28 pt-4 sm:px-10 sm:pt-8">
       <DetailHeader
-        eyebrow="Planned workout"
-        title={data ? workoutTitle({ title: data.title, day: data.session.day }) : 'Workout'}
+        meta={data ? timeRangeText(shownStart, shownEnd) : null}
+        title={name.title}
+        sub={[name.subtitle, sourceLine].filter(Boolean).join(' · ') || null}
         onBack={goBack}
         action={
           data ? (
-            <Button variant="link" onClick={openEdit}>
+            <button type="button" onClick={openEdit} className="min-h-11 px-1 text-[15px] font-bold" style={{ color: 'var(--teal)' }}>
               Edit
-            </Button>
+            </button>
           ) : undefined
         }
       />
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div
-            className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-          />
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--teal)', borderTopColor: 'transparent' }} />
         </div>
       ) : error || !data || !grouped ? (
-        <Card>
-          <p className="text-[14px]" style={{ color: 'var(--forma-danger)' }}>
-            {error ?? 'This workout could not be found.'}
-          </p>
-        </Card>
+        <p className="type-body" style={{ color: 'var(--danger)' }}>
+          {error ?? 'This workout could not be found.'}
+        </p>
       ) : (
         <>
-          <div className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-            {timeRangeText(shownStart, shownEnd)}
-          </div>
-
-          {/* Session summary tiles */}
-          <div className={`grid grid-cols-2 gap-3 ${statGridClass(tiles.length)}`}>{tiles}</div>
+          <StatGrid>
+            {durationSeconds >= 60 ? <DetailStat value={formatDuration(durationSeconds)} label="Time" /> : null}
+            {distanceKm > 0 ? <DetailStat value={formatDistance(distanceKm, unitSystem, 2)} label="Distance" /> : null}
+            {!noSets ? (
+              <DetailStat
+                value={data.sets.length > completedSets ? `${completedSets} of ${data.sets.length}` : String(completedSets)}
+                label="Sets done"
+              />
+            ) : null}
+            {volume ? <DetailStat value={volume} label="Volume" /> : null}
+            {totals.calories ? <DetailStat value={formatCalories(totals.calories)} label="Active kcal" /> : null}
+            {totals.elevation ? <DetailStat value={formatElevation(totals.elevation, unitSystem)} label="Elevation" /> : null}
+            {data.session.xp_earned > 0 ? <DetailStat value={`+${data.session.xp_earned}`} label="XP" /> : null}
+          </StatGrid>
 
           {data.heart_rate ? (
             <HeartRateCard
@@ -219,7 +191,7 @@ export default function WorkoutDetailPage() {
           {/* A plan day told to the coach or completed by the watch has no per-set detail — an
               empty set table would read as "nothing happened", so state plainly what it is. */}
           {noSets ? (
-            <Card padding="16px 18px">
+            <Surface padding="16px 18px">
               <div className="flex items-start gap-3">
                 <div
                   className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
@@ -243,12 +215,14 @@ export default function WorkoutDetailPage() {
                   </p>
                 </div>
               </div>
-            </Card>
+            </Surface>
           ) : null}
 
           {recordings.length > 0 ? (
             <div className="flex flex-col gap-3">
-              <Eyebrow>Recorded on your watch</Eyebrow>
+              <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                Recorded on your watch
+              </h2>
               {recordings.map((r) => (
                 <ActivityRow key={r.id} item={r} unitSystem={unitSystem} detailed />
               ))}
@@ -261,7 +235,9 @@ export default function WorkoutDetailPage() {
             if (exercises.length === 0) return null;
             return (
               <div key={section} className="flex flex-col gap-3">
-                <Eyebrow>{SECTION_LABELS[section]}</Eyebrow>
+                <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                  {SECTION_LABELS[section]}
+                </h2>
                 {exercises.map((exercise) => (
                   <ExerciseCard
                     unitSystem={unitSystem}
@@ -299,7 +275,7 @@ function ExerciseCard({
       className="w-full rounded-[24px] px-[18px] py-4 text-left transition-transform active:scale-[0.99]"
       style={{
         background: open ? 'transparent' : 'var(--bg-surface)',
-        border: `1px ${open ? 'dashed var(--border-strong)' : 'solid var(--border-base)'}`,
+        border: open ? '1px dashed var(--line-strong)' : 'none',
       }}
     >
       <div className="flex items-start gap-3">

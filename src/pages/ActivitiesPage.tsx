@@ -1,21 +1,44 @@
-import { HeartPulse, Watch } from 'lucide-react';
+import { Check, HeartPulse, Watch } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import ActivityRow from '@/components/ActivityRow';
+import { ActivityIcon } from '@/components/ActivityRow';
 import ScreenHeader from '@/components/ScreenHeader';
-import { Button, Card } from '@/components/ui';
-import WorkoutRow from '@/components/WorkoutRow';
-import { groupTimeline, timelineGroupHeader } from '@/lib/activities';
+import { Button, Row, Surface } from '@/components/ui';
+import {
+  activityRowMeta,
+  activityTitle,
+  compactDuration,
+  formatDistance,
+  groupByWeek,
+  shortDayLabel,
+  weekGroupHeader,
+  workoutRowMeta,
+  workoutTitle,
+} from '@/lib/activities';
 import { getHistory, type HistoryItem, type HistoryWeek, type ZoneModel } from '@/lib/api';
+import { splitFocus } from '@/lib/home';
+import { mondayOf } from '@/lib/progress';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
 const PAGE_SIZE = 20;
 
-function dayLabel(dateKey: string): string {
-  const [y, m, d] = dateKey.split('-').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+function localISODate(d = new Date()): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function WeekFigure({ value, label }: { value: string; label: string }) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col-reverse gap-1">
+      <dt className="type-meta" style={{ color: 'var(--ink-3)' }}>
+        {label}
+      </dt>
+      <dd className="type-display m-0 truncate text-[44px]" style={{ color: 'var(--ink)' }}>
+        {value}
+      </dd>
+    </div>
+  );
 }
 
 /**
@@ -118,45 +141,46 @@ export default function ActivitiesPage() {
     return () => observer.disconnect();
   }, [cursor, error, loadMore]);
 
-  const groups = useMemo(() => groupTimeline(items), [items]);
-  // This week's totals go on the first of its groups (Today, else Earlier this week).
-  const firstThisWeek = groups.findIndex((g) => g.kind !== 'week');
+  const groups = useMemo(() => groupByWeek(items), [items]);
+  const thisWeek = weeks[mondayOf(localISODate())];
   const needsBirthYear =
     !loading &&
     zoneModel == null &&
     items.some((i) => (i.kind === 'activity' ? i.activity.avg_hr : i.workout.avg_hr) != null);
 
   return (
-    <div className="mx-auto flex w-full max-w-[760px] animate-fade-slide-up flex-col gap-6 p-6 sm:p-10">
-      <ScreenHeader title="Activities" subtitle="Everything you've done, newest first." />
+    <div className="mx-auto flex w-full max-w-[680px] animate-fade-slide-up flex-col gap-5 px-4 pb-28 pt-6 sm:px-10 sm:pt-10">
+      <div className="flex flex-col gap-3.5">
+        <ScreenHeader title="Activities" />
+        {thisWeek && thisWeek.sessions > 0 ? (
+          <dl className="m-0 flex gap-2">
+            <WeekFigure value={String(thisWeek.sessions)} label="Sessions this week" />
+            {thisWeek.duration_minutes > 0 ? <WeekFigure value={compactDuration(thisWeek.duration_minutes)} label="Time" /> : null}
+            {thisWeek.distance_km > 0 ? <WeekFigure value={formatDistance(thisWeek.distance_km, unitSystem)} label="Distance" /> : null}
+          </dl>
+        ) : null}
+      </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div
-            className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent"
-            style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }}
-          />
+          <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--teal)', borderTopColor: 'transparent' }} />
         </div>
       ) : items.length === 0 ? (
         error ? (
-          <Card>
-            <p className="text-[14px]" style={{ color: 'var(--forma-danger)' }}>
-              {error}
-            </p>
-          </Card>
+          <p className="type-meta" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
         ) : (
-          <Card>
-            <div className="flex flex-col items-center gap-2 py-10 text-center">
-              <Watch size={24} color="var(--text-muted)" />
-              <p className="text-[14px] font-semibold" style={{ color: 'var(--text-secondary)' }}>
-                Nothing logged yet
-              </p>
-              <p className="max-w-[340px] text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-                Finish a guided workout, quick-log a walk, tell your coach about a class, or connect your watch on the
-                phone app. Everything you do shows up here.
-              </p>
-            </div>
-          </Card>
+          <div className="flex flex-col items-center gap-2 px-6 py-12 text-center">
+            <Watch size={26} color="var(--ink-3)" aria-hidden />
+            <p className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+              Nothing logged yet
+            </p>
+            <p className="type-meta m-0 max-w-[340px]" style={{ color: 'var(--ink-2)' }}>
+              Finish a workout, quick-log a walk or tell your coach about a class. Workouts from your watch arrive through the
+              phone app. Everything you do shows up here.
+            </p>
+          </div>
         )
       ) : (
         <div className="flex flex-col gap-6">
@@ -164,59 +188,76 @@ export default function ActivitiesPage() {
             <button
               type="button"
               onClick={() => navigate('/profile')}
-              className="flex items-center gap-2.5 rounded-2xl p-3 text-left text-[13px]"
-              style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)', color: 'var(--text-secondary)' }}
+              className="flex min-h-11 items-center gap-2.5 rounded-control p-3 text-left"
+              style={{ background: 'var(--sunken)' }}
             >
-              <HeartPulse size={16} color="var(--accent-text)" />
-              <span className="flex-1">Add your birth year to see heart-rate zones.</span>
-              <span className="font-bold" style={{ color: 'var(--accent-text)' }}>
+              <HeartPulse size={16} color="var(--ink-2)" aria-hidden />
+              <span className="type-meta flex-1" style={{ color: 'var(--ink-2)' }}>
+                Add your birth year to see heart-rate zones.
+              </span>
+              <span className="text-[13px] font-bold" style={{ color: 'var(--ink)' }}>
                 Profile
               </span>
             </button>
           ) : null}
 
-          {groups.map((group, index) => {
-            const { title, totals } = timelineGroupHeader(group, weeks[group.weekStart], unitSystem, index === firstThisWeek);
+          {groups.map((group) => {
+            const { title, totals } = weekGroupHeader(group.weekStart, weeks[group.weekStart], unitSystem);
             return (
-              <section key={group.key} className="flex flex-col gap-2.5" aria-label={title || undefined}>
-                {title ? (
-                  <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5 px-1">
-                    <h2 className="text-[15px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                      {title}
-                    </h2>
-                    {totals ? (
-                      <span className="tabular text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-                        {totals}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                {group.items.map((item) =>
-                  item.kind === 'activity' ? (
-                    <ActivityRow
-                      key={item.id}
-                      item={item.activity}
-                      unitSystem={unitSystem}
-                      when={dayLabel(item.date)}
-                      onClick={() => navigate(`/activities/${item.id}`)}
-                    />
-                  ) : (
-                    <WorkoutRow
-                      key={item.id}
-                      workout={item.workout}
-                      unitSystem={unitSystem}
-                      when={dayLabel(item.date)}
-                      onClick={() => navigate(`/activities/workout/${item.id}`)}
-                    />
-                  ),
-                )}
+              <section key={group.weekStart} className="flex flex-col gap-2.5" aria-label={title}>
+                <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
+                  <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                    {title}
+                  </h2>
+                  {totals ? (
+                    <span className="type-meta tabular" style={{ color: 'var(--ink-3)' }}>
+                      {totals}
+                    </span>
+                  ) : null}
+                </div>
+                <Surface padding="2px 0">
+                  {group.items.map((item, i) => {
+                    const when = shortDayLabel(item.date);
+                    const isWorkout = item.kind === 'workout';
+                    const xp = isWorkout ? item.workout.xp_earned : item.activity.xp_earned;
+                    return (
+                      <Row
+                        key={item.id}
+                        first={i === 0}
+                        title={isWorkout ? splitFocus(workoutTitle(item.workout)).title : activityTitle(item.activity)}
+                        meta={isWorkout ? workoutRowMeta(item.workout, when, unitSystem) : activityRowMeta(item.activity, when, unitSystem)}
+                        leading={
+                          <span
+                            aria-hidden
+                            className="flex h-10 w-10 flex-none items-center justify-center rounded-control"
+                            style={{ background: isWorkout ? 'var(--tint)' : 'var(--sunken)' }}
+                          >
+                            {isWorkout ? (
+                              <Check size={20} strokeWidth={2.6} color="var(--teal)" />
+                            ) : (
+                              <ActivityIcon item={item.activity} size={20} color="var(--sky)" />
+                            )}
+                          </span>
+                        }
+                        trailing={
+                          xp > 0 ? (
+                            <span className="flex-none text-[13px] font-semibold" style={{ color: 'var(--ink-3)' }}>
+                              +{xp} XP
+                            </span>
+                          ) : undefined
+                        }
+                        onClick={() => navigate(isWorkout ? `/activities/workout/${item.id}` : `/activities/${item.id}`)}
+                      />
+                    );
+                  })}
+                </Surface>
               </section>
             );
           })}
 
           <div ref={sentinel} />
           {error ? (
-            <p className="text-center text-[13px]" style={{ color: 'var(--forma-danger)' }}>
+            <p className="type-meta text-center" style={{ color: 'var(--danger)' }}>
               {error}
             </p>
           ) : null}
@@ -227,7 +268,7 @@ export default function ActivitiesPage() {
               </Button>
             </div>
           ) : (
-            <p className="text-center text-[12px]" style={{ color: 'var(--text-muted)' }}>
+            <p className="type-meta text-center" style={{ color: 'var(--ink-3)' }}>
               That&rsquo;s everything.
             </p>
           )}

@@ -40,26 +40,22 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   `ExercisePick`; the caller decides what a pick means (session swap vs plan draft edit). Like
   `CoachMemory` it owns its fetching. Full-screen below `sm` (a bottom sheet sits under the
   keyboard once search is focused), centred dialog above; portalled; search is not auto-focused.
-- **`ProgressSnapshotSection.tsx`** — "Your progress" on `/progress` (strength, consistency,
-  body, fitness) from `progress_snapshot`, plus the body entries list, **collapsed** by default
+- **`ProgressSnapshotSection.tsx`** — the `/progress` cards (`StrengthCard`, `ConsistencyCard` with the
+  28-day grid, `BodyCard`, `FitnessCard`) from `progress_snapshot`, plus the body entries list, **collapsed** by default
   behind "Show entries (N)" (the card leads with the weight trend and tiles). Presentational;
   the page owns fetching. Mirrors the mobile `progress-snapshot-section`.
 - **`BodyMeasurementDialog.tsx`** — add or edit one body measurement (metric chips, value in the
   user's units, date, note; delete in edit mode). Presentational like `HealthCaptureDialog`.
   The web adds **editing**, which mobile doesn't have yet; device-imported rows never open it.
-- **`ActivityRow.tsx` / `ZoneBar.tsx` / `WeekActivityCard.tsx`** — activities outside guided
-  workouts (web twins of the mobile `activity-row`, `zone-bar`, `week-activity-card`). Labels come
+- **`ActivityRow.tsx` / `ZoneBar.tsx`** — activities outside guided
+  workouts (web twins of the mobile `activity-row`, `zone-bar`); a workout's watch recordings use `ActivityRow`. Labels come
   from `src/lib/activities.ts`; zone colours are the `--zone-1…5` tokens. Presentational.
-- **`WorkoutRow.tsx` / `HeartRateCard.tsx` / `ActivityEditDialog.tsx` / `DetailHeader.tsx`** — the
-  Activities tab: a guided workout's list row; the detail pages' heart-rate section (avg/max, zone
+- **`HeartRateCard.tsx` / `ActivityEditDialog.tsx` / `DetailHeader.tsx`** — the
+  Activities detail pages: the detail pages' heart-rate section (avg/max, zone
   bar, per-zone table with bpm ranges from `zone_model.floors`, or the birth-year prompt); the edit
   dialog for coach/quick logs (presentational, like `BodyMeasurementDialog`); and the detail pages'
-  back + title header (`useBackToActivities`). Mobile twins: `workout-row`, `heart-rate-card`,
+  back + title header (`useBackToActivities`). Mobile twins: `heart-rate-card`,
   `activity-edit-sheet`, `detail-header`.
-- **`WorkoutExerciseDialog.tsx`** — edit one exercise of a logged workout after the fact: tick sets,
-  reps / weight / time, add or remove sets; a not-logged exercise is seeded from the plan, ticked.
-  Presentational (the page owns the call); rules in `src/lib/workoutEdit.ts`, kept identical to the
-  mobile `lib/workout-edit.ts`. Mobile twin: `workout-exercise-sheet`.
 - **`WorkoutStatus.tsx`** — `WorkoutSyncHost` (runs the save queue, mounted once with the shell) plus Home's `WorkoutResumeCard` and `PendingWorkoutsCard`. Mobile twins: `workout-sync-host`, `workout/home-workout-status`.
 - **`GeneralHeartRateCard.tsx`** — "General HR data" on a guided workout the watch didn't record
   (`general_heart_rate`, sent by the phone): avg bpm and the smoothed all-day curve on

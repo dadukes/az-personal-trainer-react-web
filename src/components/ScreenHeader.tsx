@@ -2,27 +2,26 @@ import type { ReactNode } from 'react';
 
 interface ScreenHeaderProps {
   title: string;
+  /** One short line under the title; leave it out when the title says enough. */
   subtitle?: string;
   rightActions?: ReactNode;
 }
 
+/** A page's title: plain on the ground, no card. Mobile twin: `screen-header`. */
 export default function ScreenHeader({ title, subtitle, rightActions }: ScreenHeaderProps) {
   return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <h1
-          className="text-[26px] font-extrabold tracking-tight sm:text-[30px]"
-          style={{ color: 'var(--text-primary)' }}
-        >
+    <div className="flex items-center justify-between gap-3">
+      <div className="flex min-w-0 flex-col gap-0.5">
+        <h1 className="type-screen-title m-0" style={{ color: 'var(--ink)' }}>
           {title}
         </h1>
         {subtitle ? (
-          <p className="mt-1.5 text-[14px] sm:text-[15px]" style={{ color: 'var(--text-secondary)' }}>
+          <p className="m-0 text-[14px] leading-5" style={{ color: 'var(--ink-2)' }}>
             {subtitle}
           </p>
         ) : null}
       </div>
-      {rightActions ? <div className="flex flex-shrink-0 items-center gap-2">{rightActions}</div> : null}
+      {rightActions ? <div className="flex flex-shrink-0 items-center gap-1">{rightActions}</div> : null}
     </div>
   );
 }

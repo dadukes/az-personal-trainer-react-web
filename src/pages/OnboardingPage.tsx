@@ -1,12 +1,22 @@
-import { Check, ShieldCheck } from 'lucide-react';
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
 import { updateProfile, type CoachPersonality, type FitnessLevel, type PrimaryGoal } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 
 type Step = 1 | 2 | 3;
+
+const STEP_TITLES: Record<Step, string> = {
+  1: 'How should your coach talk to you?',
+  2: 'What are you training for?',
+  3: 'When can you train?',
+};
+
+const FITNESS_OPTIONS: { value: FitnessLevel; label: string; hint: string }[] = [
+  { value: 'beginner', label: 'Beginner', hint: 'I need a low-friction starting point.' },
+  { value: 'intermediate', label: 'Intermediate', hint: 'I have some rhythm and want coaching that adapts.' },
+  { value: 'advanced', label: 'Advanced', hint: 'Push me, but keep it intelligent.' },
+];
 
 const GOAL_OPTIONS: { value: PrimaryGoal; label: string }[] = [
   { value: 'weight_loss', label: 'Lose weight' },
@@ -41,37 +51,10 @@ function orderDays(days: string[]): string[] {
   return WEEKDAYS.filter((d) => days.includes(d.key)).map((d) => d.key);
 }
 
-function StepDots({ step }: { step: Step }) {
-  return (
-    <div className="mb-7 flex items-center gap-2">
-      {[1, 2, 3].map((n, idx) => {
-        const done = n < step;
-        const active = n === step;
-        return (
-          <div key={n} className="flex items-center gap-2">
-            <div
-              className="flex h-8 w-8 items-center justify-center rounded-full text-[14px] font-extrabold"
-              style={
-                done || active
-                  ? { background: 'var(--forma-aqua)', color: 'var(--on-aqua)' }
-                  : { border: '1px solid var(--border-strong)', color: 'var(--text-muted)' }
-              }
-            >
-              {done ? <Check size={16} color="var(--on-aqua)" strokeWidth={3} /> : n}
-            </div>
-            {idx < 2 ? (
-              <div className="h-0.5 w-11" style={{ background: n < step ? 'var(--forma-aqua)' : 'var(--border-base)' }} />
-            ) : null}
-          </div>
-        );
-      })}
-      <span className="ml-2.5 text-[12.5px] font-bold" style={{ color: 'var(--text-muted)' }}>
-        Step {step} of 3
-      </span>
-    </div>
-  );
-}
-
+/**
+ * Three short steps after sign-up (board `Onboarding`): the coach's voice, the goal, then
+ * the week. Follows the theme. Mobile twin: `app/(auth)/onboarding.tsx`.
+ */
 export default function OnboardingPage() {
   const { session, markOnboardingComplete } = useAuth();
   const navigate = useNavigate();
@@ -81,7 +64,7 @@ export default function OnboardingPage() {
   const [goal, setGoal] = useState<PrimaryGoal>('weight_loss');
   const [personality, setPersonality] = useState<CoachPersonality>('zen');
   const [selectedDays, setSelectedDays] = useState<string[]>(DEFAULT_DAYS);
-  const [fitnessLevel, setFitnessLevel] = useState<FitnessLevel>('intermediate');
+  const [fitnessLevel, setFitnessLevel] = useState<FitnessLevel>('beginner');
   const [fears, setFears] = useState<string[]>(['Burnout']);
   const [duration, setDuration] = useState(20);
   const [submitting, setSubmitting] = useState(false);
@@ -115,247 +98,199 @@ export default function OnboardingPage() {
       await markOnboardingComplete();
       navigate('/', { replace: true });
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save your vibe check.');
+      setError(err instanceof Error ? err.message : 'Couldn’t save your answers. Please try again.');
       setSubmitting(false);
     }
   };
 
+  const stepReady = step === 3 ? selectedDays.length > 0 : true;
+
   return (
-    <div className="flex min-h-[100dvh] items-center justify-center p-5 sm:p-10" style={{ background: 'var(--bg-app)' }}>
-      <div className="w-full max-w-[600px] animate-fade-slide-up">
-        <StepDots step={step} />
+    <div className="flex min-h-[100dvh] justify-center" style={{ background: 'var(--ground)' }}>
+      <div className="flex w-full max-w-[560px] flex-col gap-5 px-5 pb-5 pt-6 sm:pt-12">
+        <div role="progressbar" aria-valuenow={step} aria-valuemin={1} aria-valuemax={3} aria-label={`Step ${step} of 3`} className="grid grid-cols-3 gap-1.5">
+          {[1, 2, 3].map((n) => (
+            <span key={n} className="h-1 rounded-sm" style={{ background: n <= step ? 'var(--ink)' : 'var(--line)' }} />
+          ))}
+        </div>
 
-        {/* Step 1 — goal + name + voice */}
+        <h1 className="type-display m-0 mt-2 text-[44px] leading-[1.05]" style={{ color: 'var(--ink)' }}>
+          {STEP_TITLES[step]}
+        </h1>
+
         {step === 1 ? (
-          <Card padding="32px">
-            <div className="text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-              What&rsquo;s your goal?
-            </div>
-            <p className="mb-5 mt-2 text-[14px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-              Pick what matters most right now — we&rsquo;ll tune your plan around it.
-            </p>
-            <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-              {GOAL_OPTIONS.map((g) => (
-                <Chip
-                  key={g.value}
-                  active={goal === g.value}
-                  onClick={() => setGoal(g.value)}
-                  className="justify-center !py-3.5"
-                >
-                  {g.label}
-                </Chip>
-              ))}
-            </div>
-
-            <div className="mt-6">
-              <Input
-                label="What should your coach call you?"
-                placeholder="Optional — makes things feel less robotic"
+          <>
+            <Field label="What should we call you?">
+              <input
                 value={displayName}
                 onChange={(e) => setDisplayName(e.target.value)}
+                placeholder="Your first name"
+                autoComplete="given-name"
+                maxLength={40}
+                aria-label="What should we call you?"
+                className="h-[54px] w-full rounded-[14px] border-0 px-4 text-[16px] outline-none placeholder:text-[var(--ink-3)] focus-visible:ring-2 focus-visible:ring-[var(--teal)]"
+                style={{ background: 'var(--surface)', color: 'var(--ink)' }}
               />
+            </Field>
+            <div role="radiogroup" aria-label="Coach style" className="flex flex-col gap-2">
+              {PERSONALITY_OPTIONS.map((o) => (
+                <RadioCard key={o.value} label={o.label} blurb={o.blurb} selected={personality === o.value} onSelect={() => setPersonality(o.value)} />
+              ))}
             </div>
-
-            <div className="mt-6">
-              <Eyebrow className="mb-2.5">Coach voice</Eyebrow>
-              <div className="flex flex-col gap-2.5">
-                {PERSONALITY_OPTIONS.map((p) => {
-                  const active = personality === p.value;
-                  return (
-                    <button
-                      key={p.value}
-                      type="button"
-                      onClick={() => setPersonality(p.value)}
-                      className="rounded-2xl p-4 text-left transition-transform active:scale-[0.99]"
-                      style={{
-                        background: active ? 'var(--bg-selected)' : 'var(--bg-subtle)',
-                        border: `1px solid ${active ? 'var(--accent)' : 'var(--border-base)'}`,
-                      }}
-                    >
-                      <div
-                        className="text-[15px] font-bold"
-                        style={{ color: active ? 'var(--text-on-mint)' : 'var(--text-primary)' }}
-                      >
-                        {p.label}
-                      </div>
-                      <div
-                        className="mt-1 text-[13px] leading-[1.4]"
-                        style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
-                      >
-                        {p.blurb}
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="mt-7 flex justify-end">
-              <Button size="lg" onClick={() => setStep(2)}>
-                Continue
-              </Button>
-            </div>
-          </Card>
+          </>
         ) : null}
 
-        {/* Step 2 — rhythm + level + fears + duration */}
         {step === 2 ? (
-          <Card padding="32px">
-            <div className="text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-              Your training rhythm
-            </div>
-            <p className="mb-5 mt-2 text-[14px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-              Which days can you realistically commit to? Tap the days that work for you.
-            </p>
-            <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-7">
-              {WEEKDAYS.map((d) => (
-                <Chip
-                  key={d.key}
-                  active={selectedDays.includes(d.key)}
-                  onClick={() => toggleDay(d.key)}
-                  className="justify-center !px-0 !py-3"
-                >
-                  {d.label}
-                </Chip>
-              ))}
-            </div>
-            <p className="mt-2.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-              {selectedDays.length > 0
-                ? `${selectedDays.length} ${selectedDays.length === 1 ? 'day' : 'days'} a week`
-                : 'Pick at least one day to continue.'}
-            </p>
-
-            <div className="mt-6">
-              <Eyebrow className="mb-2.5">Experience level</Eyebrow>
-              <div className="flex gap-2.5">
-                {(['beginner', 'intermediate', 'advanced'] as FitnessLevel[]).map((lvl) => (
-                  <Chip
-                    key={lvl}
-                    active={fitnessLevel === lvl}
-                    onClick={() => setFitnessLevel(lvl)}
-                    className="flex-1 justify-center capitalize !py-3.5"
-                  >
-                    {lvl}
-                  </Chip>
+          <>
+            <Field label="Main goal">
+              <ChipGroup
+                options={GOAL_OPTIONS.map((g) => ({ key: g.value, label: g.label }))}
+                selected={[goal]}
+                onToggle={(key) => setGoal(key as PrimaryGoal)}
+                single
+              />
+            </Field>
+            <Field label="Where are you starting from?">
+              <div role="radiogroup" className="flex flex-col gap-2">
+                {FITNESS_OPTIONS.map((o) => (
+                  <RadioCard key={o.value} label={o.label} blurb={o.hint} selected={fitnessLevel === o.value} onSelect={() => setFitnessLevel(o.value)} />
                 ))}
               </div>
-            </div>
-
-            <div className="mt-6">
-              <Eyebrow className="mb-2.5">What usually throws you off?</Eyebrow>
-              <div className="flex flex-wrap gap-2.5">
-                {FEAR_OPTIONS.map((f) => (
-                  <Chip key={f} active={fears.includes(f)} onClick={() => toggleFear(f)}>
-                    {f}
-                  </Chip>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-6">
-              <Eyebrow className="mb-2.5">Session length</Eyebrow>
-              <div className="flex gap-2.5">
-                {DURATION_OPTIONS.map((m) => (
-                  <Chip
-                    key={m}
-                    active={duration === m}
-                    onClick={() => setDuration(m)}
-                    className="flex-1 justify-center !py-3"
-                  >
-                    {m}m
-                  </Chip>
-                ))}
-              </div>
-            </div>
-
-            <div className="mt-7 flex justify-between">
-              <Button variant="quiet" size="lg" onClick={() => setStep(1)}>
-                Back
-              </Button>
-              <Button
-                size="lg"
-                onClick={() => setStep(3)}
-                disabled={fears.length === 0 || selectedDays.length === 0}
-              >
-                Continue
-              </Button>
-            </div>
-          </Card>
+            </Field>
+            <Field label="How long can a workout be?">
+              <ChipGroup
+                options={DURATION_OPTIONS.map((m) => ({ key: String(m), label: `${m} min` }))}
+                selected={[String(duration)]}
+                onToggle={(key) => setDuration(Number(key))}
+                single
+              />
+            </Field>
+          </>
         ) : null}
 
-        {/* Step 3 — connect + review */}
         {step === 3 ? (
-          <Card padding="32px">
-            <div className="text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-              Connect your data
-            </div>
-            <p className="mb-5 mt-2 text-[14px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-              Wearable sync isn&rsquo;t available on the web yet — your plan still adapts from your daily
-              pulse checks and coach chat. You can connect a device later in the mobile app.
-            </p>
+          <>
+            <Field label="Days that realistically work" hint={`${orderedDays.length} ${orderedDays.length === 1 ? 'day' : 'days'} a week`}>
+              <ChipGroup options={WEEKDAYS} selected={selectedDays} onToggle={toggleDay} />
+            </Field>
+            <Field label="What usually gets in the way?" hint="Pick any. Your coach plans around them.">
+              <ChipGroup options={FEAR_OPTIONS.map((f) => ({ key: f, label: f }))} selected={fears} onToggle={toggleFear} />
+            </Field>
+          </>
+        ) : null}
 
-            <div className="flex flex-col gap-2.5">
-              {['Apple Health', 'Google Fit'].map((provider) => (
-                <Card key={provider} variant="subtle" padding="14px 16px">
-                  <div className="flex items-center gap-3">
-                    <ShieldCheck size={20} color="var(--teal)" />
-                    <span className="flex-1 text-[14.5px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                      {provider}
-                    </span>
-                    <Button variant="quiet" size="sm" disabled>
-                      Mobile only
-                    </Button>
-                  </div>
-                </Card>
-              ))}
-            </div>
+        <div className="min-h-3 flex-1" />
 
-            <div className="mt-6 rounded-2xl p-4" style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}>
-              <Eyebrow className="mb-3">Your vibe check</Eyebrow>
-              {[
-                ['Goal', GOAL_OPTIONS.find((g) => g.value === goal)?.label ?? goal],
-                ['Coach voice', personality],
-                [
-                  'Rhythm',
-                  `${selectedDays.length} days · ${orderedDays
-                    .map((k) => WEEKDAYS.find((d) => d.key === k)?.label)
-                    .join(', ')}`,
-                ],
-                ['Fitness level', fitnessLevel],
-                ['Session length', `${duration} minutes`],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  className="flex items-center justify-between border-b py-2.5 last:border-b-0"
-                  style={{ borderColor: 'var(--border-base)' }}
-                >
-                  <span className="text-[13px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-                    {label}
-                  </span>
-                  <span className="text-[13px] font-bold capitalize" style={{ color: 'var(--text-primary)' }}>
-                    {value}
-                  </span>
-                </div>
-              ))}
-            </div>
+        {error ? (
+          <p role="alert" className="m-0 text-[14px] leading-5" style={{ color: 'var(--danger)' }}>
+            {error}
+          </p>
+        ) : null}
 
-            {error ? (
-              <div className="mt-4 text-[13px]" style={{ color: 'var(--forma-danger)' }}>
-                {error}
-              </div>
-            ) : null}
+        <div className="flex gap-2.5">
+          {step > 1 ? (
+            <button
+              type="button"
+              onClick={() => {
+                setStep((step - 1) as Step);
+                setError(null);
+              }}
+              disabled={submitting}
+              className="h-[60px] rounded-button px-[22px] text-[17px] font-bold"
+              style={{ background: 'var(--sunken)', color: 'var(--ink)' }}
+            >
+              Back
+            </button>
+          ) : null}
+          <button
+            type="button"
+            onClick={() => (step < 3 ? setStep((step + 1) as Step) : void handleFinish())}
+            disabled={!stepReady || submitting}
+            className="h-[60px] flex-1 rounded-button text-[17px] font-bold transition-transform active:scale-[0.98] disabled:opacity-50"
+            style={{ background: 'var(--aqua)', color: 'var(--on-aqua)' }}
+          >
+            {submitting ? 'Saving…' : step < 3 ? 'Continue' : 'Meet your coach'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
-            <div className="mt-7 flex justify-between">
-              <Button variant="link" size="lg" onClick={() => setStep(2)}>
-                Back
-              </Button>
-              <Button size="lg" onClick={handleFinish} disabled={submitting}>
-                {submitting ? 'Saving…' : 'Start my plan'}
-              </Button>
-            </div>
-          </Card>
+function Field({ label, hint, children }: { label: string; hint?: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[14px] font-semibold" style={{ color: 'var(--ink-2)' }}>
+          {label}
+        </span>
+        {hint ? (
+          <span className="type-meta" style={{ color: 'var(--ink-3)' }}>
+            {hint}
+          </span>
         ) : null}
       </div>
+      {children}
+    </div>
+  );
+}
+
+function RadioCard({ label, blurb, selected, onSelect }: { label: string; blurb: string; selected: boolean; onSelect: () => void }) {
+  return (
+    <button
+      type="button"
+      role="radio"
+      aria-checked={selected}
+      onClick={onSelect}
+      className="flex items-start gap-3 rounded-[18px] px-4 py-3.5 text-left"
+      style={{ background: selected ? 'var(--tint)' : 'var(--surface)', border: `2px solid ${selected ? 'var(--teal)' : 'transparent'}` }}
+    >
+      <span className="flex flex-1 flex-col gap-[3px]">
+        <span className="text-[16px] font-bold" style={{ color: 'var(--ink)' }}>
+          {label}
+        </span>
+        <span className="text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+          {blurb}
+        </span>
+      </span>
+      <span
+        aria-hidden
+        className="mt-px h-6 w-6 flex-none rounded-full"
+        style={{ border: selected ? '7px solid var(--teal)' : '2px solid var(--ink-3)', background: 'var(--surface)' }}
+      />
+    </button>
+  );
+}
+
+function ChipGroup({
+  options,
+  selected,
+  onToggle,
+  single = false,
+}: {
+  options: { key: string; label: string }[];
+  selected: string[];
+  onToggle: (key: string) => void;
+  single?: boolean;
+}) {
+  return (
+    <div role={single ? 'radiogroup' : 'group'} className="flex flex-wrap gap-2">
+      {options.map((o) => {
+        const on = selected.includes(o.key);
+        return (
+          <button
+            key={o.key}
+            type="button"
+            role={single ? 'radio' : 'checkbox'}
+            aria-checked={on}
+            onClick={() => onToggle(o.key)}
+            className="min-h-11 rounded-full px-4 text-[14px] font-semibold"
+            style={{ background: on ? 'var(--ink)' : 'var(--surface)', color: on ? 'var(--ground)' : 'var(--ink)' }}
+          >
+            {o.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

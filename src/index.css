@@ -47,6 +47,15 @@
   --on-danger: #ffffff;
   --danger-tint: #fbeae8;
   --sleep: #1e4f86;
+  /* Sign-in is always navy, whatever the theme (board `Welcome`). Mirrors Fixed.welcome on mobile. */
+  --welcome-ground: #06224d;
+  --welcome-field: #113768;
+  --welcome-ink: #ffffff;
+  --welcome-label: #c3d3e8;
+  --welcome-placeholder: #8fa9c9;
+  --welcome-danger: #ff8a7a;
+  /* One chart line. Mirrors `series` in the mobile app's constants/tokens.js. */
+  --series: #2a78d6;
   --hero: #06224d;
   --hero-ink: #ffffff;
   --hero-sub: #c3d3e8;
@@ -137,6 +146,7 @@
   --danger: #ff8a7a;
   --danger-tint: #33191a;
   --sleep: #8dbeff;
+  --series: #3987e5;
   --hero: #12305c;
   --tab-on: #4fddcd;
   --effort: #f5c542;

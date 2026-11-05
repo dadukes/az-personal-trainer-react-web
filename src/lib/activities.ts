@@ -178,15 +178,42 @@ export function weekTotalsText(
   return parts.join(' · ');
 }
 
-/** Which part of the Activities timeline an entry falls in. */
-export type TimelineGroupKind = 'today' | 'this_week' | 'week';
-
-export interface TimelineGroup<T> {
-  /** Stable key: `today`, `this_week` or `week:<monday>`. */
-  key: string;
-  kind: TimelineGroupKind;
+/** One Mon–Sun week of the Activities list. */
+export interface WeekGroup<T> {
   weekStart: string;
   items: T[];
+}
+
+/** Entries by Mon–Sun week, in list order (the API is newest first). */
+export function groupByWeek<T extends { week_start: string }>(items: readonly T[]): WeekGroup<T>[] {
+  const groups: WeekGroup<T>[] = [];
+  for (const item of items) {
+    const last = groups[groups.length - 1];
+    if (last && last.weekStart === item.week_start) last.items.push(item);
+    else groups.push({ weekStart: item.week_start, items: [item] });
+  }
+  return groups;
+}
+
+/**
+ * A week's heading and totals. This week's totals are the big numbers at the top of the
+ * screen, so its group carries none.
+ */
+export function weekGroupHeader(
+  weekStart: string,
+  week: { week_start: string; week_end: string; sessions: number; duration_minutes: number; distance_km: number } | undefined,
+  system: 'metric' | 'imperial',
+  today: Date = new Date(),
+): { title: string; totals: string | null } {
+  const end = week?.week_end ?? addDaysToKey(weekStart, 6);
+  const title = weekRangeLabel(weekStart, end, today);
+  return { title, totals: week && title !== 'This week' ? weekTotalsText(week, system) : null };
+}
+
+function addDaysToKey(key: string, days: number): string {
+  const d = parseLocalDate(key);
+  d.setDate(d.getDate() + days);
+  return dateKey(d);
 }
 
 function dateKey(d: Date): string {
@@ -194,51 +221,57 @@ function dateKey(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-/**
- * Today, then earlier this week, then one group per older Mon–Sun week, in list order
- * (the API is newest first). Dates are the server's local `YYYY-MM-DD`, which the apps
- * keep on the device's timezone; an entry dated after today (a zone change) counts as today.
- */
-export function groupTimeline<T extends { date: string; week_start: string }>(
-  items: readonly T[],
-  today: Date = new Date(),
-): TimelineGroup<T>[] {
-  const todayKey = dateKey(today);
-  const monday = new Date(today);
-  monday.setDate(monday.getDate() - ((monday.getDay() + 6) % 7));
-  const mondayKey = dateKey(monday);
+/** "Wed 4 Nov" for a local `YYYY-MM-DD`. */
+export function shortDayLabel(dateKeyISO: string): string {
+  return parseLocalDate(dateKeyISO).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' });
+}
 
-  const groups: TimelineGroup<T>[] = [];
-  for (const item of items) {
-    const kind: TimelineGroupKind =
-      item.date >= todayKey ? 'today' : item.week_start >= mondayKey ? 'this_week' : 'week';
-    const key = kind === 'week' ? `week:${item.week_start}` : kind;
-    const last = groups[groups.length - 1];
-    if (last && last.key === key) last.items.push(item);
-    else groups.push({ key, kind, weekStart: item.week_start, items: [item] });
-  }
-  return groups;
+/** "1h 33", "45m": the big Time number on Activities. */
+export function compactDuration(minutes: number): string {
+  const rounded = Math.round(minutes);
+  if (rounded < 60) return `${rounded}m`;
+  const m = rounded % 60;
+  return `${Math.floor(rounded / 60)}h${m ? ` ${String(m).padStart(2, '0')}` : ''}`;
 }
 
 /**
- * A timeline group's heading and totals. The current week's totals go on the first of its
- * groups only, labelled "This week" since they cover today and the earlier days together.
+ * A workout row's line: `Tue 3 Nov · 31 min · 17 sets · Garmin Connect`. Sets are the ones
+ * ticked (`done_sets`), left out when the server doesn't send them yet.
  */
-export function timelineGroupHeader(
-  group: Pick<TimelineGroup<unknown>, 'kind'>,
-  week: { week_start: string; week_end: string; sessions: number; duration_minutes: number; distance_km: number } | undefined,
+export function workoutRowMeta(
+  workout: {
+    duration_minutes: number;
+    done_sets?: number;
+    distance_km: number | null;
+    source: string;
+    recorded_by: string | null;
+  },
+  when: string,
   system: 'metric' | 'imperial',
-  firstOfWeek: boolean,
-): { title: string; totals: string | null } {
-  if (group.kind === 'week') {
-    return week
-      ? { title: weekRangeLabel(week.week_start, week.week_end), totals: weekTotalsText(week, system) }
-      : { title: '', totals: null };
-  }
-  return {
-    title: group.kind === 'today' ? 'Today' : 'Earlier this week',
-    totals: week && firstOfWeek ? `This week: ${weekTotalsText(week, system)}` : null,
-  };
+): string {
+  const sets = workout.done_sets;
+  return [
+    when,
+    workout.duration_minutes > 0 ? formatMinutes(workout.duration_minutes) : null,
+    typeof sets === 'number' && sets > 0 ? `${sets} ${sets === 1 ? 'set' : 'sets'}` : null,
+    workout.distance_km ? formatDistance(workout.distance_km, system) : null,
+    workout.source === 'coach'
+      ? 'Logged with coach'
+      : workout.recorded_by || workout.source === 'watch'
+        ? sourceAppLabel(workout.recorded_by)
+        : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** Any other activity's line: `Thu 29 Oct · Run · 40 min · 12.0 km · Quick log`. */
+export function activityRowMeta(
+  item: Pick<ActivityItem, 'duration_minutes' | 'distance_km' | 'source' | 'source_app' | 'notes'>,
+  when: string,
+  system: 'metric' | 'imperial',
+): string {
+  return [when, activityNote(item), activityStats(item, system), activitySourceLabel(item)].filter(Boolean).join(' · ');
 }
 
 /** Bpm range of each zone from the model's floors. Below the Z1 floor counts as Z1; Z5 is open-ended. */
@@ -255,7 +288,7 @@ export function timeRangeText(startISO: string | null, endISO: string): string {
   const start = startISO ? new Date(startISO) : null;
   const date = (start ?? end).toLocaleDateString(undefined, { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
   const t = (d: Date) => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-  return start ? `${date} · ${t(start)} – ${t(end)}` : `${date} · ${t(end)}`;
+  return start && t(start) !== t(end) ? `${date} · ${t(start)} – ${t(end)}` : `${date} · ${t(end)}`;
 }
 
 const KG_PER_LB = 0.45359237;
@@ -359,13 +392,4 @@ export function formatElapsed(totalSeconds: number): string {
   const m = Math.floor((s % 3600) / 60);
   const sec = String(s % 60).padStart(2, '0');
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
-}
-
-/**
- * Columns for a detail page's stat tiles from `sm` up, so rows come out even: 4 → one row,
- * 5 or 6 → rows of 3, 7 or 8 → rows of 4. (Web only; phones always use two columns.)
- */
-export function statGridClass(count: number): string {
-  if (count <= 2) return 'sm:grid-cols-2';
-  return count === 4 || count >= 7 ? 'sm:grid-cols-4' : 'sm:grid-cols-3';
 }

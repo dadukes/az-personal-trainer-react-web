@@ -64,7 +64,7 @@ export default function ActivityRow({ item, unitSystem, detailed = false, when, 
       className={`flex w-full gap-3 rounded-2xl p-3.5 text-left ${onClick ? 'transition-transform active:scale-[0.99]' : ''}`}
       style={{
         background: 'var(--bg-surface)',
-        border: highlighted ? '2px solid var(--accent)' : '1px solid var(--border-base)',
+        border: highlighted ? '2px solid var(--accent)' : 'none',
       }}
     >
       <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl" style={{ background: 'var(--bg-subtle)' }}>

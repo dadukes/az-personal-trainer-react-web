@@ -25,14 +25,14 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 
 | Route | Page | Notes |
 |-------|------|-------|
-| `/login` | `LoginPage` | Split gradient hero + sign-in/sign-up toggle |
-| `/onboarding` | `OnboardingPage` | 3 steps; sends only backend-accepted profile fields |
+| `/login` | `LoginPage` | Always navy (board `Welcome`): tagline, email and password, Sign in, "New here? Create an account"; keeps the delete-account link |
+| `/onboarding` | `OnboardingPage` | 3 steps (board `Onboarding`): name and coach voice; goal, level and session length; days and what gets in the way. Sends only backend-accepted profile fields |
 | `/` | `HomePage` | Today's job first, then the week strip, health in one row and Recent (Phase 8A); every manual-capture dialog hangs off the `QuickActionsFab` |
-| `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
-| `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
-| `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **Your progress** (`progress_snapshot` + body measurements) + health trends chart + AI health insights |
-| `/activities` | `ActivitiesPage` | Every session newest first: guided workouts + watch imports + coach/quick logs from `GET /history`, cursor-paged (loads as the end scrolls into view; "Load older" fallback), grouped by `groupTimeline` as Today / Earlier this week / one group per older Mon–Sun week, with the server's whole-week totals (this week's on the first of its groups as "This week: …") |
-| `/activities/:id` | `ActivityDetailPage` | One activity (`getActivity`): stats (duration, distance, pace/speed, a ride's max speed, calories, elevation, XP — only what the device shared; `statGridClass` keeps rows even), `HeartRateCard` with the `hr_curve` chart, note. **Edit** for coach/quick logs (`ActivityEditDialog`); imports are read-only |
+| `/coach` | `CoachPage` | SSE chat (board `Coach`): plain coach text under the Forma mark, navy bubbles for the user, pill quick replies, rounded composer; desktop context panel from `xl` |
+| `/fuel` | `FuelPage` | Eaten today against Burned so far (`lib/fuel.ts`), meal photo (camera or library on a phone, drag and drop on desktop) → `logNutrition`, today's meals |
+| `/progress` | `ProgressPage` | Level bar, Strength, Consistency with the 28-day grid (`lib/progress.ts` over `/history`), Body, Fitness, Health trends, real coach insights only |
+| `/activities` | `ActivitiesPage` | This week's sessions, time and distance up top; every session newest first from `GET /history`, cursor-paged, one Surface of rows per Mon–Sun week (`groupByWeek`) with older weeks' totals; workouts show ticked sets (`done_sets`) |
+| `/activities/:id` | `ActivityDetailPage` | One activity (`getActivity`): stats (duration, distance, pace/speed, a ride's max speed, calories, elevation, XP — only what the device shared, in `DetailHeader`'s `StatGrid`), `HeartRateCard` with the `hr_curve` chart, note. **Edit** for coach/quick logs (`ActivityEditDialog`); imports are read-only |
 | `/activities/workout/:id` | `WorkoutDetailPage` | One guided workout (`getWorkoutSession`): plan-day title, duration/sets/volume/calories/elevation/XP, watch HR combined across its recordings with one chart (`HeartRateCard`) — or, with no recording, the phone-sent all-day readings as "General HR data" (`GeneralHeartRateCard`: avg + smoothed curve, no max/zones/XP) — every exercise by section from the server's `exercises` (plan day merged with the logs: `logged` set pills, `done` without sets — "Recorded on your watch" / "logged with your coach" — and dashed `not_logged` cards). **Edit, or clicking an exercise, opens the logbook in Edit mode** (`/workout/edit/:id`) |
 | `/progress/workouts`, `/progress/workouts/:id` | redirects | Old links → `/activities`, `/activities/workout/:id` |
 | `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) incl. the optional **Body & heart rate** fields + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
@@ -103,19 +103,14 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   the tab returns), or the page loads mid-turn, Coach follows the turn with `getChatTurn` every 3 s and reloads the
   session when it's done, so cards and replaced states are exact. Leaving Coach stops listening; coming back
   follows the turn. Retry reuses the id unless the turn failed. The coach's avatar is the Forma mark.
-- **Fuel**: read the file as a base64 data URL and post to `logNutrition`. "Recent meals" loads
-  persisted history via `getNutritionLogs` on mount and prepends new logs (survives refresh).
-- **Progress**: `getProgress` returns level/XP, `this_week` activity stats (wired to the "This
-  week" tiles), and `health_insights` (icons map the stable enum, falling back to `general`).
-  The "Workouts this week" tile (and an "All activities →" link) navigate to `/activities`.
-  The **Health trends** section is a `HealthTrendChart` (lazy-loaded so `recharts` is a separate
-  chunk) fed by `getHealthLogs(token, 90)`; it plots two user-chosen dimensions over 7/14/30 days.
-  It is **not** a dual-axis chart — both series are min–max normalized to a shared 0–100 scale
-  (the tooltip shows the real captured values), avoiding the spurious-correlation trap of two
-  independent y-scales.
+- **Fuel**: read the file as a base64 data URL and post to `logNutrition`. Meals load from
+  `getNutritionLogs`; Eaten sums today's, and a new log is prepended. Burned so far needs height,
+  birth year and sex in the profile plus a weigh-in, or it isn't shown.
+- **Progress** (phase 8B): see the route table. `HealthTrendChart` is plain SVG now: one metric
+  at a time, chips only for metrics with data in the last 30 days, and the whole card hides when
+  there are none. The "This week" tiles and the placeholder insights are gone.
 - **Activities** (nav item between Fuel and Progress): one list for individual sessions; Progress
-  keeps the trends. Rows are `ActivityRow` (watch / coach / quick log) and `WorkoutRow` (guided
-  workout, "Planned workout" badge, avg bpm from a linked watch recording). Week headers come from
+  keeps the trends. Rows are the `Row` primitive: a tick tile for workouts, the activity's icon for the rest. Week headers come from
   the response's `weeks` (whole-week totals, so a week split across two pages still adds up).
   Paging is the server's opaque `next_cursor`; a short page with a cursor is normal, only `null` is
   the end. The `IntersectionObserver` root is the nearest scrolling ancestor (`AppShell`'s pane from
