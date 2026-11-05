@@ -7,7 +7,6 @@ import ActivityRow from '@/components/ActivityRow';
 import DetailHeader, { useBackToActivities } from '@/components/DetailHeader';
 import GeneralHeartRateCard from '@/components/GeneralHeartRateCard';
 import HeartRateCard from '@/components/HeartRateCard';
-import WorkoutExerciseDialog from '@/components/WorkoutExerciseDialog';
 import { Badge, Button, Card, Eyebrow, StatTile } from '@/components/ui';
 import { sourceAppLabel } from '@/lib/body';
 import {
@@ -23,15 +22,12 @@ import {
 } from '@/lib/activities';
 import {
   getWorkoutSession,
-  updateWorkoutExercise,
-  type LoggedSet,
   type SessionExercise,
   type WorkoutSection,
   type WorkoutSessionDetailResponse,
   type WorkoutSetLogEntry,
 } from '@/lib/api';
 import { weightText, formatExerciseName } from '@/lib/exercise';
-import { isFeatureEnabled } from '@/lib/featureFlags';
 import { exercisesFromSets } from '@/lib/workoutEdit';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
@@ -93,25 +89,18 @@ export default function WorkoutDetailPage() {
   const { id } = useParams<{ id: string }>();
   const { session } = useAuth();
   const unitSystem = useAppStore((s) => s.profile.preferred_unit_system);
-  const setTotalXp = useAppStore((s) => s.setTotalXp);
 
   const [data, setData] = useState<WorkoutSessionDetailResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [reloadKey, setReloadKey] = useState(0);
-  const [editing, setEditing] = useState<SessionExercise | null>(null);
-  const [saving, setSaving] = useState(false);
-  const [saveError, setSaveError] = useState<string | null>(null);
   // Edit is the logbook, on its own page, which reads the workout again on the way back.
-  const logbookOn = isFeatureEnabled('logbook');
   const openEdit = () => navigate(`/workout/edit/${id}`);
 
   useEffect(() => {
     if (!session?.access_token || !id) return;
     const token = session.access_token;
     let mounted = true;
-    // A re-read after an edit keeps the page in place.
-    if (reloadKey === 0) setLoading(true);
+    setLoading(true);
     void (async () => {
       try {
         const result = await getWorkoutSession(token, id);
@@ -125,23 +114,7 @@ export default function WorkoutDetailPage() {
     return () => {
       mounted = false;
     };
-  }, [session, id, reloadKey]);
-
-  const saveExercise = async (exercise: SessionExercise, sets: LoggedSet[]) => {
-    if (!session?.access_token || !id) return;
-    setSaving(true);
-    setSaveError(null);
-    try {
-      const result = await updateWorkoutExercise(session.access_token, id, exercise.key, sets);
-      setTotalXp(result.new_total_xp);
-      setEditing(null);
-      setReloadKey((k) => k + 1);
-    } catch (err) {
-      setSaveError(err instanceof Error ? err.message : 'Could not save this exercise.');
-    } finally {
-      setSaving(false);
-    }
-  };
+  }, [session, id]);
 
   const grouped = data ? bySection(data.exercises ?? exercisesFromSets(data.sets)) : null;
   const completedSets = data ? data.sets.filter((s) => s.completed).length : 0;
@@ -199,7 +172,7 @@ export default function WorkoutDetailPage() {
         title={data ? workoutTitle({ title: data.title, day: data.session.day }) : 'Workout'}
         onBack={goBack}
         action={
-          logbookOn && data ? (
+          data ? (
             <Button variant="link" onClick={openEdit}>
               Edit
             </Button>
@@ -294,14 +267,7 @@ export default function WorkoutDetailPage() {
                     unitSystem={unitSystem}
                     key={exercise.key}
                     exercise={exercise}
-                    onClick={() => {
-                      if (logbookOn) {
-                        openEdit();
-                        return;
-                      }
-                      setSaveError(null);
-                      setEditing(exercise);
-                    }}
+                    onClick={openEdit}
                   />
                 ))}
               </div>
@@ -310,16 +276,6 @@ export default function WorkoutDetailPage() {
         </>
       )}
 
-      {editing ? (
-        <WorkoutExerciseDialog
-          exercise={editing}
-          preferredUnit={unitSystem === 'imperial' ? 'lb' : 'kg'}
-          saving={saving}
-          error={saveError}
-          onSave={(sets) => void saveExercise(editing, sets)}
-          onClose={() => setEditing(null)}
-        />
-      ) : null}
     </div>
   );
 }

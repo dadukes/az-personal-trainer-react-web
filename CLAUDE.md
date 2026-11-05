@@ -11,7 +11,7 @@ Claude Design **"Forma Web App Prototype"**. It talks to the **same Azure Functi
 backend** and **Supabase Auth** as the mobile app.
 
 Core user journey: **auth → onboarding → tabs** (Home, Coach, Fuel, Activities, Progress), plus
-plan-day view, guided workout session, and chat history.
+plan-day view, the workout logbook, and chat history.
 
 > Tagline is exact: **"Fitness that fits you."** (keep the period). App name
 > **Forma Fitness** (full) / **Forma** (short).
@@ -107,7 +107,8 @@ Only `VITE_*` vars reach the browser bundle (read in `src/lib/env.ts`); copy `.e
 - `VITE_AZURE_FUNCTION_KEY`
 
 Feature flags are off unless `VITE_FLAG_<NAME>` is `1`, and one browser can override them with
-`localStorage.setItem('forma:flag:logbook', '1')` ([src/lib/featureFlags.ts](src/lib/featureFlags.ts)).
+`localStorage.setItem('forma:flag:designSystem', '1')` ([src/lib/featureFlags.ts](src/lib/featureFlags.ts)).
+The logbook flag was removed on 2026-11-05: the logbook is the only workout screen.
 
 The app degrades gracefully when config is missing (`env.hasApiConfig` / `env.hasSupabaseConfig`
 gates surface a clear error instead of crashing).

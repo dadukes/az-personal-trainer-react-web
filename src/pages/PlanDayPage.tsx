@@ -1,6 +1,6 @@
 import {
   Bike,
-  Calendar,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   ChevronUp,
@@ -12,19 +12,19 @@ import {
   Plus,
   Sailboat,
   Shuffle,
+  Sparkles,
   StretchHorizontal,
   Timer,
   Users,
   Waves,
-  Zap,
 } from 'lucide-react';
 import { useEffect, useState, type ComponentType } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
-import { Badge, Button, Card, Eyebrow } from '@/components/ui';
+import { Button, Sheet, Surface } from '@/components/ui';
 import { getWorkoutPlan, updatePlanDay, type DashboardExercise } from '@/lib/api';
-import { isFeatureEnabled } from '@/lib/featureFlags';
+import { splitFocus } from '@/lib/home';
 import { lastDateForDayKey } from '@/lib/logbookPast';
 import {
   exerciseIconKey,
@@ -67,10 +67,12 @@ const ICONS: Record<ExerciseIconKey, ComponentType<{ size?: number; color?: stri
   other: Footprints,
 };
 
+/** One exercise: name and target to read; in Edit, move buttons and a swap as well. */
 function ExerciseRow({
   ex,
   index,
   count,
+  editing,
   onOpen,
   onMove,
   onSwap,
@@ -78,6 +80,7 @@ function ExerciseRow({
   ex: DashboardExercise;
   index: number;
   count: number;
+  editing: boolean;
   onOpen: () => void;
   onMove: (direction: -1 | 1) => void;
   onSwap: () => void;
@@ -85,76 +88,65 @@ function ExerciseRow({
   const type = resolveExerciseType(ex);
   const subtitle = ex.target_muscle ?? ex.body_part;
   const Icon = ICONS[exerciseIconKey(ex)];
+  const name = type === 'class' ? (ex.class_name ?? ex.name) : formatExerciseName(ex.name);
   // Cardio and class are never catalog-matched, so the "not linked to ExerciseDB"
   // warning would fire on every run — it is only meaningful for trackable movements.
-  const showUnlinkedWarning = isCatalogExercise(type) && !ex.exercise_id;
+  const showUnlinkedWarning = editing && isCatalogExercise(type) && !ex.exercise_id;
+  const moveButton = (direction: -1 | 1) => {
+    const disabled = direction === -1 ? index === 0 : index === count - 1;
+    const Chevron = direction === -1 ? ChevronUp : ChevronDown;
+    return (
+      <button
+        type="button"
+        onClick={() => onMove(direction)}
+        disabled={disabled}
+        aria-label={`Move ${name} ${direction === -1 ? 'up' : 'down'}`}
+        className="flex h-8 w-9 items-center justify-center rounded-control disabled:opacity-30"
+      >
+        <Chevron size={18} color="var(--ink-2)" />
+      </button>
+    );
+  };
   return (
     <div
-      className="flex items-center gap-2 rounded-xl px-3 py-2.5"
-      style={{ background: 'var(--bg-subtle)', border: '1px solid var(--border-base)' }}
+      className={`flex min-h-16 items-center pr-2 ${editing && count > 1 ? 'pl-1' : 'pl-4'}`}
+      style={{ borderTop: index === 0 ? undefined : '1px solid var(--line)' }}
     >
-      {count > 1 ? (
+      {editing && count > 1 ? (
         <div className="flex flex-col">
-          <button
-            onClick={() => onMove(-1)}
-            disabled={index === 0}
-            aria-label="Move up"
-            className="flex h-5 w-5 items-center justify-center rounded disabled:opacity-25"
-          >
-            <ChevronUp size={15} color="var(--text-muted)" />
-          </button>
-          <button
-            onClick={() => onMove(1)}
-            disabled={index === count - 1}
-            aria-label="Move down"
-            className="flex h-5 w-5 items-center justify-center rounded disabled:opacity-25"
-          >
-            <ChevronUp size={15} color="var(--text-muted)" style={{ transform: 'rotate(180deg)' }} />
-          </button>
+          {moveButton(-1)}
+          {moveButton(1)}
         </div>
       ) : null}
 
-      <button onClick={onOpen} className="flex min-w-0 flex-1 items-center gap-3 text-left">
-        <div
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
-        >
-          <Icon size={15} color="var(--text-secondary)" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <span className="truncate text-[14px] font-bold" style={{ color: 'var(--text-primary)' }}>
-              {type === 'class' ? (ex.class_name ?? ex.name) : formatExerciseName(ex.name)}
-            </span>
-            {showUnlinkedWarning ? (
-              <Link2 size={13} color="var(--forma-danger)" aria-label="Not linked to ExerciseDB" />
-            ) : null}
-          </div>
-          {/* Below `sm` the target rides under the name: with the swap button in the row,
-              an inline "30s hold each side" left no room for the name at all. */}
-          <div className="mt-0.5 truncate text-[12px]" style={{ color: 'var(--text-muted)' }}>
-            <span className="tabular font-semibold sm:hidden" style={{ color: 'var(--text-secondary)' }}>
-              {exerciseMeta(ex)}
-              {subtitle ? ' · ' : ''}
-            </span>
-            {subtitle ? <span>{formatMuscle(subtitle)}</span> : null}
-          </div>
-        </div>
-        <span className="tabular hidden flex-shrink-0 text-[13px] font-semibold sm:inline" style={{ color: 'var(--text-secondary)' }}>
-          {exerciseMeta(ex)}
+      <button type="button" onClick={onOpen} className="flex min-h-16 min-w-0 flex-1 items-center gap-3 py-2.5 text-left">
+        <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-[10px]" style={{ background: 'var(--sunken)' }}>
+          <Icon size={16} color="var(--ink-2)" />
         </span>
-        <ChevronRight size={18} color="var(--text-muted)" className="flex-shrink-0" />
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex items-center gap-1.5">
+            <span className="text-[15px] font-semibold leading-5" style={{ color: 'var(--ink)' }}>
+              {name}
+            </span>
+            {showUnlinkedWarning ? <Link2 size={13} color="var(--danger)" aria-label="Not linked to ExerciseDB" /> : null}
+          </span>
+          <span className="truncate text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>
+            <span className="tabular">{exerciseMeta(ex)}</span>
+            {subtitle ? ` · ${formatMuscle(subtitle)}` : ''}
+          </span>
+        </span>
+        {!editing ? <ChevronRight size={16} color="var(--ink-3)" className="flex-shrink-0" /> : null}
       </button>
 
       {/* Swapping is the most common edit, so it doesn't need a trip into the detail page. */}
-      {isCatalogExercise(type) ? (
+      {editing && isCatalogExercise(type) ? (
         <button
+          type="button"
           onClick={onSwap}
-          aria-label={`Find an alternative to ${ex.name}`}
-          className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg transition-transform active:scale-90"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+          aria-label={`Find an alternative to ${name}`}
+          className="flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-control transition-transform active:scale-90"
         >
-          <Shuffle size={15} color="var(--accent-text)" />
+          <Shuffle size={19} color="var(--teal)" />
         </button>
       ) : null}
     </div>
@@ -166,7 +158,7 @@ export default function PlanDayPage() {
   const navigate = useNavigate();
   const { session } = useAuth();
   const dayKey = resolveDayKey(day);
-  const { planDraft, initPlanDraft, addDraftExercise, moveDraftExercise, replaceDraftExercise, markPlanSaved } =
+  const { planDraft, initPlanDraft, addDraftExercise, moveDraftExercise, replaceDraftExercise, markPlanSaved, clearPlanDraft } =
     useAppStore();
 
   const [loading, setLoading] = useState(true);
@@ -174,6 +166,11 @@ export default function PlanDayPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [swapTarget, setSwapTarget] = useState<{ section: PlanSection; index: number } | null>(null);
+  /** The day reads by default; reordering, swapping and adding happen in Edit. */
+  const [editing, setEditing] = useState(false);
+  const [discardOpen, setDiscardOpen] = useState(false);
+  /** Re-reads the plan, after throwing unsaved edits away. */
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -198,7 +195,7 @@ export default function PlanDayPage() {
     return () => {
       active = false;
     };
-  }, [session, dayKey, initPlanDraft]);
+  }, [session, dayKey, initPlanDraft, reloadKey]);
 
   const dayPlan = planDraft?.day === dayKey ? planDraft.dayPlan : null;
   const isRest = !dayPlan || dayPlan.is_rest_day;
@@ -207,6 +204,11 @@ export default function PlanDayPage() {
   const swapExercise = swapTarget
     ? dayPlan?.[SECTIONS.find((s) => s.key === swapTarget.section)!.field]?.[swapTarget.index]
     : undefined;
+
+  // Edits left unsaved, on an earlier visit or in the exercise page, reopen in Edit, where Save is.
+  useEffect(() => {
+    if (dirty && planDraft?.day === dayKey) setEditing(true);
+  }, [dirty, planDraft?.day, dayKey]);
 
   const handleAdd = (section: PlanSection) => {
     const field = SECTIONS.find((s) => s.key === section)!.field;
@@ -222,6 +224,7 @@ export default function PlanDayPage() {
     try {
       const result = await updatePlanDay(session.access_token, planDraft.planId, dayKey, dayPlan);
       markPlanSaved(result.plan);
+      setEditing(false);
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : 'Could not save your changes.');
     } finally {
@@ -229,137 +232,175 @@ export default function PlanDayPage() {
     }
   };
 
+  /** Leaving Edit: nothing to do without changes, otherwise keep or throw them away. */
+  const finishEditing = () => {
+    if (dirty) {
+      setDiscardOpen(true);
+      return;
+    }
+    setEditing(false);
+    setSaveError(null);
+  };
+
+  const discardChanges = () => {
+    clearPlanDraft();
+    setDiscardOpen(false);
+    setEditing(false);
+    setSaveError(null);
+    setReloadKey((k) => k + 1);
+  };
+
+  const meta = [
+    dayKey.charAt(0).toUpperCase() + dayKey.slice(1),
+    !isRest && dayPlan?.estimated_duration_minutes ? `${dayPlan.estimated_duration_minutes} min` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const showFooter = !loading && !error && (editing || !isRest);
+
   return (
-    <div className="mx-auto flex w-full max-w-[760px] flex-col gap-5 p-5 pb-28 sm:p-8 sm:pb-28">
-      <div className="flex items-center gap-3">
+    <div className="mx-auto flex w-full max-w-[680px] flex-col gap-5 px-4 pb-40 pt-4 sm:px-8 sm:pt-8">
+      <div className="-mx-2.5 flex items-center justify-between">
         <button
-          onClick={() => navigate('/')}
+          type="button"
+          onClick={() => navigate(-1)}
           aria-label="Back"
-          className="flex h-10 w-10 items-center justify-center rounded-xl"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+          className="flex h-11 w-11 items-center justify-center rounded-control"
         >
-          <ChevronLeft size={20} color="var(--text-secondary)" />
+          <ChevronLeft size={24} color="var(--ink)" />
         </button>
-        <div className="flex-1">
-          <Eyebrow>Plan your day</Eyebrow>
-          <div className="text-[24px] font-extrabold capitalize" style={{ color: 'var(--text-primary)' }}>
-            {dayKey}
-          </div>
-        </div>
+        {!loading && !error && canSave ? (
+          <button
+            type="button"
+            onClick={editing ? finishEditing : () => setEditing(true)}
+            className="min-h-11 px-2.5 text-[15px] font-bold"
+            style={{ color: 'var(--teal)' }}
+          >
+            {editing ? 'Done' : 'Edit'}
+          </button>
+        ) : null}
       </div>
 
       {loading ? (
         <div className="flex justify-center py-16">
-          <div className="h-7 w-7 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
+          <div className="h-7 w-7 animate-spin rounded-full border-2" style={{ borderColor: 'var(--teal)', borderTopColor: 'transparent' }} />
         </div>
       ) : error ? (
-        <Card>
-          <p className="text-[14px]" style={{ color: 'var(--forma-danger)' }}>
+        <Surface>
+          <p className="m-0 text-[14px]" style={{ color: 'var(--danger)' }}>
             {error}
           </p>
-        </Card>
+        </Surface>
       ) : (
         <>
-          <div className="rounded-hero p-5 sm:p-7" style={{ background: 'var(--hero)' }}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <div className="text-[11px] font-bold tracking-[0.08em]" style={{ color: 'var(--hero-sub)' }}>
-                    {isRest ? 'REST DAY' : 'FOCUS'}
-                  </div>
-                  <div className="my-1 text-[22px] font-extrabold" style={{ color: 'var(--hero-ink)' }}>
-                    {isRest ? 'Nothing scheduled' : dayPlan?.focus ?? 'Workout'}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[13px]" style={{ color: 'var(--hero-sub)' }}>
-                    <Calendar size={13} color="var(--hero-sub)" />
-                    <span>
-                      {dayPlan?.estimated_duration_minutes ? `${dayPlan.estimated_duration_minutes} mins` : 'Flexible'}
-                    </span>
-                  </div>
-                </div>
-                {!isRest ? (
-                  <button
-                    onClick={() => navigate(`/workout/${dayKey}`)}
-                    aria-label="Start workout"
-                    className="flex h-14 w-14 flex-shrink-0 items-center justify-center rounded-full transition-transform active:scale-95"
-                    style={{ background: 'var(--forma-aqua)' }}
-                  >
-                    <Play size={22} color="var(--on-aqua)" fill="var(--on-aqua)" style={{ marginLeft: 2 }} />
-                  </button>
-                ) : null}
-              </div>
+          <div className="-mt-2 flex flex-col gap-1.5">
+            <span className="type-meta font-semibold" style={{ color: 'var(--ink-3)' }}>
+              {meta}
+            </span>
+            <h1 className="type-display m-0" style={{ color: 'var(--ink)' }}>
+              {isRest ? 'Rest day' : splitFocus(dayPlan?.focus).title}
+            </h1>
+            {!isRest && splitFocus(dayPlan?.focus).subtitle ? (
+              <span className="text-[16px] font-medium leading-[22px]" style={{ color: 'var(--ink-2)' }}>
+                {splitFocus(dayPlan?.focus).subtitle}
+              </span>
+            ) : null}
+            {isRest && !editing ? (
+              <p className="m-0 text-[15px] leading-[22px]" style={{ color: 'var(--ink-2)' }}>
+                {canSave ? 'Nothing planned. Recovery is part of the plan.' : 'No plan yet. Ask your coach to suggest one.'}
+              </p>
+            ) : null}
           </div>
 
-          {dayPlan?.ai_notes ? (
-            <Card variant="subtle" padding="14px 16px">
-              <div className="flex items-start gap-2.5">
-                <Zap size={16} color="var(--teal)" className="mt-0.5 flex-shrink-0" />
-                <div>
-                  <Badge tone="mint" className="mb-1.5">
-                    Coach note
-                  </Badge>
-                  <p className="text-[13.5px] leading-[1.5]" style={{ color: 'var(--text-secondary)' }}>
-                    {dayPlan.ai_notes}
-                  </p>
-                </div>
-              </div>
-            </Card>
+          {dayPlan?.ai_notes && !isRest ? (
+            <p className="m-0 flex gap-2.5 text-[14.5px] leading-[21px]" style={{ color: 'var(--ink-2)' }}>
+              <Sparkles size={18} color="var(--teal)" fill="var(--teal)" className="mt-0.5 flex-shrink-0" />
+              <span>{dayPlan.ai_notes}</span>
+            </p>
           ) : null}
 
           {SECTIONS.map(({ key, label, field }) => {
             const items = dayPlan?.[field] ?? [];
+            // Reading, an empty section is left out; editing, it's where Add goes.
+            if (items.length === 0 && !editing) return null;
             return (
-              <div key={key}>
-                <div className="mb-2.5 flex items-center justify-between">
-                  <Eyebrow>{label}</Eyebrow>
-                </div>
-                <div className="flex flex-col gap-2">
+              <section key={key} aria-label={label} className="flex flex-col gap-2.5">
+                <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                  {label}
+                </h2>
+                <Surface padding="0" className="overflow-hidden">
                   {items.map((ex, i) => (
                     <ExerciseRow
                       key={`${key}-${i}-${ex.name}`}
                       ex={ex}
                       index={i}
                       count={items.length}
+                      editing={editing}
                       onOpen={() => navigate(`/plan/${dayKey}/exercise/${key}/${i}`)}
                       onMove={(dir) => moveDraftExercise(key, i, dir)}
                       onSwap={() => setSwapTarget({ section: key, index: i })}
                     />
                   ))}
-                  <button
-                    onClick={() => handleAdd(key)}
-                    className="flex items-center justify-center gap-1.5 rounded-xl px-3 py-2.5 text-[13px] font-semibold"
-                    style={{ border: '1px dashed var(--border-strong)', color: 'var(--text-secondary)' }}
-                  >
-                    <Plus size={15} /> Add exercise
-                  </button>
-                </div>
-              </div>
+                  {editing ? (
+                    <button
+                      type="button"
+                      onClick={() => handleAdd(key)}
+                      aria-label={`Add an exercise to ${label.toLowerCase()}`}
+                      className="flex min-h-[52px] w-full items-center justify-center gap-2 text-[14.5px] font-bold"
+                      style={{ color: 'var(--teal)', borderTop: items.length > 0 ? '1px solid var(--line)' : undefined }}
+                    >
+                      <Plus size={17} strokeWidth={2.4} /> Add exercise
+                    </button>
+                  ) : null}
+                </Surface>
+              </section>
             );
           })}
-
-          {!canSave ? (
-            <p className="text-center text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-              No active plan for this day yet — ask your coach to generate one before editing.
-            </p>
-          ) : null}
-
-          {!isRest ? (
-            <Button
-              size="lg"
-              variant="quiet"
-              fullWidth
-              onClick={() => navigate(`/workout/${dayKey}`)}
-              leftIcon={<Play size={16} color="var(--accent-text)" fill="var(--accent-text)" />}
-            >
-              Start workout
-            </Button>
-          ) : null}
-          {!isRest && isFeatureEnabled('logbook') ? (
-            <Button variant="link" fullWidth onClick={() => navigate(`/workout/log?day=${dayKey}&date=${lastDateForDayKey(dayKey, new Date())}`)}>
-              Already did it? Log it
-            </Button>
-          ) : null}
         </>
       )}
+
+      {/* Start, or Save while editing. It sits above the phone's tab bar, and beside the side nav. */}
+      {showFooter ? (
+        <div
+          className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-4 pb-3 pt-3 md:bottom-0 md:left-[88px] lg:left-[264px]"
+          style={{ background: 'var(--ground)', borderTop: '1px solid var(--line)' }}
+        >
+          <div className="mx-auto flex max-w-[680px] flex-col gap-1 sm:px-4">
+            {editing ? (
+              <>
+                {saveError ? (
+                  <p className="m-0 mb-1.5 text-[13px] leading-[18px]" style={{ color: 'var(--danger)' }}>
+                    {saveError}
+                  </p>
+                ) : null}
+                <Button
+                  variant="strong"
+                  size="lg"
+                  fullWidth
+                  disabled={saving}
+                  onClick={dirty ? () => void handleSave() : finishEditing}
+                >
+                  {saving ? 'Saving…' : dirty ? 'Save changes' : 'Done'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button size="lg" fullWidth leftIcon={<Play size={18} fill="var(--on-aqua)" />} onClick={() => navigate(`/workout/${dayKey}`)}>
+                  Start workout
+                </Button>
+                <Button
+                  variant="link"
+                  fullWidth
+                  style={{ height: 44 }}
+                  onClick={() => navigate(`/workout/log?day=${dayKey}&date=${lastDateForDayKey(dayKey, new Date())}`)}
+                >
+                  Already did it? Log it
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {swapTarget && swapExercise ? (
         <FindAlternativeDialog
@@ -376,22 +417,21 @@ export default function PlanDayPage() {
         />
       ) : null}
 
-      {/* Sticky save bar — appears when there are unsaved edits. */}
-      {dirty && canSave ? (
-        <div
-          className="fixed inset-x-0 bottom-[calc(74px+env(safe-area-inset-bottom))] z-30 px-5 py-4 md:bottom-0 md:left-[88px] lg:left-[264px]"
-          style={{ background: 'var(--bg-surface)', borderTop: '1px solid var(--border-base)' }}
-        >
-          <div className="mx-auto flex max-w-[760px] items-center gap-3">
-            <div className="flex-1 text-[13px] font-semibold" style={{ color: saveError ? 'var(--forma-danger)' : 'var(--text-secondary)' }}>
-              {saveError ?? 'You have unsaved changes.'}
-            </div>
-            <Button size="md" onClick={handleSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save changes'}
+      <Sheet open={discardOpen} title="Discard your changes?" onClose={() => setDiscardOpen(false)}>
+        <div className="flex flex-col gap-4 px-5 pb-5 pt-1">
+          <p className="m-0 text-[15px] leading-[22px]" style={{ color: 'var(--ink-2)' }}>
+            The changes you made to this day haven&rsquo;t been saved.
+          </p>
+          <div className="flex gap-2">
+            <Button variant="quiet" className="flex-1" onClick={() => setDiscardOpen(false)}>
+              Keep editing
+            </Button>
+            <Button variant="danger" className="flex-1" onClick={discardChanges}>
+              Discard
             </Button>
           </div>
         </div>
-      ) : null}
+      </Sheet>
     </div>
   );
 }

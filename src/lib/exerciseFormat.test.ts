@@ -42,7 +42,7 @@ describe('feature flags', () => {
     expect(parseFlagValue(value)).toBe(expected);
   });
 
-  it('logbook is off unless asked for', () => {
-    expect(isFeatureEnabled('logbook')).toBe(false);
+  it('the design system page is off unless asked for', () => {
+    expect(isFeatureEnabled('designSystem')).toBe(false);
   });
 });

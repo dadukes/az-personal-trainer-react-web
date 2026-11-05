@@ -1,13 +1,11 @@
 /**
- * Feature flags for big swaps, like the logbook replacing the guided workout. A flag is off
- * unless `VITE_FLAG_<NAME>` is "1" or "true". This browser can also override it, for trying
- * a flag on the deployed site without a new build:
- * `localStorage.setItem('forma:flag:logbook', '1')`.
+ * Feature flags. A flag is off unless `VITE_FLAG_<NAME>` is "1" or "true". This browser can
+ * also override it, for trying a flag on the deployed site without a new build:
+ * `localStorage.setItem('forma:flag:designSystem', '1')`.
  */
-export type FeatureFlag = 'logbook' | 'designSystem';
+export type FeatureFlag = 'designSystem';
 
 const FLAG_VALUES: Record<FeatureFlag, string | undefined> = {
-  logbook: import.meta.env.VITE_FLAG_LOGBOOK as string | undefined,
   designSystem: import.meta.env.VITE_FLAG_DESIGN_SYSTEM as string | undefined,
 };
 

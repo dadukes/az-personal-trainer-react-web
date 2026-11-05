@@ -27,21 +27,21 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 |-------|------|-------|
 | `/login` | `LoginPage` | Split gradient hero + sign-in/sign-up toggle |
 | `/onboarding` | `OnboardingPage` | 3 steps; sends only backend-accepted profile fields |
-| `/` | `HomePage` | Health snapshot + today's plan / CTA + week strip; every manual-capture dialog (workout, health data, body measurement) hangs off the `QuickActionsFab` |
+| `/` | `HomePage` | Today's job first, then the week strip, health in one row and Recent (Phase 8A); every manual-capture dialog hangs off the `QuickActionsFab` |
 | `/coach` | `CoachPage` | SSE chat + quick replies + desktop context panel |
 | `/fuel` | `FuelPage` | Drag-and-drop / file-input meal photo → `logNutrition` |
 | `/progress` | `ProgressPage` | XP/level + `this_week` tiles + **Your progress** (`progress_snapshot` + body measurements) + health trends chart + AI health insights |
 | `/activities` | `ActivitiesPage` | Every session newest first: guided workouts + watch imports + coach/quick logs from `GET /history`, cursor-paged (loads as the end scrolls into view; "Load older" fallback), grouped by `groupTimeline` as Today / Earlier this week / one group per older Mon–Sun week, with the server's whole-week totals (this week's on the first of its groups as "This week: …") |
 | `/activities/:id` | `ActivityDetailPage` | One activity (`getActivity`): stats (duration, distance, pace/speed, a ride's max speed, calories, elevation, XP — only what the device shared; `statGridClass` keeps rows even), `HeartRateCard` with the `hr_curve` chart, note. **Edit** for coach/quick logs (`ActivityEditDialog`); imports are read-only |
-| `/activities/workout/:id` | `WorkoutDetailPage` | One guided workout (`getWorkoutSession`): plan-day title, duration/sets/volume/calories/elevation/XP, watch HR combined across its recordings with one chart (`HeartRateCard`) — or, with no recording, the phone-sent all-day readings as "General HR data" (`GeneralHeartRateCard`: avg + smoothed curve, no max/zones/XP) — every exercise by section from the server's `exercises` (plan day merged with the logs: `logged` set pills, `done` without sets — "Recorded on your watch" / "logged with your coach" — and dashed `not_logged` cards). **Clicking an exercise opens `WorkoutExerciseDialog`** → `updateWorkoutExercise` (`PUT /workouts/sessions/{id}/exercise`); XP moves by that exercise's difference, the store's XP is set from `new_total_xp`, and the workout re-reads |
+| `/activities/workout/:id` | `WorkoutDetailPage` | One guided workout (`getWorkoutSession`): plan-day title, duration/sets/volume/calories/elevation/XP, watch HR combined across its recordings with one chart (`HeartRateCard`) — or, with no recording, the phone-sent all-day readings as "General HR data" (`GeneralHeartRateCard`: avg + smoothed curve, no max/zones/XP) — every exercise by section from the server's `exercises` (plan day merged with the logs: `logged` set pills, `done` without sets — "Recorded on your watch" / "logged with your coach" — and dashed `not_logged` cards). **Edit, or clicking an exercise, opens the logbook in Edit mode** (`/workout/edit/:id`) |
 | `/progress/workouts`, `/progress/workouts/:id` | redirects | Old links → `/activities`, `/activities/workout/:id` |
 | `/profile` | `ProfilePage` | Edit onboarding/profile data (`updateProfile` PUT → `applyProfileUpdate`) incl. the optional **Body & heart rate** fields + **coach memory** (`CoachMemory`) + **Danger zone** (delete account) |
 | `/delete-account` | `DeleteAccountPage` | **Public** (no auth guard, no shell): Play-required deletion URL; signs the user in, then deletes |
-| `/plan/:day` | `PlanDayPage` | **Editable** day plan: reorder/add/remove exercises, drill-down rows, `Save changes` (`updatePlanDay`) + start CTA |
+| `/plan/:day` | `PlanDayPage` | Reads by default (name, coach note, sections, Start). **Edit** brings move buttons, swaps, Add and `Save changes` (`updatePlanDay`); Done with unsaved changes asks to discard |
 | `/plan/:day/exercise/:section/:index` | `ExerciseDetailPage` | Per-exercise: ExerciseDB demo/info, edit targets (reps/weight or time), swap/link via `FindAlternativeDialog`, remove |
-| `/workout/:day` | `WorkoutSessionPage` | Guided set logging + timer → the save queue (`workoutSync.ts`) |
-| `/workout/log` | `WorkoutLogPage` | The logbook in Log mode (`?date=YYYY-MM-DD`, `&day=` a plan day or `none`): a finished workout, saved through the same queue. Behind the `logbook` flag |
-| `/workout/edit/:id` | `WorkoutEditPage` | The logbook in Edit mode: the whole workout saved with `PUT /workouts/sessions/{id}`, or deleted. Behind the `logbook` flag |
+| `/workout/:day` | `WorkoutSessionPage` | Loads the day or the workout in progress and opens the logbook → the save queue (`workoutSync.ts`) |
+| `/workout/log` | `WorkoutLogPage` | The logbook in Log mode (`?date=YYYY-MM-DD`, `&day=` a plan day or `none`): a finished workout, saved through the same queue |
+| `/workout/edit/:id` | `WorkoutEditPage` | The logbook in Edit mode: the whole workout saved with `PUT /workouts/sessions/{id}`, or deleted |
 | `/chat-history` | `ChatHistoryPage` | Past sessions (read-only transcripts). Open session is `?session=<id>`: two screens below `lg` (list → transcript, Back returns to list), side by side from `lg` |
 
 `:day` accepts a backend day key (`monday`…`sunday`) or `today` (resolved to the current weekday).
@@ -50,41 +50,25 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 
 - Read cross-screen data from the Zustand store; refresh in a `useEffect` guarded against stale
   updates. Don't hold duplicate copies of store data.
-- **Home**: dashboard + health load must stay resilient and non-blocking (fall back to
-  placeholder/CTA). Empty `active_workout_plan` → the "Ready to plan your workout?" CTA.
-  The 5-day "Upcoming week" is a snap-scrolling row on mobile and a grid from `sm` up — a
-  2-col grid left a ragged single-card last row.
-  **This week** (`WeekActivityCard`, from the dashboard's `week_activities`) shows Mon–Sun with an
-  aqua **tick** for a planned workout done and a separate blue **dot** per other activity (watch
-  import from the mobile app, coach log, quick log) — never mix them, so the plan's completion stays
-  truthful. Selecting a day lists its activities; a row opens `/activities/<id>`, "All activities" opens `/activities`.
-  Upcoming cards carry the same "+N activity" marker. A quick log re-loads the dashboard.
+- **Home** (Phase 8A, boards `Main`, `HomeDark`, `HomeRest`): a date and greeting, then today's job first. Logic in `src/lib/home.ts`, kept identical to mobile's `lib/home.ts`.
+  **Today** is one card: Resume when a workout is in progress; else the navy hero with the day's name (`splitFocus` turns "Upper Body B (Incline Press & Back Sculpt)" into a title and a line), length and count, the coach's note, a labelled **Start workout**, View plan and "Already did it? Log it"; a **Done today** card (time, minutes and XP from today's `GET /history` row; no set count, since `total_sets` counts unticked sets) with View or edit and Log another; a **Rest day** card with "Next up"; or, with no plan, an invite to plan with the coach.
+  **This week** is one Mon–Sun strip of `StatusTick`s with a separate sky dot for activity outside the plan (watch import, coach log, quick log), never mixed with the plan's tick, and "N of M workouts". A day opens its plan day; the latest missed plan day offers "Did it? Log it".
+  **Health** is one row with only the numbers captured today, else an invite to enter them. **Recent** lists the newest three sessions from `GET /history`. The page still sets the store's `weekPlan` (`buildWeekPlan`) for Coach's side panel. A quick log re-loads the dashboard and Recent.
+  Desktop is a single 680 px column until Phase 9's two-column Home.
 - **Workout draft**: every change is stored (`workoutSync.ts`), and the page reopens a workout in progress from that alone, so it needs neither the plan nor a network, and a plan changed since can't throw it away. Home shows **Resume workout** in place of today's start, plus anything still waiting to sync (`WorkoutStatus.tsx`). Opening a different day asks first. While that question is open, nothing may be written from the day on screen, or it would replace the workout being resumed.
-- **Workout session**: the header carries the guided/list toggle and (when the day has
-  `ai_notes`) an info button. The session note is a **dialog**, auto-opened once per
-  plan+day via `forma:workout-note-seen` — it must not reappear above every exercise.
-  This is an **immersive route**: `AppShell` hides all nav, so the header back button is the
-  only exit and it goes through `ExitWorkoutDialog`. A sentinel `history.pushState` entry turns
-  browser/system Back into that same dialog, and `beforeunload` covers reload/close. Confirming
-  navigates to `/` (never `-1` — that lands back on the sentinel).
-  **Per-side belongs on the number it qualifies**, not on a row of its own: the rep dial reads
-  "Reps per side" (`reps/side` in the list view), the countdown reads "1:00 per side". A per-side
-  timed hold runs the clock twice with a tap-to-continue **"Switch side"** stop in between, and
-  logs both sides' seconds. The planned hold time is owned by `WorkoutGuided` (not the ring) so a
-  ± adjustment carries across the block's sets and is what `logWorkout` receives.
-  **Weight carries forward**: `setWeight` applies a set's new weight to later sets until it hits one
-  that is completed or has `weightEdited` (the user dialled it themselves). Don't "simplify" it to
-  "later sets still on the old value" — a held ± sweeps up a pyramid/drop set as it passes through
-  that value. Reps deliberately don't carry (they're the outcome, not the plan).
-  **Find an alternative** swaps a catalog-type block **for this session only** (`swapBlock`): the
-  block key stays the plan's so the persisted signature still matches, swaps persist in
-  `forma:workout-session` (`swaps`), not-done sets reset their weight (then pre-fill from
-  `getLastPerformance`), and `swapped_from` is sent to `logWorkout`. The plan is never changed.
-  The coach note describes the planned exercise, so both views hide it while `swappedFrom` is set
-  and it returns if the user swaps back.
-- **Logbook** (`src/components/LogbookView.tsx`, behind the `logbook` flag): `WorkoutSessionPage` still loads the workout, writes the draft and guards leaving, and picks the logbook or the old view. From `lg` every exercise is open, with inputs in Tab order and the clock in a side panel. Below that it works like the phone: one exercise open, and a footer. `src/lib/logbook.ts` is the logic, mirrored on mobile.
+- **Workout session**: an **immersive route**. `AppShell` hides all nav, so the logbook's X is the
+  only exit and it asks first. A sentinel `history.pushState` entry turns browser/system Back into
+  that same question, and `beforeunload` covers reload/close. Leaving goes to `/` (never `-1`, which
+  lands back on the sentinel). The day's `ai_notes` open once per plan+day as a dialog
+  (`forma:workout-note-seen`), never above every exercise. The old guided/list screen,
+  `WorkoutGuided` and `WorkoutExerciseDialog` were removed with the flag on 2026-11-05;
+  `ExerciseDemo` now has its own file.
+  **Find an alternative** in a workout swaps the exercise **for this session only**: the block key
+  stays the plan's, not-done sets reset their weight (then pre-fill from `getLastPerformance`), and
+  `swapped_from` is sent to `logWorkout`. The plan is never changed.
+- **Logbook** (`src/components/LogbookView.tsx`): `WorkoutSessionPage` loads the workout, writes the draft and guards leaving, then shows the logbook. From `lg` every exercise is open, with inputs in Tab order and the clock in a side panel. Below that it works like the phone: one exercise open, and a footer. `src/lib/logbook.ts` is the logic, mirrored on mobile.
   A blank weight is 0, shows "Add" and logs as no load, as there's no bodyweight type. A typed weight carries down (`carryWeight`) under the same rule as the old view. A per-side hold stores one side's seconds, and `toLogbookExercises` doubles it for the save. A rest starts only from a single-set tick, and not on the workout's last set. Preferences are on the account (`WorkoutPrefsCard` on Profile), and never-chosen means off.
-- **Log and Edit** (`past` on `LogbookView`, pages `WorkoutLogPage` / `WorkoutEditPage`): the same page with no clock, rest or timers, the date and times at the top (`LogbookPast.tsx`), and Save in the footer or side panel. The page owns the exercises and times; `LogbookView` owns saving. Nothing is stored until Save, so there's no sentinel history entry: the X asks first once something changed, and `beforeunload` covers reload. Edit leaves with `-1`, or to the workout's page when opened directly or from a summary's "Fix something" (`state.fromSummary`). Rules in `src/lib/logbookPast.ts`, mirrored on mobile. With the flag on, the workout page's exercises open Edit instead of `WorkoutExerciseDialog` (removed in Phase 10).
+- **Log and Edit** (`past` on `LogbookView`, pages `WorkoutLogPage` / `WorkoutEditPage`): the same page with no clock, rest or timers, the date and times at the top (`LogbookPast.tsx`), and Save in the footer or side panel. The page owns the exercises and times; `LogbookView` owns saving. Nothing is stored until Save, so there's no sentinel history entry: the X asks first once something changed, and `beforeunload` covers reload. Edit leaves with `-1`, or to the workout's page when opened directly or from a summary's "Fix something" (`state.fromSummary`). Rules in `src/lib/logbookPast.ts`, mirrored on mobile. The workout page's exercises open Edit.
 - **Profile / coach memory**: the `CoachMemory` card sits between Personalization and the save
   row and shows the AI's global memory — the same `user_memory` rows the backend pastes into the
   coach's system instruction — with edit / add / forget. It is deliberately **outside** the

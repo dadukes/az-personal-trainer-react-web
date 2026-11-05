@@ -7,7 +7,6 @@ import DeleteAccountDialog from '@/components/DeleteAccountDialog';
 import ScreenHeader from '@/components/ScreenHeader';
 import { WorkoutPrefsCard } from '@/components/LogbookView';
 import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
-import { isFeatureEnabled } from '@/lib/featureFlags';
 import {
   updateProfile,
   type BiologicalSex,
@@ -344,12 +343,10 @@ export default function ProfilePage() {
       </Card>
 
       {/* Training rhythm */}
-      {isFeatureEnabled('logbook') ? (
-        <Card padding="24px">
-          <Eyebrow className="mb-4">During a workout</Eyebrow>
-          <WorkoutPrefsCard accessToken={session?.access_token} />
-        </Card>
-      ) : null}
+      <Card padding="24px">
+        <Eyebrow className="mb-4">During a workout</Eyebrow>
+        <WorkoutPrefsCard accessToken={session?.access_token} />
+      </Card>
 
       <Card padding="24px">
         <Eyebrow className="mb-4">Training rhythm</Eyebrow>

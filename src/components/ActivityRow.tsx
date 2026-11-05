@@ -5,8 +5,8 @@ import { activityNote, activitySourceLabel, activityStats, activityTitle, isCycl
 import type { ActivityItem } from '@/lib/api';
 import type { UnitSystem } from '@/lib/units';
 
-export function ActivityIcon({ item, size = 19 }: { item: ActivityItem; size?: number }) {
-  const props = { size, color: 'var(--accent-text)' };
+export function ActivityIcon({ item, size = 19, color = 'var(--accent-text)' }: { item: ActivityItem; size?: number; color?: string }) {
+  const props = { size, color };
   if (item.is_strength) return <Dumbbell {...props} />;
   switch (item.activity_type) {
     case 'walk':

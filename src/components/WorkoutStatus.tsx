@@ -2,7 +2,8 @@ import { AlertTriangle, CloudOff } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-import { Button, Card } from '@/components/ui';
+import { Button, Surface } from '@/components/ui';
+import { splitFocus } from '@/lib/home';
 import {
   completedSetCount,
   startedAgoLabel,
@@ -82,8 +83,8 @@ export function WorkoutResumeCard({ draft }: { draft: WorkoutDraft }) {
         <span className="text-[13px] font-semibold" style={{ color: 'var(--hero-sub)' }}>
           In progress · {startedAgoLabel(draft.startedAt, new Date())}
         </span>
-        <h2 className="m-0 text-[26px] font-extrabold" style={{ color: 'var(--hero-ink)' }}>
-          {draft.focus ?? `${capitalize(draft.dayKey)} workout`}
+        <h2 className="type-display m-0" style={{ color: 'var(--hero-ink)' }}>
+          {draft.focus ? splitFocus(draft.focus).title : `${capitalize(draft.dayKey)} workout`}
         </h2>
         <span className="text-[15px] font-medium leading-[21px]" style={{ color: 'var(--hero-sub)' }}>
           {done > 0
@@ -190,12 +191,12 @@ export function PendingWorkoutsCard() {
   const pending = useAppStore((s) => s.workoutPending);
   if (pending.length === 0) return null;
   return (
-    <Card padding="14px 16px">
+    <Surface padding="16px">
       <div className="flex flex-col gap-3">
         {pending.map((save) => (
           <PendingRow key={save.clientSessionId} save={save} />
         ))}
       </div>
-    </Card>
+    </Surface>
   );
 }

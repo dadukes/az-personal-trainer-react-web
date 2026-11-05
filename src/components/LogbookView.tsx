@@ -7,7 +7,7 @@ import { googleSearchUrl, youtubeSearchUrl } from '@/components/ExerciseLookup';
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
 import { HoldBar, HoldScreen, useHoldTimer } from '@/components/HoldTimer';
 import { IntervalPlayer } from '@/components/WorkoutCapture';
-import { ExerciseDemo } from '@/components/WorkoutGuided';
+import { ExerciseDemo } from '@/components/ExerciseDemo';
 import { Button, Segmented, Sheet } from '@/components/ui';
 import { playHoldCue, prepareTimerSounds, readTimerSounds, saveTimerSounds } from '@/lib/alertSound';
 import { DateTimesSheet, DeleteSheet, DiscardSheet, SourceSheet, WhenCard, shortDate } from '@/components/LogbookPast';
@@ -73,7 +73,7 @@ import {
 import { countdownCue, displaySeconds, holdPosition, startHold, type HoldTimer } from '@/lib/holdTimer';
 import { formatDuration, parseDurationDraft } from '@/lib/numberEntry';
 import { useWakeLock } from '@/lib/wakeLock';
-import { dateForDayKey, localISODate } from '@/lib/workout';
+import { currentWeekDateForDayKey, localISODate } from '@/lib/workout';
 import { resolveRestTimer } from '@/lib/workoutPrefs';
 import { buildBlocks, formatClock, isCountdownBlock, isIntervalBlock, type Block } from '@/lib/workoutSession';
 import { secondsUntil } from '@/lib/workoutDraft';
@@ -419,7 +419,9 @@ export default function LogbookView({
           clientSessionId,
           planId,
           dayKey,
-          dateISO: dateForDayKey(dayKey),
+          // The plan day of this week, as the server's `completed_days` counts it: Thursday's
+          // workout done on Sunday ticks this week's Thursday, not next week's.
+          dateISO: currentWeekDateForDayKey(dayKey),
           focus,
           payload: {
             client_session_id: clientSessionId,
