@@ -262,9 +262,15 @@ export default function ProgressPage() {
             <span className="text-[14px] font-bold" style={{ color: 'var(--ink)' }}>
               Level {level.level}
             </span>
-            <span className="type-stat text-[19px] font-semibold" style={{ color: 'var(--ink-2)' }}>
-              {level.label}
-            </span>
+            {level.fresh ? (
+              <span className="type-meta" style={{ color: 'var(--ink-2)' }}>
+                {level.label}
+              </span>
+            ) : (
+              <span className="type-stat text-[19px] font-semibold" style={{ color: 'var(--ink-2)' }}>
+                {level.label}
+              </span>
+            )}
           </div>
           <div
             role="progressbar"

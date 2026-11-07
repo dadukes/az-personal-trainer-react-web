@@ -146,7 +146,7 @@ export function DurationEntry({ seconds, onCommit, label, className = '', style 
       <button
         type="button"
         onClick={() => setOpen(true)}
-        aria-label={`${label}: ${formatDuration(seconds)}. Tap to type an exact time`}
+        aria-label={`${label}: ${formatDuration(seconds)}. Select to type an exact time`}
         className={`tabular font-extrabold ${EDITABLE_CLASS} ${className}`}
         style={{ color: 'var(--text-primary)', borderColor: 'var(--border-strong)', ...style }}
       >

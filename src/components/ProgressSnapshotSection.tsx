@@ -6,7 +6,7 @@ import ZoneBar from '@/components/ZoneBar';
 import type { BodyMeasurement, BodyMetric, MeasurementChange, ProgressSnapshot, SignalTrend } from '@/lib/api';
 import { BODY_METRICS, formatMetric, formatMetricChange, isEditableSource, sourceLabel } from '@/lib/body';
 import { formatExerciseName } from '@/lib/exercise';
-import { gridSummary, strengthHeadline, type GridDay } from '@/lib/progress';
+import { gridIsEmpty, gridSummary, strengthHeadline, type GridDay } from '@/lib/progress';
 import { formatNumber, kgToLb, type UnitSystem } from '@/lib/units';
 
 /**
@@ -159,17 +159,26 @@ export function ConsistencyCard({
   /** Null until history has loaded; the grid then appears. */
   grid: GridDay[] | null;
 }) {
+  const showSessions = consistency != null && consistency.sessions_per_week > 0;
+  const showActive = consistency != null && consistency.active_days > 0;
+  const showStreak = streakDays != null && streakDays > 0;
   return (
     <Surface padding="18px 16px" className="flex flex-col gap-3.5" style={{ borderRadius: 'var(--radius-hero)' }}>
       <CardLabel>Consistency</CardLabel>
-      {consistency || streakDays != null ? (
+      {/* Zeros never show: a new account sees the empty grid and the line under it instead. */}
+      {showSessions || showActive || showStreak ? (
         <dl className="m-0 flex gap-2">
-          {consistency ? <Figure value={formatNumber(consistency.sessions_per_week)} label="Sessions / week" /> : null}
-          {consistency ? <Figure value={String(consistency.active_days)} label={`Active days in ${windowDays}`} /> : null}
-          {streakDays != null ? <Figure value={String(streakDays)} label="Day streak" /> : null}
+          {showSessions ? <Figure value={formatNumber(consistency.sessions_per_week)} label="Sessions / week" /> : null}
+          {showActive ? <Figure value={String(consistency.active_days)} label={`Active days in ${windowDays}`} /> : null}
+          {showStreak ? <Figure value={String(streakDays)} label="Day streak" /> : null}
         </dl>
       ) : null}
       {grid ? <ConsistencyGrid days={grid} /> : null}
+      {grid && gridIsEmpty(grid) ? (
+        <span className="type-meta" style={{ color: 'var(--ink-2)' }}>
+          Each day you train or log an activity fills its square.
+        </span>
+      ) : null}
       {consistency?.trend ? (
         <span className="type-meta" style={{ color: 'var(--ink-2)' }}>
           {CONSISTENCY_TREND_COPY[consistency.trend]}

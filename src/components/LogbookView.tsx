@@ -716,11 +716,11 @@ export default function LogbookView({
             </span>
             {past?.kind === 'edit' ? (
               <span className="w-full truncate text-center text-[14px] font-semibold lg:text-left" style={{ color: 'var(--ink-2)' }}>{past.title}</span>
-            ) : (
+            ) : live || tally.total > 0 ? (
               <span className={`font-number tabular text-[17px] font-semibold ${live ? 'lg:hidden' : ''}`} style={{ color: 'var(--ink-2)' }}>
                 {live ? formatClock(elapsed) : `${tally.done} of ${tally.total} sets`}
               </span>
-            )}
+            ) : null}
           </div>
           <button aria-label="Add an exercise" onClick={() => setSheet({ kind: 'add' })} className="flex h-11 w-11 flex-shrink-0 items-center justify-center">
             <Plus size={22} color="var(--ink)" />
@@ -797,7 +797,7 @@ export default function LogbookView({
           {past && blocks.length === 0 ? (
             <div className="flex flex-col items-center gap-2 rounded-[20px] px-5 py-7 text-center" style={{ background: 'var(--surface)' }}>
               <h2 className="text-[18px] font-bold" style={{ color: 'var(--ink)' }}>Nothing here yet</h2>
-              <p className="text-[14.5px] leading-[21px]" style={{ color: 'var(--ink-2)' }}>Add what you did. Forma fills in the weights from your last time.</p>
+              <p className="text-[14.5px] leading-[21px]" style={{ color: 'var(--ink-2)' }}>Add what you did. For anything you’ve logged before, Forma fills in your last weights.</p>
               <Button className="mt-2" onClick={() => setSheet({ kind: 'add' })}>Add an exercise</Button>
             </div>
           ) : null}

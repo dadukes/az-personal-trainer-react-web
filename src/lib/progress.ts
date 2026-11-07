@@ -27,6 +27,8 @@ export interface LevelLine {
   label: string;
   /** 0–100, for the bar's width. */
   percent: number;
+  /** No XP yet: the label is a sentence, so it's set as text rather than as a number. */
+  fresh: boolean;
 }
 
 /** `xp_to_next_level` is the XP total that reaches the next level, as the server sends it. */
@@ -34,8 +36,13 @@ export function levelLine(g: { current_level: number; current_xp: number; xp_to_
   const percent = g.xp_to_next_level > 0 ? Math.min(100, Math.max(0, (g.current_xp / g.xp_to_next_level) * 100)) : 0;
   return {
     level: g.current_level,
-    label: `${g.current_xp.toLocaleString('en-US')} / ${g.xp_to_next_level.toLocaleString('en-US')} XP`,
+    // A brand-new account reads an invite, not "0 / 500 XP".
+    label:
+      g.current_xp > 0
+        ? `${g.current_xp.toLocaleString('en-US')} / ${g.xp_to_next_level.toLocaleString('en-US')} XP`
+        : 'Your first workout earns XP',
     percent: Math.round(percent),
+    fresh: g.current_xp <= 0,
   };
 }
 
@@ -108,6 +115,11 @@ export function gridSummary(days: readonly GridDay[]): string {
   return `${trained} training ${trained === 1 ? 'day' : 'days'} in the last ${weeks} weeks, ${workouts} with a workout`;
 }
 
+/** Nothing trained in the window yet: the card invites instead of showing an empty grid's numbers. */
+export function gridIsEmpty(days: readonly GridDay[]): boolean {
+  return !days.some((d) => d.mark === 'workout' || d.mark === 'other');
+}
+
 // ─── Health trends ────────────────────────────────────────────────────────────
 
 export interface TrendSummary {
@@ -138,6 +150,13 @@ export function trendSummary<K extends string>(
     daysWithData: values.length,
     days,
   };
+}
+
+/** The line under a trend's number. One day is not a trend yet, so it says what draws one. */
+export function trendMeta(label: string, daysWithData: number, days: number): string {
+  if (daysWithData === 0) return `No ${label.toLowerCase()} in the last ${days} days`;
+  if (daysWithData === 1) return `${label}, 1 of ${days} days. Another day draws the trend.`;
+  return `${label} average, ${daysWithData} of ${days} days`;
 }
 
 /** Which of `keys` have a value on some day in the `days` ending today (default 30). */

@@ -11,7 +11,7 @@ import {
   type NutritionLogEntry,
   type NutritionLogResponse,
 } from '@/lib/api';
-import { burnedSoFar, eatenShare, mealsOn, mealTotals, restingKcal } from '@/lib/fuel';
+import { burnHint, burnedSoFar, eatenShare, mealsOn, mealTotals, restingKcal } from '@/lib/fuel';
 import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore } from '@/store/useAppStore';
 
@@ -136,13 +136,14 @@ export default function FuelPage() {
   const totals = mealTotals(todays);
   const now = new Date();
   const activeKcal = healthSnapshot.active_calories_burned;
-  const resting = restingKcal({
+  const bodyInputs = {
     weightKg: snapshotWeight ?? latestWeight,
     heightCm: profile.height_cm,
     birthYear: profile.birth_year,
     sex: profile.sex,
-    year: now.getFullYear(),
-  });
+  };
+  const resting = restingKcal({ ...bodyInputs, year: now.getFullYear() });
+  const missingHint = resting == null ? burnHint(bodyInputs) : null;
   const burned = burnedSoFar(resting, activeKcal, now);
   const listed = todays.length > 0 ? todays : meals.slice(0, 5);
   const macros = [
@@ -215,9 +216,9 @@ export default function FuelPage() {
             {Math.round(activeKcal).toLocaleString()} kcal active today
           </span>
         ) : null}
-        {resting == null ? (
+        {missingHint ? (
           <span className="type-meta" style={{ color: 'var(--ink-3)' }}>
-            Add your height, birth year and sex in Profile, and a weigh-in, to see what you&apos;ve burned.
+            {missingHint}
           </span>
         ) : null}
       </Surface>

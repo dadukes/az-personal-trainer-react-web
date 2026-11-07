@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { burnedSoFar, eatenShare, mealsOn, mealTotals, restingKcal } from '@/lib/fuel';
+import { burnHint, burnedSoFar, eatenShare, mealsOn, mealTotals, restingKcal } from '@/lib/fuel';
 
 const meal = (logged_at: string, kcal: number | null, protein: number | null = null) => ({
   logged_at,
@@ -58,5 +58,17 @@ describe('eatenShare', () => {
     expect(eatenShare(1640, 2310)).toBe(71);
     expect(eatenShare(3000, 2000)).toBe(100);
     expect(eatenShare(null, 2000)).toBe(0);
+  });
+});
+
+describe('burnHint', () => {
+  const all = { weightKg: 80, heightCm: 180, birthYear: 1985, sex: 'male' as const };
+  it('names only what is missing', () => {
+    expect(burnHint({ ...all, heightCm: null, birthYear: null, sex: null })).toBe(
+      "Add your height, birth year and sex in Profile to see what you've burned.",
+    );
+    expect(burnHint({ ...all, weightKg: null })).toBe("Add a weigh-in to see what you've burned.");
+    expect(burnHint({ ...all, sex: null, weightKg: null })).toBe("Add your sex in Profile, and a weigh-in to see what you've burned.");
+    expect(burnHint(all)).toBeNull();
   });
 });

@@ -33,6 +33,8 @@ import { useAuth } from '@/providers/AuthProvider';
 import { useAppStore, type ChatMessage } from '@/store/useAppStore';
 
 const QUICK_REPLIES = ['Let’s do it.', 'Still too much today.', 'What should I focus on?'];
+/** A new chat has nothing to answer yet, so it offers ways to start instead. */
+const STARTER_REPLIES = ['Plan my week', 'What should I focus on?', 'Only 20 minutes today'];
 
 /** The coach's mark next to its messages (the Forma "F"). */
 function CoachAvatar({ size = 28 }: { size?: number }) {
@@ -414,7 +416,11 @@ export default function CoachPage() {
     }
     return null;
   }, [messages]);
-  const quickReplies = pendingSuggestion ? suggestionChips(pendingSuggestion) : QUICK_REPLIES;
+  const quickReplies = pendingSuggestion
+    ? suggestionChips(pendingSuggestion)
+    : messages.length === 0
+      ? STARTER_REPLIES
+      : QUICK_REPLIES;
 
   const sendMessage = useCallback(
     (presetText?: string) => {
@@ -552,7 +558,7 @@ export default function CoachPage() {
                   Your coach is ready
                 </div>
                 <p className="max-w-[360px] text-[13px]" style={{ color: 'var(--text-muted)' }}>
-                  Ask for a plan, tell me how your day is going, or tap a quick reply to get started.
+                  Ask for a plan, tell me how your day is going, or pick a quick reply to get started.
                 </p>
               </div>
             ) : null}

@@ -60,6 +60,29 @@ export function restingKcal(p: {
 }
 
 /**
+ * What's missing for the resting estimate, named, so a weigh-in already made isn't asked for
+ * again. Null when nothing is missing.
+ */
+export function burnHint(p: {
+  weightKg: number | null | undefined;
+  heightCm: number | null | undefined;
+  birthYear: number | null | undefined;
+  sex: 'male' | 'female' | null | undefined;
+}): string | null {
+  const profile = [!p.heightCm && 'height', !p.birthYear && 'birth year', !p.sex && 'sex'].filter(
+    (x): x is string => Boolean(x),
+  );
+  const parts: string[] = [];
+  if (profile.length) {
+    const list = profile.length === 1 ? profile[0] : `${profile.slice(0, -1).join(', ')} and ${profile[profile.length - 1]}`;
+    parts.push(`your ${list} in Profile`);
+  }
+  if (!p.weightKg) parts.push('a weigh-in');
+  if (!parts.length) return null;
+  return `Add ${parts.join(', and ')} to see what you've burned.`;
+}
+
+/**
  * Burned so far today: the resting burn for the part of the day that's gone, plus active
  * calories. Null without a resting estimate.
  */

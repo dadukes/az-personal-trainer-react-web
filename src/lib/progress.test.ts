@@ -6,10 +6,12 @@ import {
   gridStart,
   gridSummary,
   keysWithRecentData,
+  gridIsEmpty,
   levelLine,
   mondayOf,
   needsOlderHistory,
   strengthHeadline,
+  trendMeta,
   trendSummary,
 } from '@/lib/progress';
 
@@ -32,7 +34,14 @@ describe('levelLine', () => {
       level: 3,
       label: '1,090 / 1,500 XP',
       percent: 73,
+      fresh: false,
     });
+  });
+
+  it('invites instead of showing 0 XP', () => {
+    const line = levelLine({ current_level: 1, current_xp: 0, xp_to_next_level: 500 });
+    expect(line.label).toBe('Your first workout earns XP');
+    expect(line.fresh).toBe(true);
   });
 
   it('keeps the bar between 0 and 100', () => {
@@ -121,5 +130,18 @@ describe('keysWithRecentData', () => {
       { logged_date: '2026-09-20', sleep_hours: null, stress_level: 3 },
     ];
     expect(keysWithRecentData(logs, ['sleep_hours', 'stress_level'] as const, '2026-11-05')).toEqual(['sleep_hours']);
+  });
+});
+
+describe('empty states', () => {
+  it('knows a grid with nothing trained is empty', () => {
+    expect(gridIsEmpty([{ date: '2026-11-07', mark: 'none', today: true }, { date: '2026-11-08', mark: 'future', today: false }])).toBe(true);
+    expect(gridIsEmpty([{ date: '2026-11-07', mark: 'other', today: true }])).toBe(false);
+  });
+
+  it('says what a trend needs instead of averaging one day', () => {
+    expect(trendMeta('Sleep', 0, 7)).toBe('No sleep in the last 7 days');
+    expect(trendMeta('Sleep', 1, 14)).toBe('Sleep, 1 of 14 days. Another day draws the trend.');
+    expect(trendMeta('Sleep', 5, 14)).toBe('Sleep average, 5 of 14 days');
   });
 });

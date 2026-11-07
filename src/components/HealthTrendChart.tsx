@@ -3,7 +3,7 @@ import { useMemo, useState } from 'react';
 import { CardLabel } from '@/components/ProgressSnapshotSection';
 import { Segmented, Surface } from '@/components/ui';
 import type { HealthLog } from '@/lib/api';
-import { addDaysISO, keysWithRecentData, trendSummary } from '@/lib/progress';
+import { addDaysISO, keysWithRecentData, trendMeta, trendSummary } from '@/lib/progress';
 
 /**
  * One health metric over 7, 14 or 30 days, from `getHealthLogs`. One metric at a time, so
@@ -123,17 +123,18 @@ export default function HealthTrendChart({ logs }: { logs: HealthLog[] }) {
       ) : null}
 
       <div className="flex flex-col gap-0.5">
-        <span className="type-stat text-[26px]" style={{ color: 'var(--ink)' }}>
-          {summary.average != null ? dim.format(summary.average) : 'No data'}
-        </span>
+        {summary.average != null ? (
+          <span className="type-stat text-[26px]" style={{ color: 'var(--ink)' }}>
+            {dim.format(summary.average)}
+          </span>
+        ) : null}
         <span className="type-meta" style={{ color: 'var(--ink-3)' }}>
-          {summary.average != null
-            ? `${dim.label} average, ${summary.daysWithData} of ${days} days`
-            : `No ${dim.label.toLowerCase()} in the last ${days} days`}
+          {trendMeta(dim.label, summary.daysWithData, days)}
         </span>
       </div>
 
-      {points.length > 0 ? (
+      {/* One point is not a trend: the line under the number says so instead. */}
+      {points.length > 1 ? (
         <svg role="img" aria-label={`${dim.label} over the last ${days} days`} viewBox={`0 0 ${W} ${H}`} className="block h-auto w-full">
           {[0, 1, 2].map((i) => {
             const gy = PAD_TOP + (i / 2) * plotH;
@@ -158,9 +159,7 @@ export default function HealthTrendChart({ logs }: { logs: HealthLog[] }) {
             Today
           </text>
         </svg>
-      ) : (
-        <div className="h-[100px]" />
-      )}
+      ) : null}
 
       <Segmented options={RANGES} value={range} onChange={setRange} />
     </Surface>
