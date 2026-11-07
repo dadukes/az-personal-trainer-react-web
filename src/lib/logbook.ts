@@ -6,6 +6,7 @@ import {
   swapPlanExercise,
   usesWeight,
   weightText,
+  intervalWorkText,
 } from '@/lib/exercise';
 import {
   type Block,
@@ -298,7 +299,10 @@ function plural(count: number, word: string): string {
 export function exerciseTarget(block: Block): string {
   const { sets } = block;
   const times = sets.length > 1 ? `${sets.length} × ` : '';
-  if (isIntervalBlock(block) && block.intervals) return plural(block.intervals.rounds, 'round');
+  if (isIntervalBlock(block) && block.intervals) {
+    const work = intervalWorkText(block.intervals);
+    return work ? `${block.intervals.rounds} × ${work}` : plural(block.intervals.rounds, 'round');
+  }
   if (block.type === 'cardio' || block.type === 'class') {
     const parts = [
       block.targetDurationMinutes ? `${block.targetDurationMinutes} min` : null,
@@ -325,9 +329,9 @@ export function exerciseSummary(block: Block): string {
     return exerciseTarget(block);
   }
   if (isIntervalBlock(block)) {
-    return done.length === sets.length
-      ? plural(done.length, 'round')
-      : `${done.length} of ${plural(sets.length, 'round')}`;
+    const work = block.intervals ? intervalWorkText(block.intervals) : null;
+    if (done.length === sets.length) return work ? `${done.length} × ${work}` : plural(done.length, 'round');
+    return `${done.length} of ${plural(sets.length, 'round')}`;
   }
   if (done.length < sets.length) return `${done.length} of ${plural(sets.length, 'set')} · ${exerciseTarget(block)}`;
   if (block.type === 'cardio' || block.type === 'class') {

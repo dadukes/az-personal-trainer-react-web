@@ -51,3 +51,34 @@ export function formatFeetInches(cm: number): string {
 export function formatHeight(cm: number, system: UnitSystem): string {
   return system === 'imperial' ? formatFeetInches(cm) : `${formatNumber(cm)} cm`;
 }
+
+const KM_PER_MI = 1.609344;
+
+/** The distance unit for the user's system. */
+export function distanceUnit(system: UnitSystem): 'km' | 'mi' {
+  return system === 'imperial' ? 'mi' : 'km';
+}
+
+/** Kilometres (canonical) → the user's unit. */
+export function kmToDisplay(km: number, system: UnitSystem): number {
+  return system === 'imperial' ? km / KM_PER_MI : km;
+}
+
+/** The user's unit → kilometres (canonical). */
+export function displayToKm(value: number, system: UnitSystem): number {
+  return system === 'imperial' ? value * KM_PER_MI : value;
+}
+
+/** "5 km" or "3.1 mi": one decimal, a trailing `.0` dropped. */
+export function formatDistance(km: number, system: UnitSystem): string {
+  return `${formatNumber(kmToDisplay(km, system))} ${distanceUnit(system)}`;
+}
+
+/**
+ * One interval round's distance: "800 m" or "1.5 km" in metric, "0.5 mi" in imperial.
+ * Stored in metres.
+ */
+export function formatRepeatDistance(metres: number, system: UnitSystem): string {
+  if (system === 'imperial') return `${formatNumber(metres / 1000 / KM_PER_MI, 2)} mi`;
+  return metres >= 1000 ? `${formatNumber(metres / 1000, 2)} km` : `${Math.round(metres)} m`;
+}

@@ -1,12 +1,11 @@
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { ChevronDown, X } from 'lucide-react';
+import { useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import CoachMemory from '@/components/CoachMemory';
 import DeleteAccountDialog from '@/components/DeleteAccountDialog';
-import ScreenHeader from '@/components/ScreenHeader';
 import { WorkoutPrefsCard } from '@/components/LogbookView';
-import { Button, Card, Chip, Eyebrow, Input } from '@/components/ui';
+import { Segmented } from '@/components/ui';
 import {
   updateProfile,
   type BiologicalSex,
@@ -15,29 +14,28 @@ import {
   type PrimaryGoal,
   type ProfilePayload,
 } from '@/lib/api';
+import {
+  addToList,
+  GOAL_LABELS,
+  profileSections,
+  VOICE_OPTIONS,
+  type ProfileSection,
+  type ProfileSectionKey,
+} from '@/lib/profileView';
 import { cmToIn, formatNumber, inToCm, type UnitSystem } from '@/lib/units';
 import { useAuth } from '@/providers/AuthProvider';
+import { useAppTheme, type ThemePreference } from '@/providers/ThemeProvider';
 import { useAppStore, type UserProfile } from '@/store/useAppStore';
 
-/** Full goal enum (the onboarding step only surfaces the four most common). */
-const GOAL_OPTIONS: { value: PrimaryGoal; label: string }[] = [
-  { value: 'weight_loss', label: 'Lose weight' },
-  { value: 'muscle_gain', label: 'Build strength' },
-  { value: 'general_fitness', label: 'General fitness' },
-  { value: 'endurance', label: 'Improve endurance' },
-  { value: 'flexibility', label: 'Flexibility' },
-  { value: 'stress_relief', label: 'Reduce stress' },
-];
-
-const PERSONALITY_OPTIONS: { value: CoachPersonality; label: string; blurb: string }[] = [
-  { value: 'zen', label: 'Zen', blurb: 'Calm and grounding when your nervous system is already loud.' },
-  { value: 'cheerleader', label: 'Cheerleader', blurb: 'High-energy and quick to turn small wins into momentum.' },
-  { value: 'analyst', label: 'Analyst', blurb: 'Structured, data-aware, and direct about tradeoffs.' },
-];
-
+const GOAL_OPTIONS = Object.entries(GOAL_LABELS).map(([value, label]) => ({ value: value as PrimaryGoal, label }));
 const FITNESS_LEVELS: FitnessLevel[] = ['beginner', 'intermediate', 'advanced'];
 const FEAR_OPTIONS = ['Injury', 'Judgement', 'Burnout', 'Staying consistent', 'Not knowing what to do'];
 const DURATION_PRESETS = [10, 20, 30, 45, 60];
+const LOOKS: { value: ThemePreference; label: string }[] = [
+  { value: 'system', label: 'Match device' },
+  { value: 'light', label: 'Light' },
+  { value: 'dark', label: 'Dark' },
+];
 
 /** Weekday keys in the backend's expected order; `label` is the picker chip text. */
 const WEEKDAYS: { key: string; label: string }[] = [
@@ -54,20 +52,6 @@ const WEEKDAYS: { key: string; label: string }[] = [
 function orderDays(days: string[]): string[] {
   return WEEKDAYS.filter((d) => days.includes(d.key)).map((d) => d.key);
 }
-
-/** Splits a comma/newline separated free-text list into trimmed, non-empty items. */
-function splitList(raw: string): string[] {
-  return raw
-    .split(/[\n,]/)
-    .map((s) => s.trim())
-    .filter(Boolean);
-}
-
-const SEX_OPTIONS: { value: BiologicalSex | null; label: string }[] = [
-  { value: 'female', label: 'Female' },
-  { value: 'male', label: 'Male' },
-  { value: null, label: 'Prefer not to say' },
-];
 
 /** Backend bounds (API_docs → profile fields). */
 const MIN_BIRTH_YEAR = 1900;
@@ -137,8 +121,8 @@ interface FormState {
   fitnessLevel: FitnessLevel;
   fears: string[];
   duration: number;
-  limitations: string;
-  equipment: string;
+  limitations: string[];
+  equipment: string[];
   birthYear: string;
   heightCm: string;
   heightFt: string;
@@ -158,8 +142,8 @@ function formFromProfile(p: UserProfile): FormState {
     fitnessLevel: p.fitness_level,
     fears: p.fears ?? [],
     duration: p.preferred_duration_minutes,
-    limitations: (p.limitations ?? []).join(', '),
-    equipment: (p.equipment_available ?? []).join(', '),
+    limitations: p.limitations ?? [],
+    equipment: p.equipment_available ?? [],
     birthYear: p.birth_year != null ? String(p.birth_year) : '',
     heightCm: height.cm,
     heightFt: height.ft,
@@ -169,90 +153,66 @@ function formFromProfile(p: UserProfile): FormState {
   };
 }
 
+/** The fields one section's Save sends: each section saves on its own. */
+function sectionPayload(
+  section: ProfileSectionKey,
+  form: FormState,
+  profile: UserProfile,
+  system: UnitSystem,
+): { ok: true; payload: ProfilePayload } | { ok: false; error: string } {
+  switch (section) {
+    case 'about':
+      return { ok: true, payload: { display_name: form.displayName.trim(), primary_goal: form.goal, coach_personality: form.personality } };
+    case 'training':
+      if (form.days.length === 0) return { ok: false, error: 'Pick at least one training day.' };
+      return {
+        ok: true,
+        payload: { available_days: orderDays(form.days), fitness_level: form.fitnessLevel, preferred_duration_minutes: form.duration },
+      };
+    case 'plan':
+      return { ok: true, payload: { limitations: form.limitations, equipment_available: form.equipment, fears: form.fears } };
+    case 'body': {
+      const body = parseBodyFields(form, system);
+      if (!body.ok) return body;
+      // An untouched imperial height round-trips through whole inches; keep the stored value.
+      const seeded = formFromProfile(profile);
+      const heightUntouched = form.heightCm === seeded.heightCm && form.heightFt === seeded.heightFt && form.heightIn === seeded.heightIn;
+      return {
+        ok: true,
+        payload: {
+          birth_year: body.birth_year,
+          height_cm: heightUntouched ? (profile.height_cm ?? null) : body.height_cm,
+          sex: form.sex,
+          max_heart_rate: body.max_heart_rate,
+        },
+      };
+    }
+  }
+}
+
+const card = 'rounded-[20px] bg-[var(--surface)]';
+
 export default function ProfilePage() {
   const navigate = useNavigate();
-  const { session, user, applyProfileUpdate, deleteAccount } = useAuth();
+  const { session, user, signOut, deleteAccount } = useAuth();
+  const { preference, setPreference } = useAppTheme();
   const profile = useAppStore((s) => s.profile);
-  const unitSystem = profile.preferred_unit_system;
-
-  const [form, setForm] = useState<FormState>(() => formFromProfile(profile));
-  const [dirty, setDirty] = useState(false);
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [editing, setEditing] = useState<ProfileSectionKey | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
-  const [advancedOpen, setAdvancedOpen] = useState(() => profile.max_heart_rate != null);
+  const [signingOut, setSigningOut] = useState(false);
 
-  // Re-seed from the store until the user starts editing, so a background profile
-  // hydration (stale-while-revalidate) doesn't get lost behind an untouched form.
-  useEffect(() => {
-    if (!dirty) setForm(formFromProfile(profile));
-  }, [profile, dirty]);
+  const name = profile.display_name?.trim() || user?.email?.split('@')[0] || 'You';
+  const sections = profileSections(profile);
 
-  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => {
-    setForm((f) => ({ ...f, [key]: value }));
-    setDirty(true);
-    setSaved(false);
-  };
-
-  const toggleFear = (fear: string) =>
-    update('fears', form.fears.includes(fear) ? form.fears.filter((f) => f !== fear) : [...form.fears, fear]);
-
-  const toggleDay = (key: string) =>
-    update('days', form.days.includes(key) ? form.days.filter((d) => d !== key) : [...form.days, key]);
-
-  // Keep any custom duration the user already had alongside the presets.
-  const durationOptions = Array.from(new Set([...DURATION_PRESETS, form.duration])).sort((a, b) => a - b);
-
-  const canSave = form.days.length > 0 && !submitting;
-
-  const handleSave = async () => {
-    if (!session?.access_token) {
-      setError('Your session is missing. Sign in again and retry.');
-      return;
-    }
-    if (form.days.length === 0) {
-      setError('Pick at least one training day.');
-      return;
-    }
-    const body = parseBodyFields(form, unitSystem);
-    if (!body.ok) {
-      setError(body.error);
-      return;
-    }
-    // An untouched imperial height round-trips through whole inches; keep the stored
-    // value rather than drifting it by a few millimetres on every save.
-    const seeded = formFromProfile(profile);
-    const heightUntouched =
-      form.heightCm === seeded.heightCm && form.heightFt === seeded.heightFt && form.heightIn === seeded.heightIn;
-    setError(null);
-    setSubmitting(true);
-    const payload: ProfilePayload = {
-      display_name: form.displayName.trim(),
-      primary_goal: form.goal,
-      coach_personality: form.personality,
-      fitness_level: form.fitnessLevel,
-      preferred_duration_minutes: form.duration,
-      available_days: orderDays(form.days),
-      fears: form.fears,
-      limitations: splitList(form.limitations),
-      equipment_available: splitList(form.equipment),
-      birth_year: body.birth_year,
-      height_cm: heightUntouched ? (profile.height_cm ?? null) : body.height_cm,
-      sex: form.sex,
-      max_heart_rate: body.max_heart_rate,
-    };
+  const handleSignOut = async () => {
+    setSigningOut(true);
     try {
-      const { profile: updated } = await updateProfile(session.access_token, payload);
-      applyProfileUpdate(updated);
-      setDirty(false);
-      setSaved(true);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to save your profile.');
+      await signOut();
+      navigate('/login', { replace: true });
     } finally {
-      setSubmitting(false);
+      setSigningOut(false);
     }
   };
 
@@ -269,312 +229,62 @@ export default function ProfilePage() {
     }
   };
 
+  const sectionCard = (section: ProfileSection) =>
+    editing === section.key ? (
+      <SectionEditor key={section.key} section={section} onDone={() => setEditing(null)} />
+    ) : (
+      <ReadSection key={section.key} section={section} onEdit={() => setEditing(section.key)} />
+    );
+
   return (
-    <div className="mx-auto flex w-full max-w-[720px] animate-fade-slide-up flex-col gap-6 p-6 sm:p-10">
-      <ScreenHeader
-        title="Edit profile"
-        subtitle="Update how Forma plans and coaches you. Changes apply to your next plan and chats."
-        rightActions={
-          <Button variant="quiet" size="sm" leftIcon={<ArrowLeft size={16} />} onClick={() => navigate('/')}>
-            Home
-          </Button>
-        }
-      />
-
-      {/* About you */}
-      <Card padding="24px">
-        <Eyebrow className="mb-4">About you</Eyebrow>
-        <Input
-          label="What should your coach call you?"
-          placeholder="Your name"
-          value={form.displayName}
-          onChange={(e) => update('displayName', e.target.value)}
-        />
-        <div className="mt-5">
-          <Eyebrow className="mb-2.5">Primary goal</Eyebrow>
-          <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2">
-            {GOAL_OPTIONS.map((g) => (
-              <Chip
-                key={g.value}
-                active={form.goal === g.value}
-                onClick={() => update('goal', g.value)}
-                className="justify-center !py-3.5"
-              >
-                {g.label}
-              </Chip>
-            ))}
-          </div>
-        </div>
-      </Card>
-
-      {/* Coach voice */}
-      <Card padding="24px">
-        <Eyebrow className="mb-4">Coach voice</Eyebrow>
-        <div className="flex flex-col gap-2.5">
-          {PERSONALITY_OPTIONS.map((p) => {
-            const active = form.personality === p.value;
-            return (
-              <button
-                key={p.value}
-                type="button"
-                onClick={() => update('personality', p.value)}
-                className="rounded-2xl p-4 text-left transition-transform active:scale-[0.99]"
-                style={{
-                  background: active ? 'var(--bg-selected)' : 'var(--bg-subtle)',
-                  border: `1px solid ${active ? 'var(--accent)' : 'var(--border-base)'}`,
-                }}
-              >
-                <div
-                  className="text-[15px] font-bold"
-                  style={{ color: active ? 'var(--text-on-mint)' : 'var(--text-primary)' }}
-                >
-                  {p.label}
-                </div>
-                <div
-                  className="mt-1 text-[13px] leading-[1.4]"
-                  style={{ color: active ? 'var(--text-on-mint-soft)' : 'var(--text-muted)' }}
-                >
-                  {p.blurb}
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </Card>
-
-      {/* Training rhythm */}
-      <Card padding="24px">
-        <Eyebrow className="mb-4">During a workout</Eyebrow>
-        <WorkoutPrefsCard accessToken={session?.access_token} />
-      </Card>
-
-      <Card padding="24px">
-        <Eyebrow className="mb-4">Training rhythm</Eyebrow>
-        <span className="mb-2.5 block text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: 'var(--text-label)' }}>
-          Available days
+    <div className="mx-auto flex w-full max-w-[1040px] animate-fade-slide-up flex-col gap-6 px-4 pb-16 pt-6 sm:px-10 sm:pt-10">
+      <header className="flex flex-wrap items-center gap-4">
+        <span aria-hidden="true" className="flex h-16 w-16 flex-none items-center justify-center rounded-full text-[26px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+          {name.charAt(0).toUpperCase()}
         </span>
-        <div className="grid grid-cols-4 gap-2.5 sm:grid-cols-7">
-          {WEEKDAYS.map((d) => (
-            <Chip
-              key={d.key}
-              active={form.days.includes(d.key)}
-              onClick={() => toggleDay(d.key)}
-              className="justify-center !px-0 !py-3"
-            >
-              {d.label}
-            </Chip>
-          ))}
-        </div>
-        <p className="mt-2.5 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-          {form.days.length > 0
-            ? `${form.days.length} ${form.days.length === 1 ? 'day' : 'days'} a week`
-            : 'Pick at least one day.'}
-        </p>
-
-        <div className="mt-6">
-          <Eyebrow className="mb-2.5">Experience level</Eyebrow>
-          {/* Wraps like the session-length row: three nowrap chips overflow a phone-width card. */}
-          <div className="flex flex-wrap gap-2.5">
-            {FITNESS_LEVELS.map((lvl) => (
-              <Chip
-                key={lvl}
-                active={form.fitnessLevel === lvl}
-                onClick={() => update('fitnessLevel', lvl)}
-                className="flex-1 justify-center capitalize !py-3.5"
-              >
-                {lvl}
-              </Chip>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-6">
-          <Eyebrow className="mb-2.5">Session length</Eyebrow>
-          <div className="flex flex-wrap gap-2.5">
-            {durationOptions.map((m) => (
-              <Chip
-                key={m}
-                active={form.duration === m}
-                onClick={() => update('duration', m)}
-                className="flex-1 justify-center !py-3"
-              >
-                {m}m
-              </Chip>
-            ))}
-          </div>
-        </div>
-      </Card>
-
-      {/* Personalization */}
-      <Card padding="24px">
-        <Eyebrow className="mb-4">Personalization</Eyebrow>
-        <span className="mb-2.5 block text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: 'var(--text-label)' }}>
-          What usually throws you off?
-        </span>
-        <div className="flex flex-wrap gap-2.5">
-          {FEAR_OPTIONS.map((f) => (
-            <Chip key={f} active={form.fears.includes(f)} onClick={() => toggleFear(f)}>
-              {f}
-            </Chip>
-          ))}
-        </div>
-
-        <div className="mt-6 flex flex-col gap-5">
-          <Input
-            label="Injuries or limitations (comma-separated)"
-            placeholder="e.g. lower back pain, bad knees"
-            value={form.limitations}
-            onChange={(e) => update('limitations', e.target.value)}
-          />
-          <Input
-            label="Equipment available (comma-separated)"
-            placeholder="e.g. dumbbells, resistance bands, yoga mat"
-            value={form.equipment}
-            onChange={(e) => update('equipment', e.target.value)}
-          />
-        </div>
-      </Card>
-
-      {/* Body & heart rate — all optional, never part of onboarding. */}
-      <Card padding="24px">
-        <Eyebrow className="mb-2">Body & heart rate</Eyebrow>
-        <p className="mb-4 text-[13px] leading-[1.45]" style={{ color: 'var(--text-muted)' }}>
-          All optional. Your birth year unlocks heart-rate zones; height lets us show waist-to-height.
-        </p>
-        <div className="grid grid-cols-2 gap-3">
-          <Input
-            label="Birth year"
-            inputMode="numeric"
-            maxLength={4}
-            placeholder="e.g. 1990"
-            value={form.birthYear}
-            onChange={(e) => update('birthYear', e.target.value.replace(/[^0-9]/g, ''))}
-          />
-          {unitSystem === 'metric' ? (
-            <Input
-              label="Height (cm)"
-              inputMode="decimal"
-              maxLength={5}
-              placeholder="e.g. 175"
-              value={form.heightCm}
-              onChange={(e) => update('heightCm', e.target.value)}
-            />
-          ) : (
-            <div>
-              <span className="mb-1.5 block text-[11px] font-bold uppercase tracking-[0.08em]" style={{ color: 'var(--text-label)' }}>
-                Height
-              </span>
-              <div className="grid grid-cols-2 gap-2">
-                <Input
-                  aria-label="Height, feet"
-                  inputMode="numeric"
-                  maxLength={1}
-                  placeholder="ft"
-                  value={form.heightFt}
-                  onChange={(e) => update('heightFt', e.target.value.replace(/[^0-9]/g, ''))}
-                />
-                <Input
-                  aria-label="Height, inches"
-                  inputMode="decimal"
-                  maxLength={4}
-                  placeholder="in"
-                  value={form.heightIn}
-                  onChange={(e) => update('heightIn', e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="mt-5">
-          <Eyebrow className="mb-2.5">Sex</Eyebrow>
-          <div className="flex flex-wrap gap-2.5">
-            {SEX_OPTIONS.map((o) => (
-              <Chip key={o.label} active={form.sex === o.value} onClick={() => update('sex', o.value)}>
-                {o.label}
-              </Chip>
-            ))}
-          </div>
-          <p className="mt-2 text-[12.5px]" style={{ color: 'var(--text-muted)' }}>
-            Used only for reference ranges.
-          </p>
-        </div>
-
-        <button
-          type="button"
-          onClick={() => setAdvancedOpen((o) => !o)}
-          aria-expanded={advancedOpen}
-          className="mt-5 inline-flex items-center gap-1.5 text-[13.5px] font-bold"
-          style={{ color: 'var(--text-secondary)' }}
-        >
-          {advancedOpen ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
-          Advanced
-        </button>
-        {advancedOpen ? (
-          <div className="mt-3">
-            <Input
-              label="Max heart rate (bpm)"
-              inputMode="numeric"
-              maxLength={3}
-              placeholder="Leave blank to estimate from age"
-              value={form.maxHr}
-              onChange={(e) => update('maxHr', e.target.value.replace(/[^0-9]/g, ''))}
-            />
-            <p className="mt-2 text-[12.5px] leading-[1.45]" style={{ color: 'var(--text-muted)' }}>
-              Most people should leave this blank — we estimate it from your age. Only set it if you’ve
-              measured your max in a lab or a hard, all-out test.
-            </p>
-          </div>
-        ) : null}
-      </Card>
-
-      {/* Coach memory — saves per-item, deliberately outside the form's Save. */}
-      <CoachMemory accessToken={session?.access_token} />
-
-      {error ? (
-        <div className="text-[13px] font-semibold" style={{ color: 'var(--forma-danger)' }}>
-          {error}
-        </div>
-      ) : null}
-
-      <div className="flex items-center justify-end gap-3">
-        {saved && !dirty ? (
-          <span className="inline-flex items-center gap-1.5 text-[13px] font-bold" style={{ color: 'var(--accent-text)' }}>
-            <Check size={16} color="var(--accent-text)" strokeWidth={3} />
-            Saved
+        <div className="flex min-w-0 flex-[1_1_240px] flex-col gap-0.5">
+          <h1 className="type-screen-title m-0 truncate" style={{ color: 'var(--ink)' }}>{name}</h1>
+          <span className="text-[15px]" style={{ color: 'var(--ink-2)' }}>
+            {user?.email ? `${user.email} · ` : ''}This is what your coach knows about you.
           </span>
-        ) : null}
-        <Button size="lg" onClick={handleSave} disabled={!canSave}>
-          {submitting ? 'Saving…' : 'Save changes'}
-        </Button>
-      </div>
-
-      {/* Danger zone — deliberately last, visually separated, never a one-tap action. */}
-      <Card padding="24px" style={{ borderColor: 'var(--forma-danger)' }}>
-        <Eyebrow className="mb-4">Danger zone</Eyebrow>
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
-              Delete account
-            </div>
-            <p className="mt-1 text-[13px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
-              Permanently erases your profile, coach history, workouts and health logs. Immediate
-              and irreversible — we keep no backup copy.
-            </p>
-          </div>
-          <Button
-            variant="quiet"
-            leftIcon={<Trash2 size={16} color="var(--forma-danger)" />}
-            style={{ color: 'var(--forma-danger)', borderColor: 'var(--forma-danger)' }}
-            onClick={() => {
-              setDeleteError(null);
-              setDeleteOpen(true);
-            }}
-          >
-            Delete account
-          </Button>
         </div>
-      </Card>
+      </header>
+
+      <div className="grid items-start gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(440px, 100%), 1fr))' }}>
+        <div className="flex min-w-0 flex-col gap-5">{sections.map(sectionCard)}</div>
+
+        <div className="flex min-w-0 flex-col gap-5">
+          <CoachMemory accessToken={session?.access_token} />
+
+          <section aria-label="During a workout" className={`${card} flex flex-col gap-4 p-5`}>
+            <h2 className="m-0 text-[17px] font-bold" style={{ color: 'var(--ink)' }}>During a workout</h2>
+            <WorkoutPrefsCard accessToken={session?.access_token} />
+          </section>
+
+          <section aria-label="Appearance and account" className={`${card} flex flex-col gap-3 px-5 pb-2 pt-[18px]`}>
+            <div className="flex flex-wrap items-center justify-between gap-2.5">
+              <h2 className="m-0 text-[17px] font-bold" style={{ color: 'var(--ink)' }}>Appearance</h2>
+              <Segmented options={LOOKS} value={preference} onChange={setPreference} size="sm" />
+            </div>
+            <div className="flex flex-wrap gap-x-5 gap-y-2 py-1.5" style={{ borderTop: '1px solid var(--line)' }}>
+              <button type="button" onClick={() => void handleSignOut()} disabled={signingOut} className="min-h-[44px] text-[14.5px] font-bold" style={{ color: 'var(--ink)' }}>
+                {signingOut ? 'Logging out…' : 'Log out'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteError(null);
+                  setDeleteOpen(true);
+                }}
+                className="min-h-[44px] text-[14.5px] font-bold"
+                style={{ color: 'var(--danger)' }}
+              >
+                Delete account
+              </button>
+            </div>
+          </section>
+        </div>
+      </div>
 
       {deleteOpen ? (
         <DeleteAccountDialog
@@ -585,6 +295,344 @@ export default function ProfilePage() {
           onClose={() => setDeleteOpen(false)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function ReadSection({ section, onEdit }: { section: ProfileSection; onEdit: () => void }) {
+  return (
+    <section aria-label={section.title} className={`${card} flex flex-col px-5 pb-1.5 pt-[18px]`}>
+      <div className="mb-1 flex min-h-8 items-center justify-between">
+        <h2 className="m-0 text-[17px] font-bold" style={{ color: 'var(--ink)' }}>{section.title}</h2>
+        <button type="button" onClick={onEdit} aria-label={`Edit ${section.title}`} className="min-h-[40px] px-1 text-[14.5px] font-bold" style={{ color: 'var(--teal)' }}>
+          Edit
+        </button>
+      </div>
+      {section.rows.length ? (
+        <dl className="m-0 flex flex-col">
+          {section.rows.map((row) => (
+            <div key={row.label} className="grid gap-3 py-3" style={{ gridTemplateColumns: 'minmax(96px, 160px) minmax(0, 1fr)', borderTop: '1px solid var(--line)' }}>
+              <dt className="text-[14px]" style={{ color: 'var(--ink-3)' }}>{row.label}</dt>
+              <dd className="m-0 flex flex-col gap-0.5">
+                <span className="text-[15px] font-semibold" style={{ color: 'var(--ink)' }}>{row.value}</span>
+                {row.sub ? <span className="text-[13px]" style={{ color: 'var(--ink-2)' }}>{row.sub}</span> : null}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {section.invite ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 py-3.5" style={{ borderTop: '1px solid var(--line)' }}>
+          <div className="flex min-w-0 flex-[1_1_220px] flex-col gap-0.5">
+            <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>{section.invite.title}</span>
+            <span className="text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>{section.invite.body}</span>
+          </div>
+          <button type="button" onClick={onEdit} className="min-h-[44px] rounded-full px-4 text-[14px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+            {section.invite.action}
+          </button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
+/** One section turned into its form, in place, with Cancel and Save. */
+function SectionEditor({ section, onDone }: { section: ProfileSection; onDone: () => void }) {
+  const { session, applyProfileUpdate } = useAuth();
+  const profile = useAppStore((s) => s.profile);
+  const system = profile.preferred_unit_system;
+  const [form, setForm] = useState<FormState>(() => formFromProfile(profile));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [maxHrOpen, setMaxHrOpen] = useState(() => profile.max_heart_rate != null);
+  const [limitDraft, setLimitDraft] = useState('');
+  const [kitDraft, setKitDraft] = useState('');
+
+  const update = <K extends keyof FormState>(key: K, value: FormState[K]) => setForm((f) => ({ ...f, [key]: value }));
+  const toggle = (key: 'days' | 'fears', value: string) =>
+    update(key, form[key].includes(value) ? form[key].filter((x) => x !== value) : [...form[key], value]);
+
+  const handleSave = async () => {
+    if (!session?.access_token) {
+      setError('Your session is missing. Sign in again and retry.');
+      return;
+    }
+    // Text still in an Add box counts: people expect Save to keep what they typed.
+    const withDrafts = { ...form, limitations: addToList(form.limitations, limitDraft), equipment: addToList(form.equipment, kitDraft) };
+    const built = sectionPayload(section.key, withDrafts, profile, system);
+    if (!built.ok) {
+      setError(built.error);
+      return;
+    }
+    setError(null);
+    setSaving(true);
+    try {
+      const { profile: updated } = await updateProfile(session.access_token, built.payload);
+      applyProfileUpdate(updated);
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to save your profile.');
+      setSaving(false);
+    }
+  };
+
+  const durationOptions = Array.from(new Set([...DURATION_PRESETS, form.duration])).sort((a, b) => a - b);
+  const input = 'h-12 w-full rounded-xl px-3.5 text-[16px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--aqua)]';
+  const inputStyle = { background: 'var(--ground)', color: 'var(--ink)' };
+  const big = `${input} font-number text-[24px]`;
+
+  return (
+    <section aria-label={`${section.title}, editing`} className={`${card} flex flex-col gap-[18px] px-5 pb-5 pt-[18px]`} style={{ outline: '2px solid var(--aqua)' }}>
+      <div className="flex min-h-8 items-center justify-between">
+        <h2 className="m-0 text-[17px] font-bold" style={{ color: 'var(--ink)' }}>{section.title}</h2>
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--ink-3)' }}>Editing</span>
+      </div>
+
+      {section.key === 'about' ? (
+        <>
+          <Field label="What should your coach call you?" htmlFor="pe-name">
+            <input id="pe-name" value={form.displayName} onChange={(e) => update('displayName', e.target.value)} maxLength={40} placeholder="Your first name" className={input} style={inputStyle} />
+          </Field>
+          <Field label="Main goal">
+            <div role="group" aria-label="Main goal" className="grid grid-cols-2 gap-1.5">
+              {GOAL_OPTIONS.map((g) => (
+                <Pick key={g.value} on={form.goal === g.value} onClick={() => update('goal', g.value)}>{g.label}</Pick>
+              ))}
+            </div>
+          </Field>
+          <Field label="Coach voice">
+            <div role="radiogroup" aria-label="Coach voice" className="flex flex-col overflow-hidden rounded-2xl" style={{ background: 'var(--ground)' }}>
+              {VOICE_OPTIONS.map((v, i) => {
+                const on = form.personality === v.value;
+                return (
+                  <button
+                    key={v.value}
+                    type="button"
+                    role="radio"
+                    aria-checked={on}
+                    onClick={() => update('personality', v.value as CoachPersonality)}
+                    className="flex min-h-[60px] items-center gap-3 px-4 py-2.5 text-left"
+                    style={{ borderTop: i === 0 ? undefined : '1px solid var(--line)' }}
+                  >
+                    <span className="flex flex-1 flex-col gap-0.5">
+                      <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>{v.label}</span>
+                      <span className="text-[13px] leading-[18px]" style={{ color: 'var(--ink-2)' }}>{v.blurb}</span>
+                    </span>
+                    <span aria-hidden="true" className="h-6 w-6 flex-none rounded-full" style={{ background: on ? 'var(--aqua)' : 'transparent', border: on ? undefined : '2px solid var(--line)' }} />
+                  </button>
+                );
+              })}
+            </div>
+          </Field>
+        </>
+      ) : null}
+
+      {section.key === 'training' ? (
+        <>
+          <Field label="Days you can train" hint={form.days.length === 0 ? 'Pick at least one day.' : `${form.days.length} ${form.days.length === 1 ? 'day' : 'days'} a week.`}>
+            <div role="group" aria-label="Days you can train" className="grid grid-cols-7 gap-1.5">
+              {WEEKDAYS.map((d) => (
+                <Pick key={d.key} on={form.days.includes(d.key)} onClick={() => toggle('days', d.key)} toggle>{d.label}</Pick>
+              ))}
+            </div>
+          </Field>
+          <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))' }}>
+            <Field label="Level">
+              <Segmented size="sm" options={FITNESS_LEVELS.map((l) => ({ value: l, label: l[0].toUpperCase() + l.slice(1) }))} value={form.fitnessLevel} onChange={(v) => update('fitnessLevel', v)} />
+            </Field>
+            <Field label="Session length, min">
+              <Segmented size="sm" options={durationOptions.map((d) => ({ value: String(d), label: String(d) }))} value={String(form.duration)} onChange={(v) => update('duration', Number(v))} />
+            </Field>
+          </div>
+        </>
+      ) : null}
+
+      {section.key === 'plan' ? (
+        <>
+          <TagList
+            title="Injuries or limitations"
+            body="Your coach works around these."
+            id="pe-lim"
+            items={form.limitations}
+            draft={limitDraft}
+            placeholder="e.g. bad knees"
+            onDraft={setLimitDraft}
+            onAdd={() => {
+              update('limitations', addToList(form.limitations, limitDraft));
+              setLimitDraft('');
+            }}
+            onRemove={(item) => update('limitations', form.limitations.filter((x) => x !== item))}
+          />
+          <TagList
+            title="Equipment you have"
+            body="Your coach plans with what you list."
+            id="pe-kit"
+            items={form.equipment}
+            draft={kitDraft}
+            placeholder="e.g. resistance bands"
+            onDraft={setKitDraft}
+            onAdd={() => {
+              update('equipment', addToList(form.equipment, kitDraft));
+              setKitDraft('');
+            }}
+            onRemove={(item) => update('equipment', form.equipment.filter((x) => x !== item))}
+          />
+          <Field label="What usually throws you off?">
+            <div role="group" aria-label="What usually throws you off" className="flex flex-wrap gap-2">
+              {FEAR_OPTIONS.map((f) => (
+                <Pick key={f} on={form.fears.includes(f)} onClick={() => toggle('fears', f)} toggle pill>{f}</Pick>
+              ))}
+            </div>
+          </Field>
+        </>
+      ) : null}
+
+      {section.key === 'body' ? (
+        <>
+          <p className="m-0 -mt-2 text-[14px]" style={{ color: 'var(--ink-2)' }}>All optional. Leave anything blank.</p>
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Birth year" htmlFor="pe-year">
+              <input id="pe-year" inputMode="numeric" maxLength={4} value={form.birthYear} onChange={(e) => update('birthYear', e.target.value.replace(/[^0-9]/g, ''))} placeholder="e.g. 1990" className={big} style={inputStyle} />
+            </Field>
+            {system === 'metric' ? (
+              <Field label="Height, cm" htmlFor="pe-height">
+                <input id="pe-height" inputMode="decimal" maxLength={5} value={form.heightCm} onChange={(e) => update('heightCm', e.target.value)} placeholder="e.g. 175" className={big} style={inputStyle} />
+              </Field>
+            ) : (
+              <Field label="Height">
+                <div className="flex gap-1.5">
+                  <input aria-label="Height, feet" inputMode="numeric" maxLength={1} value={form.heightFt} onChange={(e) => update('heightFt', e.target.value.replace(/[^0-9]/g, ''))} placeholder="ft" className={big} style={inputStyle} />
+                  <input aria-label="Height, inches" inputMode="decimal" maxLength={4} value={form.heightIn} onChange={(e) => update('heightIn', e.target.value)} placeholder="in" className={big} style={inputStyle} />
+                </div>
+              </Field>
+            )}
+          </div>
+          <p className="m-0 -mt-2 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>Birth year sets your heart-rate zones. Height shows your waist-to-height ratio.</p>
+          <Field label="Sex" hint="Used only for reference ranges.">
+            <Segmented
+              size="sm"
+              options={[
+                { value: 'female', label: 'Female' },
+                { value: 'male', label: 'Male' },
+                { value: 'none', label: 'Prefer not to say' },
+              ]}
+              value={form.sex ?? 'none'}
+              onChange={(v) => update('sex', v === 'none' ? null : (v as BiologicalSex))}
+            />
+          </Field>
+          <div className="rounded-2xl" style={{ background: 'var(--ground)' }}>
+            <button type="button" onClick={() => setMaxHrOpen((o) => !o)} aria-expanded={maxHrOpen} className="flex min-h-[56px] w-full items-center justify-between px-4 text-left">
+              <span className="flex flex-col gap-0.5">
+                <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>Max heart rate</span>
+                <span className="text-[13px]" style={{ color: 'var(--ink-3)' }}>{form.maxHr ? `${form.maxHr} bpm, set by you` : 'Estimated from your age'}</span>
+              </span>
+              <ChevronDown size={18} aria-hidden="true" style={{ color: 'var(--ink-3)', transform: maxHrOpen ? 'rotate(180deg)' : undefined }} />
+            </button>
+            {maxHrOpen ? (
+              <div className="flex flex-col gap-2 px-4 pb-4">
+                <input aria-label="Max heart rate, beats per minute" inputMode="numeric" maxLength={3} value={form.maxHr} onChange={(e) => update('maxHr', e.target.value.replace(/[^0-9]/g, ''))} placeholder="Leave blank to estimate" className={input} style={{ background: 'var(--surface)', color: 'var(--ink)' }} />
+                <span className="text-[13px] leading-[18px]" style={{ color: 'var(--ink-2)' }}>Only set this if you&apos;ve measured it in a lab or an all-out test.</span>
+              </div>
+            ) : null}
+          </div>
+        </>
+      ) : null}
+
+      {error ? <p role="alert" className="m-0 text-[13.5px] font-semibold" style={{ color: 'var(--danger)' }}>{error}</p> : null}
+      <div className="flex justify-end gap-2">
+        <button type="button" onClick={onDone} className="h-11 rounded-xl px-[18px] text-[14.5px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+          Cancel
+        </button>
+        <button type="button" onClick={() => void handleSave()} disabled={saving} className="h-11 rounded-xl px-[22px] text-[14.5px] font-bold disabled:opacity-60" style={{ background: 'var(--ink)', color: 'var(--ground)' }}>
+          {saving ? 'Saving…' : `Save ${section.title.toLowerCase()}`}
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function Field({ label, hint, htmlFor, children }: { label: string; hint?: string; htmlFor?: string; children: ReactNode }) {
+  return (
+    <div className="flex flex-col gap-2">
+      {htmlFor ? (
+        <label htmlFor={htmlFor} className="text-[14px] font-bold" style={{ color: 'var(--ink)' }}>{label}</label>
+      ) : (
+        <span className="text-[14px] font-bold" style={{ color: 'var(--ink)' }}>{label}</span>
+      )}
+      {children}
+      {hint ? <span className="text-[13px]" style={{ color: 'var(--ink-2)' }}>{hint}</span> : null}
+    </div>
+  );
+}
+
+function Pick({ on, onClick, toggle, pill, children }: { on: boolean; onClick: () => void; toggle?: boolean; pill?: boolean; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={toggle ? on : undefined}
+      role={toggle ? undefined : 'radio'}
+      aria-checked={toggle ? undefined : on}
+      className={`${pill ? 'h-11 rounded-full px-4' : 'h-11 rounded-xl px-2'} text-[14px] font-bold`}
+      style={{ background: on ? 'var(--ink)' : 'var(--ground)', color: on ? 'var(--ground)' : 'var(--ink)' }}
+    >
+      {children}
+    </button>
+  );
+}
+
+function TagList({
+  title,
+  body,
+  id,
+  items,
+  draft,
+  placeholder,
+  onDraft,
+  onAdd,
+  onRemove,
+}: {
+  title: string;
+  body: string;
+  id: string;
+  items: string[];
+  draft: string;
+  placeholder: string;
+  onDraft: (v: string) => void;
+  onAdd: () => void;
+  onRemove: (item: string) => void;
+}) {
+  return (
+    <div className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-0.5">
+        <span className="text-[14px] font-bold" style={{ color: 'var(--ink)' }}>{title}</span>
+        <span className="text-[13.5px]" style={{ color: 'var(--ink-2)' }}>{body}</span>
+      </div>
+      {items.length ? (
+        <div className="flex flex-wrap gap-2">
+          {items.map((item) => (
+            <span key={item} className="flex h-10 items-center rounded-full pl-3.5 text-[14px] font-semibold" style={{ background: 'var(--ground)', color: 'var(--ink)' }}>
+              {item}
+              <button type="button" onClick={() => onRemove(item)} aria-label={`Remove ${item}`} className="flex h-10 w-9 items-center justify-center" style={{ color: 'var(--ink-3)' }}>
+                <X size={15} aria-hidden="true" />
+              </button>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <form
+        className="flex gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onAdd();
+        }}
+      >
+        <label htmlFor={id} className="sr-only">Add to {title.toLowerCase()}</label>
+        <input id={id} value={draft} onChange={(e) => onDraft(e.target.value)} placeholder={placeholder} className="h-12 min-w-0 flex-1 rounded-xl px-3.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--aqua)]" style={{ background: 'var(--ground)', color: 'var(--ink)' }} />
+        <button type="submit" disabled={!draft.trim()} className="h-12 rounded-xl px-4 text-[14px] font-bold disabled:opacity-50" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+          Add
+        </button>
+      </form>
     </div>
   );
 }

@@ -1,9 +1,9 @@
-import { Ruler, Trash2, X } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 
-import { Button, Chip, Input } from '@/components/ui';
+import DayPicker from '@/components/DayPicker';
+import { Sheet } from '@/components/ui';
 import type { BodyMeasurement, BodyMetric } from '@/lib/api';
-import { BODY_METRIC_ORDER, BODY_METRICS, metricFromDisplay, metricToDisplay, metricUnit } from '@/lib/body';
+import { BODY_METRIC_ORDER, BODY_METRICS, formatMetric, metricFromDisplay, metricToDisplay, metricUnit } from '@/lib/body';
 import { formatNumber, type UnitSystem } from '@/lib/units';
 
 /** What the dialog hands back — `value` is already canonical (kg / cm). */
@@ -22,11 +22,16 @@ interface BodyMeasurementDialogProps {
   unitSystem: UnitSystem;
   saving: boolean;
   error: string | null;
+  /** Earlier entries: the newest of the chosen metric shows as "Last". */
+  measurements?: BodyMeasurement[];
   onSave: (entry: BodyMeasurementEntry) => void;
   /** Edit mode only. */
   onDelete?: () => void;
   onClose: () => void;
 }
+
+/** The common ones show first; the rest are behind More. */
+const FIRST_METRICS = 5;
 
 function localDateInput(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -48,7 +53,7 @@ function measuredAtFor(day: string, original: string | null): string {
  * Add or edit one body measurement. Presentational, like `HealthCaptureDialog`: the page
  * owns the API calls and the refresh. The value is typed in the user's units and
  * converted to canonical here, so nothing downstream ever sees lb or inches. Mirrors the
- * mobile `body-measurement-sheet`, plus editing (mobile only deletes).
+ * mobile `body-measurement-sheet`.
  */
 export default function BodyMeasurementDialog({
   editing,
@@ -56,6 +61,7 @@ export default function BodyMeasurementDialog({
   unitSystem,
   saving,
   error,
+  measurements,
   onSave,
   onDelete,
   onClose,
@@ -69,20 +75,17 @@ export default function BodyMeasurementDialog({
   const [localError, setLocalError] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [saving, onClose]);
-
   const meta = BODY_METRICS[metric];
   const unit = metricUnit(metric, unitSystem);
   const parsed = Number(raw.trim().replace(',', '.'));
   const hasValue = raw.trim() !== '' && Number.isFinite(parsed) && parsed > 0;
   const today = localDateInput(new Date());
-  const minDay = localDateInput(new Date(new Date().getFullYear() - 5, 0, 1));
+  const [more, setMore] = useState(() => BODY_METRIC_ORDER.indexOf(metric) >= FIRST_METRICS);
+  const last = editing || !measurements
+    ? null
+    : measurements.filter((m) => m.metric === metric).sort((a, b) => b.measured_at.localeCompare(a.measured_at))[0];
+  // Only where earlier entries were passed in can it know this is the first.
+  const first = !editing && measurements != null && measurements.length === 0;
 
   const handleSave = () => {
     if (!hasValue) return;
@@ -107,137 +110,103 @@ export default function BodyMeasurementDialog({
   };
 
   const shownError = localError ?? error;
+  const metrics = more ? BODY_METRIC_ORDER : BODY_METRIC_ORDER.slice(0, FIRST_METRICS);
+  const name = meta.label.toLowerCase().replace('vo2', 'VO2');
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-5"
-      style={{ background: 'var(--scrim)' }}
-      onClick={() => {
-        if (!saving) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label={editing ? 'Edit measurement' : 'Add a measurement'}
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[calc(100dvh-40px)] w-full max-w-[460px] overflow-y-auto rounded-[24px] p-6"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ background: 'var(--bg-selected)' }}>
-              <Ruler size={19} color="var(--text-on-mint)" />
-            </div>
-            <div>
-              <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                {editing ? `Edit ${meta.label.toLowerCase()}` : 'Add a measurement'}
-              </div>
-              <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                Optional, private, and only used to show your trends.
-              </div>
-            </div>
-          </div>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={() => {
-              if (!saving) onClose();
-            }}
-            className="rounded-full p-1.5 transition-transform active:scale-[0.92]"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <X size={18} />
-          </button>
+    <Sheet open title={editing ? `Change ${name}` : 'Add a measurement'} onClose={() => (saving ? undefined : onClose())}>
+      <p className="m-0 -mt-3 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+        {editing
+          ? `Logged ${shortDay(editing.measured_at)}.`
+          : first
+            ? 'Your first one. Measure at the same time of day and your trend will be clearer.'
+            : 'Trends matter more than any single reading.'}
+      </p>
+
+      {!editing ? (
+        <div role="radiogroup" aria-label="What are you measuring?" className="flex flex-wrap gap-2">
+          {metrics.map((m) => (
+            <button
+              key={m}
+              type="button"
+              role="radio"
+              aria-checked={metric === m}
+              onClick={() => {
+                setMetric(m);
+                setLocalError(null);
+              }}
+              className="h-10 rounded-full px-3.5 text-[14px] font-bold"
+              style={{ background: metric === m ? 'var(--ink)' : 'var(--ground)', color: metric === m ? 'var(--ground)' : 'var(--ink)' }}
+            >
+              {BODY_METRICS[m].label}
+            </button>
+          ))}
+          {!more ? (
+            <button type="button" onClick={() => setMore(true)} className="h-10 px-3 text-[14px] font-bold" style={{ color: 'var(--teal)' }}>
+              More
+            </button>
+          ) : null}
         </div>
+      ) : null}
 
-        {/* The metric of an existing row is fixed — change it by deleting and re-adding. */}
-        {!editing ? (
-          <div className="mt-5 flex flex-wrap gap-2">
-            {BODY_METRIC_ORDER.map((m) => (
-              <Chip
-                key={m}
-                active={metric === m}
-                onClick={() => {
-                  setMetric(m);
-                  setLocalError(null);
-                }}
-                className="!px-3.5 !py-1.5"
-              >
-                {BODY_METRICS[m].label}
-              </Chip>
-            ))}
-          </div>
-        ) : null}
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Input
-            label={`${meta.label} (${unit})`}
+      <div className="flex flex-col gap-2">
+        <label htmlFor="bm-val" className="text-[13.5px] font-semibold" style={{ color: 'var(--ink-2)' }}>
+          {meta.label}, {unit}
+        </label>
+        <div className="flex h-[84px] items-center gap-2 rounded-2xl px-[18px]" style={{ background: 'var(--ground)', outline: '2px solid var(--aqua)' }}>
+          <input
+            id="bm-val"
             inputMode="decimal"
-            placeholder={unit}
+            maxLength={7}
             value={raw}
+            placeholder="0.0"
+            autoFocus
             onChange={(e) => {
               setRaw(e.target.value);
               setLocalError(null);
             }}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleSave();
-            }}
-            autoFocus
+            className="font-number h-20 min-w-0 flex-1 bg-transparent text-[52px] font-extrabold outline-none"
+            style={{ color: 'var(--ink)' }}
           />
-          <Input label="Date" type="date" min={minDay} max={today} value={day} onChange={(e) => setDay(e.target.value)} />
+          <span aria-hidden="true" className="text-[17px] font-bold" style={{ color: 'var(--ink-2)' }}>{unit}</span>
         </div>
-        <div className="mt-3">
-          <Input
-            label="Note (optional)"
-            maxLength={1000}
-            placeholder="e.g. morning, after a run"
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-          />
-        </div>
-
-        {shownError ? (
-          <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--forma-danger)' }}>
-            {shownError}
-          </p>
-        ) : null}
-
-        <div className="mt-5 flex gap-3">
-          <Button variant="quiet" fullWidth disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button fullWidth disabled={saving || !hasValue} onClick={handleSave}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
-
-        {editing && onDelete ? (
-          <div className="mt-4 flex justify-center">
-            {confirmDelete ? (
-              <div className="flex items-center gap-3 text-[13px]">
-                <span style={{ color: 'var(--text-secondary)' }}>Delete this entry?</span>
-                <Button variant="danger" size="sm" disabled={saving} onClick={onDelete}>
-                  Delete
-                </Button>
-                <Button variant="link" size="sm" disabled={saving} onClick={() => setConfirmDelete(false)}>
-                  Keep
-                </Button>
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmDelete(true)}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 text-[13px] font-semibold"
-                style={{ color: 'var(--forma-danger)' }}
-              >
-                <Trash2 size={15} /> Delete entry
-              </button>
-            )}
-          </div>
+        {last ? (
+          <span className="text-[13.5px]" style={{ color: 'var(--ink-2)' }}>
+            Last: {formatMetric(metric, last.value, unitSystem)} on {shortDay(last.measured_at)}
+          </span>
         ) : null}
       </div>
-    </div>
+
+      <DayPicker value={day} today={today} onChange={setDay} />
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[13.5px] font-semibold" style={{ color: 'var(--ink-2)' }}>Note, if you like</span>
+        <input value={note} maxLength={200} onChange={(e) => setNote(e.target.value)} placeholder="Morning, before breakfast" className="h-[52px] w-full rounded-[14px] px-3.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--aqua)]" style={{ background: 'var(--ground)', color: 'var(--ink)' }} />
+      </label>
+
+      {shownError ? <p role="alert" className="m-0 text-[13.5px] font-semibold" style={{ color: 'var(--danger)' }}>{shownError}</p> : null}
+
+      <button type="button" onClick={handleSave} disabled={saving || !hasValue} className="h-14 rounded-2xl text-[17px] font-bold disabled:opacity-50" style={{ background: 'var(--aqua)', color: 'var(--on-aqua)' }}>
+        {saving ? 'Saving…' : editing ? 'Save change' : `Save ${name}`}
+      </button>
+
+      {editing && onDelete ? (
+        confirmDelete ? (
+          <div className="flex items-center gap-1">
+            <span className="flex-1 text-[14px]" style={{ color: 'var(--ink-2)' }}>Delete this entry?</span>
+            <button type="button" onClick={() => setConfirmDelete(false)} className="min-h-[44px] px-2.5 text-[15px] font-bold" style={{ color: 'var(--ink)' }}>Keep</button>
+            <button type="button" onClick={onDelete} disabled={saving} className="min-h-[44px] px-2.5 text-[15px] font-bold" style={{ color: 'var(--danger)' }}>Delete</button>
+          </div>
+        ) : (
+          <button type="button" onClick={() => setConfirmDelete(true)} className="min-h-[44px] text-[15px] font-bold" style={{ color: 'var(--danger)' }}>
+            Delete entry
+          </button>
+        )
+      ) : null}
+    </Sheet>
   );
+}
+
+function shortDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
 }

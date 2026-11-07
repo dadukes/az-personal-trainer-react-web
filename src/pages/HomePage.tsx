@@ -1,4 +1,4 @@
-import { Check, ChevronRight, Dumbbell, HeartPulse, Pencil, Play, Ruler, Sparkles } from 'lucide-react';
+import { Check, ChevronRight, Dumbbell, Footprints, HeartPulse, Pencil, Play, Ruler, Sparkles } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
@@ -607,11 +607,11 @@ export default function HomePage() {
       {/* Every manual capture lives on one button, so competing "Log" buttons don't pile up. */}
       <QuickActionsFab
         actions={[
-          { id: 'finished-workout', label: 'Finished workout', icon: <Check size={16} color="var(--accent-text)" />, onSelect: () => logWorkout() },
+          { id: 'finished-workout', label: 'Finished workout', icon: <Dumbbell size={16} color="var(--accent-text)" />, onSelect: () => logWorkout() },
           {
             id: 'activity',
             label: 'Run, class or walk',
-            icon: <Dumbbell size={16} color="var(--accent-text)" />,
+            icon: <Footprints size={16} color="var(--accent-text)" />,
             onSelect: () => {
               setQuickLogError(null);
               setQuickLogOpen(true);

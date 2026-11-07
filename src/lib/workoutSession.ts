@@ -16,7 +16,7 @@ import {
   cardioKindLabel,
   type ExercisePick,
   formatDistanceKm,
-  formatIntervalPair,
+  formatIntervals,
   formatSeconds,
   repRangeText,
   repTargetFor,
@@ -118,7 +118,7 @@ export function isSingleCaptureBlock(block: Block): boolean {
 export function intervalTotalSeconds(block: Block): number {
   if (!block.intervals) return 0;
   const { rounds, work_seconds, recover_seconds } = block.intervals;
-  return Math.max(0, rounds) * (work_seconds + recover_seconds);
+  return Math.max(0, rounds) * ((work_seconds ?? 0) + recover_seconds);
 }
 
 export { parseRepTarget } from '@/lib/exercise';
@@ -176,8 +176,7 @@ export function applyBlockSwap(block: Block, swap: BlockSwap): Block {
 /** The at-a-glance target for a block — the session-side twin of `exerciseMeta`. */
 export function blockTargetText(block: Block): string {
   if (isIntervalBlock(block) && block.intervals) {
-    const { rounds, work_seconds, recover_seconds } = block.intervals;
-    return `${rounds} × ${formatIntervalPair(work_seconds, recover_seconds)}`;
+    return formatIntervals(block.intervals);
   }
   if (block.type === 'cardio') {
     const parts: string[] = [];
@@ -345,7 +344,13 @@ export function toLoggedExercises(blocks: Block[]): LoggedExercise[] {
     const countdown = isCountdownBlock(b);
     const cardioOrClass = b.type === 'cardio' || b.type === 'class';
     const weighted = usesWeight(b.type);
-    const distanceKm = b.type === 'cardio' ? b.sets[0]?.distanceKm : undefined;
+    // Distance repeats log what was covered: the finished rounds times the round's distance.
+    const repeatM = isIntervalBlock(b) ? b.intervals?.work_distance_m : undefined;
+    const distanceKm = repeatM
+      ? Math.round((b.sets.filter((x) => x.completed).length * repeatM) / 10) / 100
+      : b.type === 'cardio'
+        ? b.sets[0]?.distanceKm
+        : undefined;
     const loadOf = (s: SetActual): number | null => {
       if (!weighted) return null;
       return countdown && s.weight <= 0 ? null : s.weight;

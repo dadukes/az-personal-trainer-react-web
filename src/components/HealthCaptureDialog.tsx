@@ -1,7 +1,6 @@
-import { HeartPulse, X } from 'lucide-react';
-import { useEffect, useState, type CSSProperties } from 'react';
+import { useState } from 'react';
 
-import { Button, Input } from '@/components/ui';
+import { Sheet } from '@/components/ui';
 import type { ManualHealthCapture } from '@/lib/health';
 
 /** The editable fields of a manual capture (everything except the date/timestamp meta). */
@@ -28,103 +27,7 @@ function parseMetric(raw: string, opts?: { float?: boolean; max?: number }): num
   return opts?.max != null ? Math.min(n, opts.max) : n;
 }
 
-interface SliderEnd {
-  emoji: string;
-  label: string;
-}
-
-/**
- * 1–5 slider with emoji-labelled extremes. Optional like every capture field:
- * it starts "unset" (neutral thumb at the midpoint, nothing sent) and becomes
- * set on first touch; "Clear" reverts it to unset.
- */
-function SliderRow({
-  label,
-  value,
-  onChange,
-  low,
-  high,
-}: {
-  label: string;
-  value: number | undefined;
-  onChange: (value: number | undefined) => void;
-  low: SliderEnd;
-  high: SliderEnd;
-}) {
-  const current = value ?? 3;
-  const fillPct = value !== undefined ? `${((current - 1) / 4) * 100}%` : '0%';
-  return (
-    <div>
-      <div className="mb-1.5 flex items-baseline justify-between">
-        <span
-          className="block text-[11px] font-bold uppercase tracking-[0.08em]"
-          style={{ color: 'var(--text-label)' }}
-        >
-          {label}
-        </span>
-        {value !== undefined ? (
-          <button
-            type="button"
-            onClick={() => onChange(undefined)}
-            className="text-[11px] font-semibold underline-offset-2 hover:underline"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            Clear
-          </button>
-        ) : (
-          <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-            Slide to set
-          </span>
-        )}
-      </div>
-      <div className="flex items-center gap-3">
-        <span aria-hidden className="text-[22px] leading-none">
-          {low.emoji}
-        </span>
-        <input
-          type="range"
-          min={1}
-          max={5}
-          step={1}
-          value={current}
-          aria-label={label}
-          aria-valuetext={value !== undefined ? `${value} of 5` : 'not set'}
-          data-unset={value === undefined ? 'true' : 'false'}
-          onChange={(e) => onChange(Number(e.target.value))}
-          // A plain click at the thumb's current position fires no change event,
-          // so pointer-up also commits the value — touching the slider sets it.
-          onPointerUp={(e) => onChange(Number(e.currentTarget.value))}
-          className="forma-range min-w-0 flex-1"
-          style={{ '--range-fill': fillPct } as CSSProperties}
-        />
-        <span aria-hidden className="text-[22px] leading-none">
-          {high.emoji}
-        </span>
-      </div>
-      <div
-        className="mt-1 flex items-center justify-between text-[11px]"
-        style={{ color: 'var(--text-muted)' }}
-      >
-        <span>{low.label}</span>
-        <span>{high.label}</span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * Manual health capture dialog. Presentational: the page owns the API call
- * (`syncHealth`) and persistence; this component only collects the values.
- * All fields are optional — the user logs whatever they know right now and can
- * come back to fill in the rest later the same day.
- */
-export default function HealthCaptureDialog({
-  initial,
-  saving,
-  error,
-  onSave,
-  onClose,
-}: HealthCaptureDialogProps) {
+export default function HealthCaptureDialog({ initial, saving, error, onSave, onClose }: HealthCaptureDialogProps) {
   const [sleepHours, setSleepHours] = useState(() => numToStr(initial?.sleep_hours));
   const [restingHr, setRestingHr] = useState(() => numToStr(initial?.resting_heart_rate));
   const [steps, setSteps] = useState(() => numToStr(initial?.step_count));
@@ -133,152 +36,100 @@ export default function HealthCaptureDialog({
   const [energy, setEnergy] = useState<number | undefined>(initial?.energy_level);
   const [notes, setNotes] = useState(initial?.notes ?? '');
 
-  useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !saving) onClose();
-    };
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [saving, onClose]);
-
   const values: HealthCaptureValues = {
     sleep_hours: parseMetric(sleepHours, { float: true, max: 24 }),
-    sleep_quality: sleepQuality,
-    energy_level: energy,
     resting_heart_rate: parseMetric(restingHr),
     step_count: parseMetric(steps),
     active_calories_burned: parseMetric(calories),
+    sleep_quality: sleepQuality,
+    energy_level: energy,
     notes: notes.trim() || undefined,
   };
   const hasAnyValue = Object.values(values).some((v) => v !== undefined);
 
+  const fields: { id: string; label: string; value: string; set: (v: string) => void; unit: string; decimal?: boolean }[] = [
+    { id: 'hc-sleep', label: 'Sleep', value: sleepHours, set: setSleepHours, unit: 'h', decimal: true },
+    { id: 'hc-rhr', label: 'Resting heart rate', value: restingHr, set: setRestingHr, unit: 'bpm' },
+    { id: 'hc-steps', label: 'Steps', value: steps, set: setSteps, unit: '' },
+    { id: 'hc-kcal', label: 'Active calories', value: calories, set: setCalories, unit: 'kcal' },
+  ];
+
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-5"
-      style={{ background: 'var(--scrim)' }}
-      onClick={() => {
-        if (!saving) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-label="Log today's health"
-        onClick={(e) => e.stopPropagation()}
-        className="max-h-[calc(100vh-40px)] w-full max-w-[440px] overflow-y-auto rounded-[24px] p-6"
-        style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
-      >
-        <div className="flex items-start justify-between">
-          <div className="flex items-center gap-2.5">
-            <div
-              className="flex h-10 w-10 items-center justify-center rounded-full"
-              style={{ background: 'var(--bg-selected)' }}
-            >
-              <HeartPulse size={19} color="var(--accent-text)" />
-            </div>
-            <div>
-              <div className="text-[17px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-                {initial ? 'Update today’s health' : 'Log today’s health'}
-              </div>
-              <div className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                Fill in what you know — update anytime today.
-              </div>
+    <Sheet open title="Today's health" onClose={() => (saving ? undefined : onClose())}>
+      <p className="m-0 -mt-3 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+        Add what you know now. You can come back and add the rest later today.
+      </p>
+
+      <div className="grid grid-cols-2 gap-2.5">
+        {fields.map((f) => (
+          <div key={f.id} className="flex flex-col gap-1.5">
+            <label htmlFor={f.id} className="text-[13.5px] font-semibold" style={{ color: 'var(--ink-2)' }}>{f.label}</label>
+            <div className="flex h-[60px] items-center gap-1.5 rounded-[14px] px-3.5 focus-within:ring-2 focus-within:ring-[var(--aqua)]" style={{ background: 'var(--ground)' }}>
+              <input
+                id={f.id}
+                inputMode={f.decimal ? 'decimal' : 'numeric'}
+                maxLength={6}
+                value={f.value}
+                placeholder="Add"
+                onChange={(e) => f.set(e.target.value)}
+                className="font-number h-14 min-w-0 flex-1 bg-transparent text-[30px] outline-none placeholder:font-sans placeholder:text-[16px] placeholder:font-semibold"
+                style={{ color: 'var(--ink)' }}
+              />
+              {f.unit ? <span aria-hidden="true" className="text-[13px] font-semibold" style={{ color: 'var(--ink-3)' }}>{f.unit}</span> : null}
             </div>
           </div>
-          <button
-            type="button"
-            aria-label="Close"
-            onClick={() => {
-              if (!saving) onClose();
-            }}
-            className="rounded-full p-1.5 transition-transform active:scale-[0.92]"
-            style={{ color: 'var(--text-muted)' }}
-          >
-            <X size={18} />
-          </button>
-        </div>
-
-        <div className="mt-5 grid grid-cols-2 gap-3">
-          <Input
-            label="Sleep (hours)"
-            type="number"
-            inputMode="decimal"
-            min={0}
-            max={24}
-            step={0.5}
-            placeholder="7.5"
-            value={sleepHours}
-            onChange={(e) => setSleepHours(e.target.value)}
-          />
-          <Input
-            label="Resting HR (bpm)"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            placeholder="62"
-            value={restingHr}
-            onChange={(e) => setRestingHr(e.target.value)}
-          />
-          <Input
-            label="Steps"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            placeholder="8000"
-            value={steps}
-            onChange={(e) => setSteps(e.target.value)}
-          />
-          <Input
-            label="Active calories"
-            type="number"
-            inputMode="numeric"
-            min={0}
-            placeholder="350"
-            value={calories}
-            onChange={(e) => setCalories(e.target.value)}
-          />
-        </div>
-
-        <div className="mt-4 flex flex-col gap-4">
-          <SliderRow
-            label="Sleep quality"
-            value={sleepQuality}
-            onChange={setSleepQuality}
-            low={{ emoji: '😴', label: 'Bad sleep' }}
-            high={{ emoji: '😁', label: 'Good sleep' }}
-          />
-          <SliderRow
-            label="Energy level"
-            value={energy}
-            onChange={setEnergy}
-            low={{ emoji: '🫩', label: 'Low energy' }}
-            high={{ emoji: '😎', label: 'High energy' }}
-          />
-          <Input
-            label="Notes (optional)"
-            type="text"
-            maxLength={280}
-            placeholder="Anything your coach should know?"
-            value={notes}
-            onChange={(e) => setNotes(e.target.value)}
-          />
-        </div>
-
-        {error ? (
-          <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--forma-danger)' }}>
-            {error}
-          </p>
-        ) : null}
-
-        <div className="mt-5 flex gap-3">
-          <Button variant="quiet" fullWidth disabled={saving} onClick={onClose}>
-            Cancel
-          </Button>
-          <Button fullWidth disabled={saving || !hasAnyValue} onClick={() => onSave(values)}>
-            {saving ? 'Saving…' : 'Save'}
-          </Button>
-        </div>
+        ))}
       </div>
-    </div>
+
+      <Scale title="How did you sleep?" low="Badly" high="Really well" value={sleepQuality} onChange={setSleepQuality} />
+      <Scale title="Energy right now" low="Running on empty" high="Full of beans" value={energy} onChange={setEnergy} />
+
+      <label className="flex flex-col gap-1.5">
+        <span className="text-[13.5px] font-semibold" style={{ color: 'var(--ink-2)' }}>Anything your coach should know?</span>
+        <input value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} placeholder="Slept badly, big day at work" className="h-[52px] w-full rounded-[14px] px-3.5 text-[15px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--aqua)]" style={{ background: 'var(--ground)', color: 'var(--ink)' }} />
+      </label>
+
+      {error ? <p role="alert" className="m-0 text-[13.5px] font-semibold" style={{ color: 'var(--danger)' }}>{error}</p> : null}
+
+      <button type="button" onClick={() => onSave(values)} disabled={saving || !hasAnyValue} className="h-14 rounded-2xl text-[17px] font-bold disabled:opacity-50" style={{ background: 'var(--aqua)', color: 'var(--on-aqua)' }}>
+        {saving ? 'Saving…' : 'Save today’s health'}
+      </button>
+    </Sheet>
+  );
+}
+
+/** A 1–5 scale with its two ends named, and Clear once something is picked. */
+function Scale({ title, low, high, value, onChange }: { title: string; low: string; high: string; value: number | undefined; onChange: (v: number | undefined) => void }) {
+  return (
+    <section aria-label={title} className="flex flex-col gap-2">
+      <div className="flex min-h-6 items-center justify-between">
+        <h3 className="m-0 text-[15px] font-bold" style={{ color: 'var(--ink)' }}>{title}</h3>
+        {value != null ? (
+          <button type="button" onClick={() => onChange(undefined)} className="-my-2.5 min-h-[44px] px-1 text-[13.5px] font-bold" style={{ color: 'var(--teal)' }}>
+            Clear
+          </button>
+        ) : null}
+      </div>
+      <div role="radiogroup" aria-label={`${title}, 1 to 5`} className="grid grid-cols-5 gap-1 rounded-[14px] p-1" style={{ background: 'var(--sunken)' }}>
+        {[1, 2, 3, 4, 5].map((n) => (
+          <button
+            key={n}
+            type="button"
+            role="radio"
+            aria-checked={value === n}
+            aria-label={`${title} ${n} of 5`}
+            onClick={() => onChange(n)}
+            className="font-number h-11 rounded-[11px] text-[21px]"
+            style={{ background: value === n ? 'var(--ink)' : 'transparent', color: value === n ? 'var(--ground)' : 'var(--ink)' }}
+          >
+            {n}
+          </button>
+        ))}
+      </div>
+      <div aria-hidden="true" className="flex justify-between text-[12.5px]" style={{ color: 'var(--ink-3)' }}>
+        <span>{low}</span>
+        <span>{high}</span>
+      </div>
+    </section>
   );
 }

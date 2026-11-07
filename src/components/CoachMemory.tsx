@@ -1,7 +1,6 @@
-import { Check, Pencil, Plus, RotateCcw, Trash2 } from 'lucide-react';
+import { Plus, RotateCcw } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
-import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import {
   createUserMemory,
   deleteUserMemory,
@@ -28,6 +27,15 @@ import {
 /** Matches the per-fact cap the backend enforces (413 `memory_content_too_long`). */
 const MAX_MEMORY_CHARS = 500;
 
+/** Notes shown before "Show all": the list grows with every chat. */
+const VISIBLE_NOTES = 5;
+
+/** "fitness_level" → "Fitness level". */
+function categoryLabel(category: string | null | undefined): string {
+  const text = (category ?? '').replace(/_/g, ' ').trim();
+  return text ? text[0].toUpperCase() + text.slice(1) : '';
+}
+
 /** "Until Aug 8" for a temporary fact; empty for permanent ones. */
 function formatExpiry(expiresAt: string | null): string {
   if (!expiresAt) return '';
@@ -36,15 +44,9 @@ function formatExpiry(expiresAt: string | null): string {
   return `Until ${parsed.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
 }
 
-const textareaClass =
-  'w-full resize-y rounded-xl px-3.5 py-2.5 text-[14.5px] leading-6 outline-none transition-colors placeholder:opacity-70 focus:border-[var(--accent)]';
+const textareaClass = 'w-full resize-y rounded-xl px-3 py-2.5 text-[15px] leading-[21px] outline-none focus-visible:ring-2 focus-visible:ring-[var(--aqua)]';
 
-const textareaStyle = {
-  minHeight: 88,
-  background: 'var(--bg-surface)',
-  border: '1px solid var(--border-base)',
-  color: 'var(--text-primary)',
-} as const;
+const textareaStyle = { minHeight: 84, background: 'var(--ground)', color: 'var(--ink)' } as const;
 
 interface Props {
   accessToken: string | undefined;
@@ -63,6 +65,7 @@ export default function CoachMemory({ accessToken }: Props) {
   const [confirmingId, setConfirmingId] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
 
+  const [showAll, setShowAll] = useState(false);
   const [adding, setAdding] = useState(false);
   const [newContent, setNewContent] = useState('');
   const [savingNew, setSavingNew] = useState(false);
@@ -160,221 +163,146 @@ export default function CoachMemory({ accessToken }: Props) {
     }
   };
 
-  return (
-    <Card padding="24px">
-      <Eyebrow className="mb-2">What your coach remembers</Eyebrow>
-      <p className="mb-5 text-[13px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
-        Forma keeps these notes between chats and uses them in every reply. Fix anything that&apos;s
-        wrong or out of date — edits here save on their own and apply to your next message.
-      </p>
-
-      {loading ? (
-        <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
-          Loading…
-        </p>
-      ) : loadError ? (
-        <div className="flex flex-col items-start gap-3">
-          <p className="text-[13px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
-            {loadError}
-          </p>
-          <Button
-            variant="quiet"
-            size="sm"
-            leftIcon={<RotateCcw size={14} />}
-            onClick={() => setReloadToken((t) => t + 1)}
-          >
-            Try again
-          </Button>
-        </div>
-      ) : items.length === 0 ? (
-        <p className="text-[13px] leading-[1.5]" style={{ color: 'var(--text-muted)' }}>
-          Nothing saved yet. Your coach starts keeping notes after a few conversations — or add
-          something yourself below.
-        </p>
-      ) : (
-        <ul className="flex flex-col gap-2.5">
-          {items.map((item) => {
-            const isEditing = editingId === item.id;
-            const isConfirming = confirmingId === item.id;
-            const busy = busyId === item.id;
-            const expiry = formatExpiry(item.expires_at);
-
-            return (
-              <li
-                key={item.id}
-                className="rounded-2xl p-3.5 transition-opacity"
-                style={{
-                  background: 'var(--bg-subtle)',
-                  border: `1px solid ${isEditing ? 'var(--accent)' : 'var(--border-base)'}`,
-                  opacity: busy ? 0.6 : 1,
-                }}
-              >
-                {isEditing ? (
-                  <div className="flex flex-col gap-3">
-                    <textarea
-                      value={draft}
-                      onChange={(e) => setDraft(e.target.value)}
-                      maxLength={MAX_MEMORY_CHARS}
-                      disabled={busy}
-                      autoFocus
-                      aria-label="Edit memory"
-                      placeholder="What should your coach remember?"
-                      className={textareaClass}
-                      style={textareaStyle}
-                    />
-                    <div className="flex justify-end gap-2.5">
-                      <Button variant="quiet" size="sm" onClick={cancelEdit} disabled={busy}>
-                        Cancel
-                      </Button>
-                      <Button
-                        size="sm"
-                        leftIcon={<Check size={15} strokeWidth={3} />}
-                        onClick={() => void handleSaveEdit(item)}
-                        disabled={busy || !draft.trim()}
-                      >
-                        Save
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="flex flex-col gap-2.5">
-                    <p className="text-[14.5px] leading-[1.45]" style={{ color: 'var(--text-primary)' }}>
-                      {item.content}
-                    </p>
-                    <div className="flex flex-wrap items-center gap-2">
-                      {item.origin === 'user' ? <Badge>Added by you</Badge> : null}
-                      {expiry ? <Badge>{expiry}</Badge> : null}
-                      {item.category ? <Badge>{item.category}</Badge> : null}
-                      <div className="flex-1" />
-                      {isConfirming ? (
-                        <>
-                          <span className="text-[12.5px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-                            Forget this?
-                          </span>
-                          <Button
-                            variant="quiet"
-                            size="sm"
-                            onClick={() => setConfirmingId(null)}
-                            disabled={busy}
-                          >
-                            Keep
-                          </Button>
-                          <Button
-                            variant="quiet"
-                            size="sm"
-                            leftIcon={<Trash2 size={14} color="var(--forma-danger)" />}
-                            style={{ color: 'var(--forma-danger)', borderColor: 'var(--forma-danger)' }}
-                            onClick={() => void handleDelete(item)}
-                            disabled={busy}
-                          >
-                            Forget
-                          </Button>
-                        </>
-                      ) : (
-                        <>
-                          <IconButton label="Edit memory" onClick={() => startEdit(item)}>
-                            <Pencil size={15} color="var(--text-secondary)" />
-                          </IconButton>
-                          <IconButton
-                            label="Forget memory"
-                            onClick={() => {
-                              setActionError(null);
-                              setEditingId(null);
-                              setConfirmingId(item.id);
-                            }}
-                          >
-                            <Trash2 size={15} color="var(--forma-danger)" />
-                          </IconButton>
-                        </>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {actionError ? (
-        <p className="mt-3 text-[13px] font-semibold" style={{ color: 'var(--forma-danger)' }}>
-          {actionError}
-        </p>
-      ) : null}
-
-      {!loading && !loadError ? (
-        <div className="mt-5">
-          {adding ? (
-            <div className="flex flex-col gap-3">
-              <textarea
-                value={newContent}
-                onChange={(e) => setNewContent(e.target.value)}
-                maxLength={MAX_MEMORY_CHARS}
-                autoFocus
-                aria-label="Something for your coach to remember"
-                placeholder="e.g. I train best before 7am"
-                className={textareaClass}
-                style={{ ...textareaStyle, background: 'var(--bg-subtle)' }}
-              />
-              <div className="flex justify-end gap-2.5">
-                <Button
-                  variant="quiet"
-                  size="sm"
-                  onClick={() => {
-                    setAdding(false);
-                    setNewContent('');
-                  }}
-                  disabled={savingNew}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  size="sm"
-                  leftIcon={<Check size={15} strokeWidth={3} />}
-                  onClick={() => void handleAdd()}
-                  disabled={savingNew || !newContent.trim()}
-                >
-                  {savingNew ? 'Saving…' : 'Add'}
-                </Button>
-              </div>
-            </div>
-          ) : (
-            <Button
-              variant="quiet"
-              size="sm"
-              leftIcon={<Plus size={15} />}
-              onClick={() => {
-                setActionError(null);
-                setAdding(true);
-              }}
-            >
-              Add something
-            </Button>
-          )}
-        </div>
-      ) : null}
-    </Card>
-  );
-}
-
-function IconButton({
-  label,
-  onClick,
-  children,
-}: {
-  label: string;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
+  const textButton = (label: string, color: string, onClick: () => void, disabled?: boolean) => (
     <button
       type="button"
-      aria-label={label}
       onClick={onClick}
-      className="inline-flex h-8 w-8 items-center justify-center rounded-lg transition-transform active:scale-[0.94]"
-      style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+      disabled={disabled}
+      className="min-h-[44px] px-2.5 text-[15px] font-bold disabled:opacity-45"
+      style={{ color }}
     >
-      {children}
+      {label}
     </button>
+  );
+
+  return (
+    <section aria-label="What your coach remembers" className="flex flex-col gap-2.5">
+      <div className="flex flex-col gap-1 px-1">
+        <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>What your coach remembers</h2>
+        <p className="m-0 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+          Notes it keeps between chats and reads before every reply. Select one to fix or forget it. Changes save on their own.
+        </p>
+      </div>
+      <div className="overflow-hidden rounded-[20px]" style={{ background: 'var(--surface)' }}>
+        {loading ? (
+          <p className="m-0 p-4 text-[15px]" style={{ color: 'var(--ink-2)' }}>Loading…</p>
+        ) : loadError ? (
+          <div className="flex flex-col items-start gap-2 p-4">
+            <p className="m-0 text-[15px]" style={{ color: 'var(--ink-2)' }}>{loadError}</p>
+            <button
+              type="button"
+              onClick={() => setReloadToken((t) => t + 1)}
+              className="inline-flex min-h-[44px] items-center gap-2 text-[15px] font-bold"
+              style={{ color: 'var(--teal)' }}
+            >
+              <RotateCcw size={16} aria-hidden="true" /> Try again
+            </button>
+          </div>
+        ) : (
+          <>
+            {items.length === 0 ? (
+              <p className="m-0 p-4 text-[15px] leading-[22px]" style={{ color: 'var(--ink-2)' }}>
+                Nothing yet. After a few chats your coach starts keeping notes, like the times you like to train. You can add one yourself too.
+              </p>
+            ) : null}
+            {(showAll ? items : items.slice(0, VISIBLE_NOTES)).map((item, index) => {
+              const isEditing = editingId === item.id;
+              const isConfirming = confirmingId === item.id;
+              const busy = busyId === item.id;
+              const tag = item.origin === 'user' ? 'Added by you' : formatExpiry(item.expires_at) || categoryLabel(item.category);
+              return (
+                <div key={item.id} style={{ borderTop: index === 0 ? undefined : '1px solid var(--line)', opacity: busy ? 0.6 : 1 }}>
+                  {isEditing ? (
+                    <div className="flex flex-col gap-2.5 p-3">
+                      <label className="sr-only" htmlFor={`mem-${item.id}`}>Change this note</label>
+                      <textarea
+                        id={`mem-${item.id}`}
+                        value={draft}
+                        onChange={(e) => setDraft(e.target.value)}
+                        maxLength={MAX_MEMORY_CHARS}
+                        disabled={busy}
+                        autoFocus
+                        className={textareaClass}
+                        style={textareaStyle}
+                      />
+                      {isConfirming ? (
+                        <div className="flex items-center gap-1">
+                          <span className="flex-1 text-[14px]" style={{ color: 'var(--ink-2)' }}>Forget this note?</span>
+                          {textButton('Keep', 'var(--ink)', () => setConfirmingId(null), busy)}
+                          {textButton('Forget', 'var(--danger)', () => void handleDelete(item), busy)}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          {textButton('Forget this', 'var(--danger)', () => setConfirmingId(item.id), busy)}
+                          <span className="flex-1" />
+                          {textButton('Cancel', 'var(--ink)', cancelEdit, busy)}
+                          {textButton('Save', 'var(--teal)', () => void handleSaveEdit(item), busy || !draft.trim())}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => startEdit(item)}
+                      aria-label={`Change or forget: ${item.content}`}
+                      className="flex min-h-[52px] w-full flex-col gap-1 px-4 py-3 text-left hover:bg-[var(--sunken)]"
+                    >
+                      <span className="text-[15px] leading-[22px]" style={{ color: 'var(--ink)' }}>{item.content}</span>
+                      {tag ? <span className="text-[13px] font-semibold" style={{ color: 'var(--ink-3)' }}>{tag}</span> : null}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+            {items.length > VISIBLE_NOTES ? (
+              <button
+                type="button"
+                onClick={() => setShowAll((v) => !v)}
+                aria-expanded={showAll}
+                className="flex min-h-12 w-full items-center px-4 text-[15px] font-bold hover:bg-[var(--sunken)]"
+                style={{ color: 'var(--ink-2)', borderTop: '1px solid var(--line)' }}
+              >
+                {showAll ? 'Show fewer' : `Show all ${items.length} notes`}
+              </button>
+            ) : null}
+            {adding ? (
+              <div className="flex flex-col gap-2.5 p-3" style={{ borderTop: items.length ? '1px solid var(--line)' : undefined }}>
+                <label className="sr-only" htmlFor="mem-new">Something for your coach to remember</label>
+                <textarea
+                  id="mem-new"
+                  value={newContent}
+                  onChange={(e) => setNewContent(e.target.value)}
+                  maxLength={MAX_MEMORY_CHARS}
+                  autoFocus
+                  placeholder="e.g. I train best before 7am"
+                  className={textareaClass}
+                  style={textareaStyle}
+                />
+                <div className="flex justify-end gap-1">
+                  {textButton('Cancel', 'var(--ink)', () => {
+                    setAdding(false);
+                    setNewContent('');
+                  }, savingNew)}
+                  {textButton(savingNew ? 'Saving…' : 'Add', 'var(--teal)', () => void handleAdd(), savingNew || !newContent.trim())}
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => {
+                  setActionError(null);
+                  setAdding(true);
+                }}
+                className="flex min-h-[52px] w-full items-center gap-2 px-4 text-[15px] font-bold hover:bg-[var(--sunken)]"
+                style={{ color: 'var(--teal)', borderTop: items.length ? '1px solid var(--line)' : undefined }}
+              >
+                <Plus size={17} aria-hidden="true" /> Add something to remember
+              </button>
+            )}
+          </>
+        )}
+      </div>
+      {actionError ? <p role="alert" className="m-0 text-[13.5px] font-semibold" style={{ color: 'var(--danger)' }}>{actionError}</p> : null}
+    </section>
   );
 }

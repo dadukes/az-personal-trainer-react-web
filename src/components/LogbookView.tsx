@@ -1708,7 +1708,10 @@ function SetTable({ block, timerSet, timerRemaining, timerPaused, onTickSet, onV
 
 // ─── Sheets ──────────────────────────────────────────────────────────────────
 
-function InfoSheet({
+/** What the info sheet reads: a logbook block, or a plan exercise shaped like one. */
+export type InfoSubject = Pick<Block, 'name' | 'exercise_id' | 'targetMuscle' | 'notes' | 'cues' | 'swappedFrom'>;
+
+export function InfoSheet({
   block,
   detail,
   alternativeCount,
@@ -1716,11 +1719,12 @@ function InfoSheet({
   onAlternatives,
   onClose,
 }: {
-  block: Block;
+  block: InfoSubject;
   detail: ExerciseDetail | null;
   alternativeCount: number;
   accessToken?: string;
-  onAlternatives: () => void;
+  /** Left out where there is nothing to swap to (cardio, classes). */
+  onAlternatives?: () => void;
   onClose: () => void;
 }) {
   const target = detail?.target ?? block.targetMuscle;
@@ -1766,9 +1770,11 @@ function InfoSheet({
             <a href={youtubeSearchUrl(block.name)} target="_blank" rel="noreferrer" className="flex h-12 flex-1 items-center justify-center rounded-[14px] text-[14px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>Watch on YouTube</a>
             <a href={googleSearchUrl(block.name)} target="_blank" rel="noreferrer" className="flex h-12 flex-1 items-center justify-center rounded-[14px] text-[14px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>Search Google</a>
           </div>
-          <Button variant="strong" fullWidth onClick={onAlternatives}>
-            {alternativeCount > 0 ? `See ${alternativeCount} alternative${alternativeCount === 1 ? '' : 's'} from your coach` : 'Find an alternative'}
-          </Button>
+          {onAlternatives ? (
+            <Button variant="strong" fullWidth onClick={onAlternatives}>
+              {alternativeCount > 0 ? `See ${alternativeCount} alternative${alternativeCount === 1 ? '' : 's'} from your coach` : 'Find an alternative'}
+            </Button>
+          ) : null}
         </div>
       </div>
     </Sheet>

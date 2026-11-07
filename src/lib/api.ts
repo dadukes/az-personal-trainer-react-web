@@ -54,6 +54,8 @@ export interface ActivityLogPayload {
   notes?: string;
   /** Cardio only — drives the proportional cardio XP tier. Must be positive when sent. */
   distance_km?: number;
+  /** When it happened (ISO), for an earlier day. Left out for now. */
+  completed_at?: string;
 }
 
 export interface NutritionLogPayload {
@@ -202,7 +204,10 @@ export type HeartRateZone = 1 | 2 | 3 | 4 | 5;
 /** Present on `cardio` exercises when `cardio_format === 'intervals'`. */
 export interface ExerciseIntervals {
   rounds: number;
-  work_seconds: number;
+  /** Absent on a distance repeat (`work_distance_m`), which runs to a distance, not a clock. */
+  work_seconds?: number;
+  /** Work distance per round in metres, e.g. 800. A round has a time, a distance, or both. */
+  work_distance_m?: number;
   recover_seconds: number;
   work_hr_zone?: HeartRateZone;
   recover_hr_zone?: HeartRateZone;

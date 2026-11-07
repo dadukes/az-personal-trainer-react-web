@@ -1,10 +1,9 @@
-import { Activity, Home, LogOut, MessageSquare, Moon, Settings, Sun, TrendingUp, Utensils } from 'lucide-react';
+import { Activity, Home, MessageSquare, TrendingUp, Utensils } from 'lucide-react';
 import type { ComponentType } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/providers/AuthProvider';
-import { useAppTheme } from '@/providers/ThemeProvider';
 import { useAppStore } from '@/store/useAppStore';
 
 interface NavItem {
@@ -36,24 +35,13 @@ function isImmersiveRoute(pathname: string): boolean {
 }
 
 export default function AppShell({ children }: { children: React.ReactNode }) {
-  const navigate = useNavigate();
   const { pathname } = useLocation();
   const immersive = isImmersiveRoute(pathname);
-  const { user, signOut } = useAuth();
-  const { isDark, toggleTheme } = useAppTheme();
+  const { user } = useAuth();
   const profile = useAppStore((s) => s.profile);
 
   const { name, email } = deriveDisplay(user?.email, profile.display_name);
   const initial = (name[0] ?? 'F').toUpperCase();
-
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-      navigate('/login');
-    } catch {
-      // no-op — provider surfaces errors elsewhere
-    }
-  };
 
   return (
     /*
@@ -113,35 +101,22 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
 
         <div className="flex flex-col gap-2.5">
           <div className="mx-1 mb-1 h-px" style={{ background: 'var(--border-base)' }} />
-          <div className="flex items-center gap-2.5 px-2 py-1.5">
+          {/* The account lives on Profile: theme, log out and delete are there. */}
+          <NavLink
+            to="/profile"
+            aria-label="Profile and settings"
+            className={({ isActive }) => `flex items-center gap-2.5 rounded-xl px-2 py-1.5 transition-colors hover:bg-[var(--sunken)] ${isActive ? 'bg-[var(--sunken)]' : ''}`}
+          >
             <Avatar initial={initial} />
             <div className="min-w-0 flex-1">
-              <div
-                className="truncate text-[13.5px] font-bold"
-                style={{ color: 'var(--text-primary)' }}
-              >
+              <div className="truncate text-[13.5px] font-bold" style={{ color: 'var(--ink)' }}>
                 {name}
               </div>
-              <div className="truncate text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+              <div className="truncate text-[11.5px]" style={{ color: 'var(--ink-3)' }}>
                 {email}
               </div>
             </div>
-            <button onClick={toggleTheme} aria-label="Toggle theme" className="p-1">
-              {isDark ? <Sun size={17} color="var(--tab-inactive)" /> : <Moon size={17} color="var(--tab-inactive)" />}
-            </button>
-            <button onClick={() => navigate('/profile')} aria-label="Edit profile" className="p-1">
-              <Settings size={17} color="var(--tab-inactive)" />
-            </button>
-          </div>
-          <button
-            onClick={handleSignOut}
-            className="flex items-center gap-2.5 rounded-xl px-3 py-2.5 text-left transition-colors hover:bg-[var(--bg-subtle)]"
-          >
-            <LogOut size={17} color="var(--forma-danger)" strokeWidth={2} />
-            <span className="text-[13.5px] font-semibold" style={{ color: 'var(--forma-danger)' }}>
-              Sign out
-            </span>
-          </button>
+          </NavLink>
         </div>
       </aside>
       )}
@@ -172,16 +147,9 @@ export default function AppShell({ children }: { children: React.ReactNode }) {
           ))}
         </div>
         <div className="flex flex-col items-center gap-4">
-          <button onClick={() => navigate('/profile')} aria-label="Edit profile">
-            <Settings size={18} color="var(--tab-inactive)" />
-          </button>
-          <button onClick={toggleTheme} aria-label="Toggle theme">
-            {isDark ? <Sun size={18} color="var(--tab-inactive)" /> : <Moon size={18} color="var(--tab-inactive)" />}
-          </button>
-          <button onClick={handleSignOut} aria-label="Sign out">
-            <LogOut size={18} color="var(--forma-danger)" />
-          </button>
-          <Avatar initial={initial} />
+          <NavLink to="/profile" aria-label="Profile and settings" className="rounded-full">
+            <Avatar initial={initial} />
+          </NavLink>
         </div>
       </aside>
       )}

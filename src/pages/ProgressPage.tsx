@@ -337,6 +337,7 @@ export default function ProgressPage() {
           unitSystem={unitSystem}
           saving={bodySaving}
           error={bodyError}
+          measurements={bodyMeasurements}
           onSave={(entry) => void handleSaveBody(entry)}
           onDelete={bodyDialog.editing ? () => void handleDeleteBody() : undefined}
           onClose={() => setBodyDialog(null)}

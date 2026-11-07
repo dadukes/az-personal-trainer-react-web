@@ -1,10 +1,11 @@
-import { ChevronLeft, MessageSquare } from 'lucide-react';
+import { ChevronLeft, ChevronRight, MessageSquare } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 
 import ChatMarkdown from '@/components/ChatMarkdown';
+import { chatMeta, chatSummary, chatTakeaways, chatTitle, groupChats } from '@/lib/chatHistory';
 import { historyLine } from '@/lib/planSuggestion';
-import { Badge, Card, Eyebrow, Row, Surface } from '@/components/ui';
+import { localISODate } from '@/lib/workout';
 import {
   getChatHistory,
   getChatSessions,
@@ -13,11 +14,7 @@ import {
 } from '@/lib/api';
 import { useAuth } from '@/providers/AuthProvider';
 
-function formatSessionDate(dateStr: string): string {
-  const d = new Date(`${dateStr}T00:00:00`);
-  if (Number.isNaN(d.getTime())) return dateStr;
-  return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
-}
+const PAGE = 30;
 
 /** Set when a session was opened by tapping the list, so Back can pop to it. */
 interface OpenedFromList {
@@ -39,6 +36,8 @@ export default function ChatHistoryPage() {
   const [messages, setMessages] = useState<ChatHistoryMessage[]>([]);
   const [loadingMessages, setLoadingMessages] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   // Below md the document is the scroller, so the list's position survives a trip into
   // a transcript only if we put it back.
   const listScrollRef = useRef(0);
@@ -53,8 +52,11 @@ export default function ChatHistoryPage() {
     let active = true;
     void (async () => {
       try {
-        const { sessions: list } = await getChatSessions(token, 50, 0);
-        if (active) setSessions(list);
+        const { sessions: list } = await getChatSessions(token, PAGE, 0);
+        if (active) {
+          setSessions(list);
+          setHasMore(list.length === PAGE);
+        }
       } catch (err) {
         if (active) setError(err instanceof Error ? err.message : 'Could not load your chat history.');
       } finally {
@@ -71,7 +73,7 @@ export default function ChatHistoryPage() {
   // hidden until a session is tapped.
   const selected =
     sessions.find((s) => s.id === openId) ??
-    (openId ? undefined : (sessions.find((s) => s.status === 'closed') ?? sessions[0]));
+    (openId ? undefined : sessions.find((s) => s.status === 'closed'));
   const selectedId = selected?.id;
 
   useEffect(() => {
@@ -114,143 +116,169 @@ export default function ChatHistoryPage() {
     else setSearchParams({}, { replace: true });
   };
 
-  return (
-    <div className="mx-auto flex w-full max-w-[1120px] flex-col gap-5 p-5 sm:p-8">
-      <div className="flex items-center gap-3">
-        <button
-          onClick={handleBack}
-          aria-label={openId ? 'Back to chat history' : 'Back to coach'}
-          className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl"
-          style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
-        >
-          <ChevronLeft size={20} color="var(--text-secondary)" />
+  const loadMore = async () => {
+    if (!session?.access_token || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const { sessions: more } = await getChatSessions(session.access_token, PAGE, sessions.length);
+      setSessions((prev) => [...prev, ...more.filter((m) => !prev.some((p) => p.id === m.id))]);
+      setHasMore(more.length === PAGE);
+    } catch {
+      // Keep what's shown; the button stays for another try.
+    } finally {
+      setLoadingMore(false);
+    }
+  };
+
+  const { today, groups } = groupChats(sessions, localISODate());
+  const empty = !loadingSessions && !error && !today && groups.length === 0;
+  const takeaways = selected ? chatTakeaways(selected) : [];
+  const summary = selected ? chatSummary(selected) : null;
+
+  const list = (
+    <div className="flex flex-col gap-5">
+      {today ? (
+        <button type="button" onClick={() => navigate('/coach')} className="flex items-center gap-3 rounded-[20px] p-4 text-left" style={{ background: 'var(--surface)' }}>
+          <span className="flex flex-1 flex-col gap-0.5">
+            <span className="text-[15px] font-bold" style={{ color: 'var(--ink)' }}>Today&apos;s chat</span>
+            <span className="text-[13px]" style={{ color: 'var(--ink-2)' }}>
+              {today.message_count} {today.message_count === 1 ? 'message' : 'messages'} · still going
+            </span>
+          </span>
+          <span className="flex min-h-10 items-center rounded-full px-3.5 text-[14px] font-bold" style={{ background: 'var(--aqua)', color: 'var(--on-aqua)' }}>
+            Continue
+          </span>
         </button>
-        <div>
-          <Eyebrow>Coach</Eyebrow>
-          <div className="text-[24px] font-extrabold" style={{ color: 'var(--text-primary)' }}>
-            Chat history
+      ) : null}
+      {groups.map((group) => (
+        <section key={group.title} aria-label={group.title} className="flex flex-col gap-2.5">
+          <h2 className="type-section-title m-0 px-1" style={{ color: 'var(--ink)' }}>{group.title}</h2>
+          <div className="overflow-hidden rounded-[20px]" style={{ background: 'var(--surface)' }}>
+            {group.sessions.map((s, i) => {
+              const line = chatSummary(s);
+              const on = s.id === selectedId;
+              return (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => openSession(s.id)}
+                  aria-current={on ? 'true' : undefined}
+                  className={`flex w-full items-center gap-2.5 px-4 py-3 text-left hover:bg-[var(--sunken)] ${on ? 'lg:bg-[var(--sunken)]' : ''}`}
+                  style={{ borderTop: i === 0 ? undefined : '1px solid var(--line)' }}
+                >
+                  <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <span className="truncate text-[15px] font-bold" style={{ color: 'var(--ink)' }}>{chatTitle(s)}</span>
+                    {line ? <span className="line-clamp-2 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>{line}</span> : null}
+                    <span className="text-[12.5px]" style={{ color: 'var(--ink-3)' }}>{chatMeta(s)}</span>
+                  </span>
+                  <ChevronRight size={16} color="var(--ink-3)" aria-hidden="true" className="lg:hidden" />
+                </button>
+              );
+            })}
           </div>
+        </section>
+      ))}
+      {hasMore ? (
+        <button type="button" onClick={() => void loadMore()} disabled={loadingMore} className="h-12 rounded-2xl text-[15px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+          {loadingMore ? 'Loading…' : 'Show older chats'}
+        </button>
+      ) : null}
+    </div>
+  );
+
+  const transcript = selected ? (
+    <div className="flex flex-col gap-5">
+      <header className="flex flex-col gap-0.5">
+        <span className="text-[13px] font-semibold" style={{ color: 'var(--ink-3)' }}>{chatMeta(selected)}</span>
+        <h2 className="m-0 text-[22px] font-bold leading-7" style={{ color: 'var(--ink)' }}>{chatTitle(selected)}</h2>
+      </header>
+      {summary || takeaways.length ? (
+        <section aria-label="What came out of it" className="flex flex-col gap-2 rounded-[20px] p-4" style={{ background: 'var(--surface)' }}>
+          <h3 className="m-0 text-[15px] font-bold" style={{ color: 'var(--ink)' }}>What came out of it</h3>
+          {summary ? <p className="m-0 text-[15px] leading-[22px]" style={{ color: 'var(--ink-2)' }}>{summary}</p> : null}
+          {takeaways.length ? (
+            <ul className="m-0 flex list-disc flex-col gap-1 pl-5 text-[15px] leading-[22px]" style={{ color: 'var(--ink)' }}>
+              {takeaways.map((t) => (
+                <li key={t}>{t}</li>
+              ))}
+            </ul>
+          ) : null}
+        </section>
+      ) : null}
+      {loadingMessages ? (
+        <p className="m-0 text-[15px]" style={{ color: 'var(--ink-2)' }}>Loading…</p>
+      ) : (
+        <div className="flex flex-col gap-5">
+          {messages.map((m) => (
+            <div key={m.id} className="flex flex-col gap-2">
+              {m.role === 'user' ? (
+                <div className="max-w-[82%] self-end rounded-[20px] rounded-br-md px-4 py-2.5 text-[15px] leading-[21px]" style={{ background: 'var(--ink)', color: 'var(--ground)' }}>
+                  {m.content}
+                </div>
+              ) : (
+                <div className="flex flex-col gap-2">
+                  <span className="flex items-center gap-2 text-[13px] font-bold" style={{ color: 'var(--ink-2)' }}>
+                    <img src="/forma_logo.png" alt="" className="h-5 w-5" /> Coach
+                  </span>
+                  <ChatMarkdown content={m.content} />
+                </div>
+              )}
+              {m.suggestion ? (
+                <div className="rounded-[14px] px-3.5 py-2.5 text-[13.5px] font-semibold" style={{ background: 'var(--surface)', color: 'var(--ink-2)' }}>
+                  {historyLine(m.suggestion)}
+                </div>
+              ) : null}
+            </div>
+          ))}
         </div>
+      )}
+      <footer className="flex flex-col gap-2.5 pt-2" style={{ borderTop: '1px solid var(--line)' }}>
+        <p className="m-0 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+          This chat has closed. Anything worth keeping went into what your coach remembers.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <button type="button" onClick={() => navigate('/profile')} className="min-h-[44px] rounded-full px-4 text-[14px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+            See what it remembers
+          </button>
+          <button type="button" onClick={() => navigate('/coach')} className="min-h-[44px] rounded-full px-4 text-[14px] font-bold" style={{ background: 'var(--sunken)', color: 'var(--ink)' }}>
+            Go to today&apos;s chat
+          </button>
+        </div>
+      </footer>
+    </div>
+  ) : null;
+
+  return (
+    <div className="mx-auto flex w-full max-w-[1120px] animate-fade-slide-up flex-col gap-5 px-4 pb-16 pt-5 sm:px-10 sm:pt-8">
+      <div className="flex items-center gap-1">
+        <button type="button" onClick={handleBack} aria-label={openId ? 'Back to past chats' : 'Back to Coach'} className="-ml-2.5 flex h-11 w-11 items-center justify-center">
+          <ChevronLeft size={24} color="var(--ink)" aria-hidden="true" />
+        </button>
+        <h1 className="type-screen-title m-0" style={{ color: 'var(--ink)' }}>Past chats</h1>
       </div>
 
       {error ? (
-        <Card>
-          <p className="text-[14px]" style={{ color: 'var(--forma-danger)' }}>
-            {error}
+        <p role="alert" className="m-0 text-[15px]" style={{ color: 'var(--ink-2)' }}>{error}</p>
+      ) : loadingSessions ? (
+        <p className="m-0 text-[15px]" style={{ color: 'var(--ink-2)' }}>Loading…</p>
+      ) : empty ? (
+        <section aria-label="No past chats yet" className="mx-auto flex max-w-[480px] flex-col items-center gap-3.5 rounded-[24px] p-6 text-center" style={{ background: 'var(--surface)' }}>
+          <span aria-hidden="true" className="flex h-14 w-14 items-center justify-center rounded-full" style={{ background: 'var(--tint)' }}>
+            <MessageSquare size={24} color="var(--teal)" />
+          </span>
+          <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>Your chats will collect here</h2>
+          <p className="m-0 text-[15px] leading-[22px]" style={{ color: 'var(--ink-2)' }}>
+            Each day&apos;s conversation with your coach lands here once the day is over, with a one-line summary, so you can look back at what you agreed.
           </p>
-        </Card>
+          <button type="button" onClick={() => navigate('/coach')} className="h-12 rounded-2xl px-5 text-[15px] font-bold" style={{ background: 'var(--aqua)', color: 'var(--on-aqua)' }}>
+            Talk to your coach
+          </button>
+        </section>
       ) : (
-        <div className="flex flex-col gap-5 lg:flex-row lg:items-start">
-          {/* Session list — its own screen below lg, a sidebar from lg */}
-          <div className={`${openId ? 'hidden lg:flex' : 'flex'} flex-col gap-2.5 lg:w-[340px] lg:min-w-[340px]`}>
-            {loadingSessions ? (
-              <div className="flex justify-center py-10">
-                <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-              </div>
-            ) : sessions.length === 0 ? (
-              <Card>
-                <p className="text-[13.5px]" style={{ color: 'var(--text-muted)' }}>
-                  No past sessions yet. Your saved coach conversations will appear here.
-                </p>
-              </Card>
-            ) : (
-              <Surface padding="0" className="overflow-hidden">
-                {sessions.map((s, index) => {
-                  const summary = s.summary_json?.one_line ?? s.summary;
-                  return (
-                    <Row
-                      key={s.id}
-                      first={index === 0}
-                      selected={selected?.id === s.id}
-                      title={<span className="block truncate">{s.title ?? formatSessionDate(s.session_date)}</span>}
-                      meta={
-                        <>
-                          {s.title ? `${formatSessionDate(s.session_date)} · ` : ''}
-                          {s.message_count} messages
-                          {summary ? <span className="mt-1 line-clamp-2">{summary}</span> : null}
-                        </>
-                      }
-                      trailing={s.status === 'open' ? <Badge tone="mint">Open</Badge> : undefined}
-                      onClick={() => openSession(s.id)}
-                    />
-                  );
-                })}
-              </Surface>
-            )}
-          </div>
-
-          {/* Selected transcript (read-only) — only shown below lg once a session is opened */}
-          <Card className={`${openId ? 'block' : 'hidden lg:block'} min-w-0 flex-1`} padding="0">
-            {!selected ? (
-              <div className="flex flex-col items-center justify-center gap-2 p-16 text-center">
-                <MessageSquare size={24} color="var(--text-muted)" />
-                <p className="text-[13.5px]" style={{ color: 'var(--text-muted)' }}>
-                  {openId && !loadingSessions
-                    ? 'This conversation is no longer available.'
-                    : 'Select a session to read the conversation.'}
-                </p>
-              </div>
-            ) : (
-              <div className="flex flex-col">
-                <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border-base)' }}>
-                  <div className="text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
-                    {selected.title ?? formatSessionDate(selected.session_date)}
-                  </div>
-                  <div className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                    {selected.title ? `${formatSessionDate(selected.session_date)} · ` : ''}
-                    {selected.message_count} messages
-                  </div>
-                </div>
-                {/* Mobile scrolls the document (so the URL bar can hide); only the
-                    side-by-side layout needs its own scroll region. */}
-                <div className="flex flex-col gap-3.5 p-4 sm:p-5 lg:max-h-[70vh] lg:overflow-y-auto">
-                  {loadingMessages ? (
-                    <div className="flex justify-center py-10">
-                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-t-transparent" style={{ borderColor: 'var(--accent)', borderTopColor: 'transparent' }} />
-                    </div>
-                  ) : messages.length === 0 ? (
-                    <p className="py-6 text-center text-[13px]" style={{ color: 'var(--text-muted)' }}>
-                      No messages in this session.
-                    </p>
-                  ) : (
-                    messages.map((m) => {
-                      const isUser = m.role === 'user';
-                      return (
-                        <div key={m.id} className="flex flex-col gap-1.5">
-                        <div className={`flex ${isUser ? 'justify-end' : 'justify-start'}`}>
-                          {!isUser ? (
-                            <div className="mr-2 mt-1.5 flex h-8 w-8 flex-shrink-0 items-center justify-center">
-                              <img src="/forma_logo.png" alt="" aria-hidden="true" width={28} height={28} className="object-contain" />
-                            </div>
-                          ) : null}
-                          <div
-                            className={`min-w-0 max-w-[82%] break-words rounded-2xl px-4 py-3 md:max-w-[560px] ${isUser ? 'rounded-br-sm' : 'rounded-bl-sm'}`}
-                            style={{
-                              background: isUser ? 'var(--accent)' : 'var(--bg-subtle)',
-                              color: isUser ? 'var(--text-on-accent)' : 'var(--text-secondary)',
-                              border: isUser ? 'none' : '1px solid var(--border-base)',
-                            }}
-                          >
-                            {isUser ? (
-                              <span className="text-[14px] leading-6">{m.content}</span>
-                            ) : (
-                              <ChatMarkdown content={m.content} />
-                            )}
-                          </div>
-                        </div>
-                        {m.suggestion ? (
-                          <p className="m-0 ml-10 text-[13px] font-semibold" style={{ color: 'var(--ink-2)' }}>
-                            {historyLine(m.suggestion)}
-                          </p>
-                        ) : null}
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            )}
-          </Card>
+        <div className="grid items-start gap-6 lg:grid-cols-[minmax(300px,380px)_minmax(0,1fr)]">
+          {/* Below lg the list and a transcript are two screens; side by side from lg. */}
+          <div className={openId ? 'hidden lg:block' : ''}>{list}</div>
+          <div className={openId ? '' : 'hidden lg:block'}>{transcript}</div>
         </div>
       )}
     </div>

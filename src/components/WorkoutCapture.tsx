@@ -17,7 +17,7 @@ import { useCallback, useEffect, useRef, useState, type ComponentType, type Reac
 import { DurationEntry, NumberEntry } from '@/components/NumberEntry';
 import { Badge, Button, Card, Eyebrow } from '@/components/ui';
 import type { CardioActivityKind } from '@/lib/api';
-import { cardioKindLabel, formatDistanceKm, hrZoneHelper, hrZoneText } from '@/lib/exercise';
+import { cardioKindLabel, formatDistanceKm, hrZoneHelper, hrZoneText, intervalWorkText } from '@/lib/exercise';
 import { roundTo } from '@/lib/numberEntry';
 import { useHoldRepeat } from '@/lib/useHoldRepeat';
 import { useWakeLock } from '@/lib/wakeLock';
@@ -436,6 +436,11 @@ export function IntervalPlayer({
   const rounds = block.sets.length;
   const workSeconds = intervals?.work_seconds ?? 60;
   const recoverSeconds = intervals?.recover_seconds ?? 60;
+  // A distance repeat (4 × 800 m) has no clock to run down: its work phase counts up
+  // until the runner says the round is done.
+  const openWork = !intervals?.work_seconds && Boolean(intervals?.work_distance_m);
+  const workText = intervals ? intervalWorkText(intervals) : null;
+  const workStartRef = useRef<number | null>(null);
 
   // Resume at the first round that has not been completed.
   const firstIncomplete = completed.findIndex((c) => !c);
@@ -459,12 +464,22 @@ export function IntervalPlayer({
   const phaseSeconds = isWork ? workSeconds : recoverSeconds;
   const phaseZone = isWork ? intervals?.work_hr_zone : intervals?.recover_hr_zone;
 
-  const startPhase = useCallback((next: 'work' | 'recover', seconds: number) => {
-    endsAtRef.current = Date.now() + seconds * 1000;
-    setRemaining(seconds);
-    setActivePhase(next);
-    setStatus('running');
-  }, []);
+  const startPhase = useCallback(
+    (next: 'work' | 'recover', seconds: number) => {
+      if (next === 'work' && openWork) {
+        endsAtRef.current = null;
+        workStartRef.current = Date.now();
+        setRemaining(0);
+      } else {
+        workStartRef.current = null;
+        endsAtRef.current = Date.now() + seconds * 1000;
+        setRemaining(seconds);
+      }
+      setActivePhase(next);
+      setStatus('running');
+    },
+    [openWork],
+  );
 
   /**
    * Moves off the current phase. `credit` is false when the user skipped out of a work
@@ -497,6 +512,11 @@ export function IntervalPlayer({
   useEffect(() => {
     if (status !== 'running') return;
     const evaluate = () => {
+      // Counting up through a distance repeat: the number is the time so far.
+      if (workStartRef.current != null) {
+        setRemaining((Date.now() - workStartRef.current) / 1000);
+        return;
+      }
       const endsAt = endsAtRef.current;
       if (endsAt == null) return;
       const next = Math.max(0, (endsAt - Date.now()) / 1000);
@@ -523,24 +543,29 @@ export function IntervalPlayer({
   const pause = useCallback(() => {
     const endsAt = endsAtRef.current;
     if (endsAt != null) setRemaining(Math.max(0, (endsAt - Date.now()) / 1000));
+    if (workStartRef.current != null) setRemaining((Date.now() - workStartRef.current) / 1000);
     endsAtRef.current = null;
+    workStartRef.current = null;
     setStatus('paused');
   }, []);
 
   const resume = useCallback(() => {
     // Resuming keeps whatever is left on the clock, in the same phase.
-    endsAtRef.current = Date.now() + remaining * 1000;
+    if (openWork && activePhase === 'work') workStartRef.current = Date.now() - remaining * 1000;
+    else endsAtRef.current = Date.now() + remaining * 1000;
     setStatus('running');
-  }, [remaining]);
+  }, [remaining, openWork, activePhase]);
 
   const endEarly = useCallback(() => {
     endsAtRef.current = null;
+    workStartRef.current = null;
     setStatus('done');
     onEndEarlyRef.current();
   }, []);
 
   const running = status === 'running';
-  const progress = phaseSeconds > 0 ? Math.min(1, Math.max(0, (phaseSeconds - remaining) / phaseSeconds)) : 0;
+  const counting = openWork && isWork;
+  const progress = !counting && phaseSeconds > 0 ? Math.min(1, Math.max(0, (phaseSeconds - remaining) / phaseSeconds)) : 0;
   const tint = isWork ? 'var(--effort-work)' : 'var(--effort-recover)';
   const tintBg = isWork ? 'var(--effort-work-bg)' : 'var(--effort-recover-bg)';
   const totalRemaining =
@@ -573,7 +598,7 @@ export function IntervalPlayer({
               Round {Math.min(round + 1, rounds)} of {rounds}
             </Eyebrow>
             <span className="tabular text-[12px] font-semibold" style={{ color: 'var(--text-muted)' }}>
-              ~{formatClock(totalRemaining)} left
+              {openWork ? (workText ? `${workText} each` : '') : `~${formatClock(totalRemaining)} left`}
             </span>
           </div>
 
@@ -614,13 +639,13 @@ export function IntervalPlayer({
                   className="tabular text-[52px] font-extrabold leading-none"
                   style={{ color: running ? tint : 'var(--text-muted)' }}
                 >
-                  {formatClock(Math.ceil(Math.max(0, remaining)))}
+                  {formatClock(counting ? Math.floor(Math.max(0, remaining)) : Math.ceil(Math.max(0, remaining)))}
                 </span>
                 <span
                   className="mt-1 text-[15px] font-extrabold uppercase tracking-[0.14em]"
                   style={{ color: running ? tint : 'var(--text-muted)' }}
                 >
-                  {status === 'paused' ? 'PAUSED' : isWork ? 'WORK' : 'RECOVER'}
+                  {status === 'paused' ? 'PAUSED' : counting && workText ? workText : isWork ? 'WORK' : 'RECOVER'}
                 </span>
                 {running && phaseZone ? (
                   <span className="mt-0.5 text-[12px]" style={{ color: 'var(--text-muted)' }}>
@@ -661,15 +686,27 @@ export function IntervalPlayer({
             >
               {running ? 'Pause' : 'Resume'}
             </Button>
-            <Button
-              variant="quiet"
-              size="sm"
-              onClick={() => advancePhase(false)}
-              disabled={!running}
-              leftIcon={<SkipForward size={13} color="var(--accent-text)" />}
-            >
-              Skip
-            </Button>
+            {counting ? (
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => advancePhase(true)}
+                disabled={status === 'idle'}
+                leftIcon={<Check size={13} color="var(--accent-text)" strokeWidth={3} />}
+              >
+                Round done
+              </Button>
+            ) : (
+              <Button
+                variant="quiet"
+                size="sm"
+                onClick={() => advancePhase(false)}
+                disabled={!running}
+                leftIcon={<SkipForward size={13} color="var(--accent-text)" />}
+              >
+                Skip
+              </Button>
+            )}
             <Button variant="link" size="sm" onClick={endEarly}>
               End early
             </Button>

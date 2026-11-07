@@ -104,6 +104,26 @@ export function formatIntervalPair(workSeconds: number, recoverSeconds: number):
   return both.map((s) => (asSeconds ? `${Math.round(s)}s` : formatSeconds(s))).join('/');
 }
 
+/** One round's work: "800 m", "1.5 km", or a time when the round is timed. */
+export function intervalWorkText(intervals: { work_seconds?: number; work_distance_m?: number }): string | null {
+  const m = intervals.work_distance_m;
+  if (m && m > 0) return m >= 1000 ? `${Math.round(m / 10) / 100} km` : `${Math.round(m)} m`;
+  return null;
+}
+
+/**
+ * A whole interval block: "8 × 60s/90s" for timed rounds, "4 × 800 m / 90s" for distance
+ * repeats. Repeat distances stay in metres in both unit systems, as track work is written.
+ */
+export function formatIntervals(intervals: { rounds: number; work_seconds?: number; work_distance_m?: number; recover_seconds: number }): string {
+  const distance = intervalWorkText(intervals);
+  if (distance) {
+    const recover = intervals.recover_seconds > 0 ? ` / ${intervals.recover_seconds < 120 ? `${Math.round(intervals.recover_seconds)}s` : formatSeconds(intervals.recover_seconds)}` : '';
+    return `${intervals.rounds} × ${distance}${recover}`;
+  }
+  return `${intervals.rounds} × ${formatIntervalPair(intervals.work_seconds ?? 0, intervals.recover_seconds)}`;
+}
+
 /**
  * "24 kg" · "22.5 kg" — the load suffix on a target line, or `null` when there is none.
  * Zero means bodyweight, which is the absence of a load rather than a load of nothing.
@@ -202,8 +222,7 @@ export function exerciseMeta(ex: DashboardExercise): string {
   switch (type) {
     case 'cardio': {
       if (ex.cardio_format === 'intervals' && ex.intervals) {
-        const { rounds, work_seconds, recover_seconds } = ex.intervals;
-        return `${rounds} × ${formatIntervalPair(work_seconds, recover_seconds)}`;
+        return formatIntervals(ex.intervals);
       }
       const parts: string[] = [];
       if (ex.distance_km) parts.push(formatDistanceKm(ex.distance_km));
@@ -244,6 +263,41 @@ export interface ExercisePick {
   exerciseId?: string;
   targetMuscle?: string;
   bodyPart?: string;
+}
+
+/** A plan exercise from the Add search: a catalog pick, or a name used as typed. */
+export function newPlanExercise(pick: ExercisePick): DashboardExercise {
+  return {
+    name: pick.name,
+    type: 'reps',
+    sets: 3,
+    reps: '10',
+    ...(pick.exerciseId ? { exercise_id: pick.exerciseId } : {}),
+    ...(pick.targetMuscle ? { target_muscle: pick.targetMuscle } : {}),
+    ...(pick.bodyPart ? { body_part: pick.bodyPart } : {}),
+  };
+}
+
+const TARGET_FIELDS: { field: keyof DashboardExercise; label: string; types: ExerciseType[] }[] = [
+  { field: 'reps', label: 'reps', types: ['reps'] },
+  { field: 'target_weight', label: 'weight', types: ['reps', 'timed'] },
+  { field: 'duration_seconds', label: 'hold time', types: ['timed', 'mobility'] },
+  { field: 'distance_km', label: 'distance', types: ['cardio'] },
+  { field: 'target_duration_minutes', label: 'duration', types: ['cardio', 'class'] },
+  { field: 'target_hr_zone', label: 'heart-rate zone', types: ['cardio'] },
+  { field: 'intervals', label: 'intervals', types: ['cardio'] },
+];
+
+/**
+ * The targets a type change would clear, by name, so the editor can say so before it
+ * happens. Empty when nothing set is lost.
+ */
+export function targetsClearedBy(ex: DashboardExercise, next: ExerciseType): string[] {
+  return TARGET_FIELDS.filter(({ field, types }) => {
+    if (types.includes(next)) return false;
+    const value = ex[field];
+    return typeof value === 'number' ? value > 0 : value != null && value !== '';
+  }).map((f) => f.label);
 }
 
 /** A coach alternative as the pick the swap sheet hands back. */

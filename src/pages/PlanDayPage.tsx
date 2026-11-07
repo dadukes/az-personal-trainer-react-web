@@ -22,6 +22,7 @@ import { useEffect, useState, type ComponentType } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 import FindAlternativeDialog from '@/components/FindAlternativeDialog';
+import { InfoSheet } from '@/components/LogbookView';
 import { Button, Sheet, Surface } from '@/components/ui';
 import { getWorkoutPlan, updatePlanDay, type DashboardExercise } from '@/lib/api';
 import { splitFocus } from '@/lib/home';
@@ -31,7 +32,9 @@ import {
   exerciseMeta,
   isCatalogExercise,
   resolveExerciseType,
+  newPlanExercise,
   swapPlanExercise,
+  type ExercisePick,
   type ExerciseIconKey,
   formatExerciseName,
   formatMuscle,
@@ -166,6 +169,8 @@ export default function PlanDayPage() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [swapTarget, setSwapTarget] = useState<{ section: PlanSection; index: number } | null>(null);
+  // Reading, a click opens the exercise's info; the editor is only in Edit, where Save is.
+  const [infoTarget, setInfoTarget] = useState<{ section: PlanSection; index: number } | null>(null);
   /** The day reads by default; reordering, swapping and adding happen in Edit. */
   const [editing, setEditing] = useState(false);
   const [discardOpen, setDiscardOpen] = useState(false);
@@ -201,6 +206,9 @@ export default function PlanDayPage() {
   const isRest = !dayPlan || dayPlan.is_rest_day;
   const dirty = planDraft?.dirty ?? false;
   const canSave = Boolean(planDraft?.planId);
+  const infoExercise = infoTarget
+    ? dayPlan?.[SECTIONS.find((s) => s.key === infoTarget.section)!.field]?.[infoTarget.index]
+    : undefined;
   const swapExercise = swapTarget
     ? dayPlan?.[SECTIONS.find((s) => s.key === swapTarget.section)!.field]?.[swapTarget.index]
     : undefined;
@@ -210,10 +218,14 @@ export default function PlanDayPage() {
     if (dirty && planDraft?.day === dayKey) setEditing(true);
   }, [dirty, planDraft?.day, dayKey]);
 
-  const handleAdd = (section: PlanSection) => {
+  // Add asks what the exercise is first: a catalog pick brings its demo and how-to.
+  const [addTarget, setAddTarget] = useState<PlanSection | null>(null);
+  const handleAdd = (section: PlanSection) => setAddTarget(section);
+  const addPicked = (section: PlanSection, pick: ExercisePick) => {
     const field = SECTIONS.find((s) => s.key === section)!.field;
     const nextIndex = dayPlan?.[field]?.length ?? 0;
-    addDraftExercise(section, { name: 'New exercise', type: 'reps', sets: 3, reps: '10' });
+    addDraftExercise(section, newPlanExercise(pick));
+    setAddTarget(null);
     navigate(`/plan/${dayKey}/exercise/${section}/${nextIndex}`);
   };
 
@@ -336,7 +348,9 @@ export default function PlanDayPage() {
                       index={i}
                       count={items.length}
                       editing={editing}
-                      onOpen={() => navigate(`/plan/${dayKey}/exercise/${key}/${i}`)}
+                      onOpen={() =>
+                        editing ? navigate(`/plan/${dayKey}/exercise/${key}/${i}`) : setInfoTarget({ section: key, index: i })
+                      }
                       onMove={(dir) => moveDraftExercise(key, i, dir)}
                       onSwap={() => setSwapTarget({ section: key, index: i })}
                     />
@@ -402,6 +416,32 @@ export default function PlanDayPage() {
         </div>
       ) : null}
 
+      {infoTarget && infoExercise ? (
+        <InfoSheet
+          block={{
+            name: infoExercise.name,
+            exercise_id: infoExercise.exercise_id,
+            targetMuscle: infoExercise.target_muscle,
+            notes: infoExercise.notes,
+            cues: infoExercise.cues,
+          }}
+          detail={null}
+          alternativeCount={infoExercise.alternatives?.length ?? 0}
+          accessToken={session?.access_token}
+          // A swap changes the plan, so it happens in Edit, where Save is.
+          onAlternatives={
+            canSave && infoExercise.type !== 'cardio' && infoExercise.type !== 'class'
+              ? () => {
+                  setEditing(true);
+                  setSwapTarget(infoTarget);
+                  setInfoTarget(null);
+                }
+              : undefined
+          }
+          onClose={() => setInfoTarget(null)}
+        />
+      ) : null}
+
       {swapTarget && swapExercise ? (
         <FindAlternativeDialog
           accessToken={session?.access_token}
@@ -414,6 +454,18 @@ export default function PlanDayPage() {
             replaceDraftExercise(swapTarget.section, swapTarget.index, swapPlanExercise(swapExercise, pick));
             setSwapTarget(null);
           }}
+        />
+      ) : null}
+
+      {addTarget ? (
+        <FindAlternativeDialog
+          accessToken={session?.access_token}
+          name=""
+          mode="add"
+          title="What's the exercise?"
+          subtitle="Picking one from the catalog brings its form demo and how-to. Not there? Use what you typed."
+          onClose={() => setAddTarget(null)}
+          onPick={(pick) => addPicked(addTarget, pick)}
         />
       ) : null}
 
