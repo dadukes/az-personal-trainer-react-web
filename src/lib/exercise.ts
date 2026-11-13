@@ -263,19 +263,55 @@ export interface ExercisePick {
   exerciseId?: string;
   targetMuscle?: string;
   bodyPart?: string;
+  /** What Add chose it as. Absent is reps; a swap ignores it and keeps the exercise's own type. */
+  type?: ExerciseType;
+  /** Cardio only: the sport. */
+  activityKind?: CardioActivityKind;
 }
 
-/** A plan exercise from the Add search: a catalog pick, or a name used as typed. */
+/** Add's first question, so a run or a class never has to go through the catalog search. */
+export const ADD_KINDS: { type: ExerciseType; label: string }[] = [
+  { type: 'reps', label: 'Strength' },
+  { type: 'timed', label: 'Hold' },
+  { type: 'mobility', label: 'Mobility' },
+  { type: 'cardio', label: 'Cardio' },
+  { type: 'class', label: 'Class' },
+];
+
+/** The sports Add offers for cardio, in the order they're listed. */
+export const CARDIO_ACTIVITY_KINDS: CardioActivityKind[] = ['run', 'cycle', 'swim', 'row', 'walk', 'hike', 'other'];
+
+/**
+ * A plan exercise from Add: a catalog pick or a name used as typed, with the starting
+ * targets of the kind chosen (the same ones the editor's type change gives).
+ */
 export function newPlanExercise(pick: ExercisePick): DashboardExercise {
-  return {
-    name: pick.name,
-    type: 'reps',
-    sets: 3,
-    reps: '10',
+  const catalog = {
     ...(pick.exerciseId ? { exercise_id: pick.exerciseId } : {}),
     ...(pick.targetMuscle ? { target_muscle: pick.targetMuscle } : {}),
     ...(pick.bodyPart ? { body_part: pick.bodyPart } : {}),
   };
+  switch (pick.type ?? 'reps') {
+    case 'timed':
+      return { name: pick.name, type: 'timed', sets: 3, duration_seconds: 30, ...catalog };
+    case 'mobility':
+      return { name: pick.name, type: 'mobility', sets: 1, duration_seconds: 30, ...catalog };
+    // Cardio and class are never catalog-matched.
+    case 'cardio':
+      return {
+        name: pick.name,
+        type: 'cardio',
+        sets: 1,
+        activity_kind: pick.activityKind ?? 'other',
+        cardio_format: 'steady',
+        target_duration_minutes: 30,
+        target_hr_zone: 2,
+      };
+    case 'class':
+      return { name: pick.name, type: 'class', sets: 1, class_name: pick.name, target_duration_minutes: 45 };
+    default:
+      return { name: pick.name, type: 'reps', sets: 3, reps: '10', ...catalog };
+  }
 }
 
 const TARGET_FIELDS: { field: keyof DashboardExercise; label: string; types: ExerciseType[] }[] = [

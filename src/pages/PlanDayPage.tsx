@@ -44,6 +44,12 @@ import { useAppStore, type PlanSection } from '@/store/useAppStore';
 
 const DAY_KEYS = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
 
+const ADD_TO: Record<PlanSection, string> = {
+  warmup: 'To the warm-up',
+  main: 'To the main part',
+  cooldown: 'To the cool-down',
+};
+
 const SECTIONS: { key: PlanSection; label: string; field: 'warmup' | 'exercises' | 'cooldown' }[] = [
   { key: 'warmup', label: 'Warm-up', field: 'warmup' },
   { key: 'main', label: 'Main', field: 'exercises' },
@@ -462,8 +468,8 @@ export default function PlanDayPage() {
           accessToken={session?.access_token}
           name=""
           mode="add"
-          title="What's the exercise?"
-          subtitle="Picking one from the catalog brings its form demo and how-to. Not there? Use what you typed."
+          title="Add an exercise"
+          subtitle={ADD_TO[addTarget]}
           onClose={() => setAddTarget(null)}
           onPick={(pick) => addPicked(addTarget, pick)}
         />

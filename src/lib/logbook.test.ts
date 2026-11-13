@@ -123,6 +123,26 @@ describe('logbook actions', () => {
     expect(toLoggedExercises(blocks)[2]).toMatchObject({ name: 'Face Pull', exercise_id: 'exr_9', skipped: false, section: 'main' });
   });
 
+  it('adds a run or a hold as the kind Add chose', () => {
+    let blocks = addExercise([lift('A')], { name: 'Run', type: 'cardio', activityKind: 'run' }, 'kg');
+    blocks = addExercise(blocks, { name: 'Plank', exerciseId: 'exr_4', type: 'timed' }, 'kg');
+    expect(blocks[1]).toMatchObject({
+      addedToday: true,
+      type: 'cardio',
+      activityKind: 'run',
+      cardioFormat: 'steady',
+      durationSeconds: 1800,
+      exercise_id: undefined,
+      planned: undefined,
+    });
+    expect(blocks[1].key).toMatch(/^added-/);
+    expect(blocks[1].sets).toHaveLength(1);
+    expect(blocks[2]).toMatchObject({ type: 'timed', durationSeconds: 30, restSeconds: 60, exercise_id: 'exr_4' });
+    expect(blocks[2].sets).toHaveLength(3);
+    blocks = tickExercise(blocks, 1, true);
+    expect(toLoggedExercises(blocks)[1]).toMatchObject({ name: 'Run', type: 'cardio', skipped: false });
+  });
+
   it('gives added exercises different keys, even after a removal', () => {
     const pick = { name: 'Face Pull' };
     let blocks = addExercise(addExercise([lift('A')], pick, 'kg'), pick, 'kg');

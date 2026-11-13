@@ -40,6 +40,9 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   `ExercisePick`; the caller decides what a pick means (session swap vs plan draft edit). Like
   `CoachMemory` it owns its fetching. Full-screen below `sm` (a bottom sheet sits under the
   keyboard once search is focused), centred dialog above; portalled; search is not auto-focused.
+  In `add` mode it asks the kind first (Strength / Hold / Mobility / Cardio / Class, `ADD_KINDS`): the
+  catalog kinds search as before and the pick carries `type`; Cardio lists the sports and Class takes a
+  name, with no search. `newPlanExercise` (plan day) and `addExercise` (logbook) start it as that kind.
 - **`ProgressSnapshotSection.tsx`** — the `/progress` cards (`StrengthCard`, `ConsistencyCard` with the
   28-day grid, `BodyCard`, `FitnessCard`) from `progress_snapshot`, plus the body entries list, **collapsed** by default
   behind "Show entries (N)" (the card leads with the weight trend and tiles). Presentational;

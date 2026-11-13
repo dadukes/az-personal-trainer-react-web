@@ -3,6 +3,7 @@ import {
   type ExercisePick,
   formatDistanceKm,
   formatSeconds,
+  newPlanExercise,
   swapPlanExercise,
   usesWeight,
   weightText,
@@ -10,6 +11,7 @@ import {
 } from '@/lib/exercise';
 import {
   type Block,
+  buildBlock,
   isCountdownBlock,
   isIntervalBlock,
   swapBlock,
@@ -90,13 +92,15 @@ export function removeSet(blocks: Block[], blockIndex: number): Block[] {
 
 /**
  * An exercise added during a workout: three sets of ten, ready to change, before any cool-down.
- * There's no plan to read a weight from, so it starts blank until its history comes in.
+ * There's no plan to read a weight from, so it starts blank until its history comes in. Any
+ * other kind Add chose (a hold, a run, a class) starts from the targets a new plan exercise of
+ * that kind gets, but with no plan behind it, so there's nothing to swap back to.
  */
 export function addExercise(blocks: Block[], pick: ExercisePick, weightUnit: WeightUnit): Block[] {
   const taken = new Set(blocks.map((b) => b.key));
   let n = blocks.length;
   while (taken.has(`added-${n}-${pick.name}`)) n += 1;
-  const block: Block = {
+  const block: Block = pick.type && pick.type !== 'reps' ? addedOfKind(pick, n, weightUnit) : {
     key: `added-${n}-${pick.name}`,
     name: pick.name,
     exercise_id: pick.exerciseId,
@@ -115,6 +119,17 @@ export function addExercise(blocks: Block[], pick: ExercisePick, weightUnit: Wei
   const firstCooldown = blocks.findIndex((b) => b.section === 'cooldown');
   const at = firstCooldown === -1 ? blocks.length : firstCooldown;
   return [...blocks.slice(0, at), block, ...blocks.slice(at)];
+}
+
+function addedOfKind(pick: ExercisePick, n: number, weightUnit: WeightUnit): Block {
+  const block = buildBlock(newPlanExercise(pick), 'main', n, weightUnit);
+  return {
+    ...block,
+    key: `added-${n}-${pick.name}`,
+    planned: undefined,
+    addedToday: true,
+    restSeconds: pick.type === 'timed' ? 60 : block.restSeconds,
+  };
 }
 
 export function removeExercise(blocks: Block[], blockIndex: number): Block[] {

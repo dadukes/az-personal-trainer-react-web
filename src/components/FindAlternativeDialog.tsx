@@ -2,7 +2,7 @@ import { ChevronRight, Dumbbell, PencilLine, Search, X } from 'lucide-react';
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 
-import { Button, Eyebrow, Input } from '@/components/ui';
+import { Button, Eyebrow, Input, Segmented } from '@/components/ui';
 import {
   getExerciseAlternatives,
   getExercisesBatch,
@@ -11,8 +11,18 @@ import {
   searchExercises,
   type CatalogExerciseSummary,
   type CoachAlternative,
+  type ExerciseType,
 } from '@/lib/api';
-import { coachAlternativePick, isCoachAlternativeFor, type ExercisePick, formatExerciseName, formatMuscle } from '@/lib/exercise';
+import {
+  ADD_KINDS,
+  CARDIO_ACTIVITY_KINDS,
+  cardioKindLabel,
+  coachAlternativePick,
+  isCoachAlternativeFor,
+  type ExercisePick,
+  formatExerciseName,
+  formatMuscle,
+} from '@/lib/exercise';
 
 /**
  * The provider's name search returns a small bounded window (~10 max), so keep the page
@@ -129,6 +139,14 @@ export default function FindAlternativeDialog({
   const [loadingMore, setLoadingMore] = useState(false);
   const reqIdRef = useRef(0);
   const [recent, setRecent] = useState<{ item: CatalogExerciseSummary; pick: ExercisePick }[] | null>(null);
+  const [kind, setKind] = useState<ExerciseType>('reps');
+  const [className, setClassName] = useState('');
+  // Strength, holds and mobility are in the catalog; a run or a class isn't.
+  const catalogKind = mode !== 'add' || kind === 'reps' || kind === 'timed' || kind === 'mobility';
+  const pickAs = (pick: ExercisePick) => onPick(mode === 'add' ? { ...pick, type: kind } : pick);
+  const addClass = () => {
+    if (className.trim()) onPick({ name: className.trim(), type: 'class' });
+  };
 
   // Recent exercises come from the last few workouts, with pictures from the catalog. Any
   // failure just leaves search, which is what most people opened this for anyway.
@@ -340,26 +358,77 @@ export default function FindAlternativeDialog({
           </button>
         </div>
 
-        <div className="relative px-5 pb-3">
-          <Search size={16} color="var(--text-muted)" className="pointer-events-none absolute left-[34px] top-[24px] -translate-y-1/2" />
-          {/* Not auto-focused: on a phone that raises the keyboard over the suggestions,
-              which are what most people opened this for. 16px keeps iOS from zooming. */}
-          <Input
-            type="search"
-            enterKeyHint="search"
-            value={query}
-            placeholder="Search for an exercise…"
-            aria-label="Search for an exercise"
-            onChange={(e) => setQuery(e.target.value)}
-            style={{ paddingLeft: 40, fontSize: 16 }}
-          />
-        </div>
+        {mode === 'add' ? (
+          <div className="px-5 pb-3">
+            <Segmented options={ADD_KINDS.map((k) => ({ value: k.type, label: k.label }))} value={kind} onChange={setKind} />
+          </div>
+        ) : null}
+
+        {catalogKind ? (
+          <div className="relative px-5 pb-3">
+            <Search size={16} color="var(--text-muted)" className="pointer-events-none absolute left-[34px] top-[24px] -translate-y-1/2" />
+            {/* Not auto-focused: on a phone that raises the keyboard over the suggestions,
+                which are what most people opened this for. 16px keeps iOS from zooming. */}
+            <Input
+              type="search"
+              enterKeyHint="search"
+              value={query}
+              placeholder="Search for an exercise…"
+              aria-label="Search for an exercise"
+              onChange={(e) => setQuery(e.target.value)}
+              style={{ paddingLeft: 40, fontSize: 16 }}
+            />
+          </div>
+        ) : null}
 
         <div
           className="flex flex-1 flex-col gap-2 overflow-y-auto px-5 pb-[max(20px,env(safe-area-inset-bottom))]"
           style={{ overscrollBehavior: 'contain' }}
         >
-          {searchActive ? (
+          {mode === 'add' && kind === 'cardio' ? (
+            <>
+              <Eyebrow className="mt-1">Which one</Eyebrow>
+              {CARDIO_ACTIVITY_KINDS.map((k) => {
+                const label = k === 'other' ? 'Other cardio' : cardioKindLabel(k);
+                return (
+                  <button
+                    key={k}
+                    onClick={() => onPick({ name: cardioKindLabel(k), type: 'cardio', activityKind: k })}
+                    aria-label={`Add ${label.toLowerCase()}`}
+                    className="flex min-h-[52px] w-full items-center gap-3 rounded-xl px-3.5 text-left transition-transform active:scale-[0.99]"
+                    style={{ background: 'var(--bg-surface)', border: '1px solid var(--border-base)' }}
+                  >
+                    <span className="flex-1 text-[15px] font-bold" style={{ color: 'var(--text-primary)' }}>
+                      {label}
+                    </span>
+                    <ChevronRight size={17} color="var(--text-muted)" className="flex-shrink-0" />
+                  </button>
+                );
+              })}
+              <Muted>Time, distance, heart-rate zone or intervals come next.</Muted>
+            </>
+          ) : mode === 'add' && kind === 'class' ? (
+            <form
+              className="flex flex-col gap-2"
+              onSubmit={(e) => {
+                e.preventDefault();
+                addClass();
+              }}
+            >
+              <Input
+                value={className}
+                placeholder="Spin, Body Pump, Vinyasa…"
+                aria-label="Class name"
+                enterKeyHint="done"
+                onChange={(e) => setClassName(e.target.value)}
+                style={{ fontSize: 16 }}
+              />
+              <Muted>The class&rsquo;s length comes next.</Muted>
+              <Button type="submit" fullWidth disabled={!className.trim()}>
+                Add class
+              </Button>
+            </form>
+          ) : searchActive ? (
             <>
               {searching ? (
                 <Muted>Searching…</Muted>
@@ -369,7 +438,7 @@ export default function FindAlternativeDialog({
                     {total > results.length ? `Showing ${results.length} of ${total}` : 'Results'}
                   </Eyebrow>
                   {visibleResults.map((r) => (
-                    <ExerciseOptionRow key={r.id} item={r} onPick={() => onPick(toPick(r))} />
+                    <ExerciseOptionRow key={r.id} item={r} onPick={() => pickAs(toPick(r))} />
                   ))}
                   {results.length < total ? (
                     <Button variant="quiet" size="sm" fullWidth onClick={loadMore} disabled={loadingMore}>
@@ -383,7 +452,7 @@ export default function FindAlternativeDialog({
               {/* The catalog will never have everything — let the typed name stand. */}
               {!searching ? (
                 <button
-                  onClick={() => onPick({ name: term })}
+                  onClick={() => pickAs({ name: term })}
                   className="mt-1 flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-transform active:scale-[0.99]"
                   style={{ border: '1px dashed var(--border-strong)' }}
                 >
@@ -406,7 +475,7 @@ export default function FindAlternativeDialog({
               <>
                 <Eyebrow className="mt-1">From your recent workouts</Eyebrow>
                 {recent.map((r) => (
-                  <ExerciseOptionRow key={r.item.id} item={r.item} onPick={() => onPick(r.pick)} />
+                  <ExerciseOptionRow key={r.item.id} item={r.item} onPick={() => pickAs(r.pick)} />
                 ))}
               </>
             )

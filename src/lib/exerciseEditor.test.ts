@@ -24,6 +24,39 @@ describe('the exercise editor', () => {
     expect(newPlanExercise({ name: 'my thing' })).toEqual({ name: 'my thing', type: 'reps', sets: 3, reps: '10' });
   });
 
+  it('starts a new exercise as the kind Add chose', () => {
+    expect(newPlanExercise({ name: 'Plank', exerciseId: 'exr_2', type: 'timed' })).toEqual({
+      name: 'Plank',
+      type: 'timed',
+      sets: 3,
+      duration_seconds: 30,
+      exercise_id: 'exr_2',
+    });
+    expect(newPlanExercise({ name: 'Hip opener', type: 'mobility' })).toEqual({
+      name: 'Hip opener',
+      type: 'mobility',
+      sets: 1,
+      duration_seconds: 30,
+    });
+    // Cardio and class never keep a catalog link.
+    expect(newPlanExercise({ name: 'Run', exerciseId: 'exr_3', type: 'cardio', activityKind: 'run' })).toEqual({
+      name: 'Run',
+      type: 'cardio',
+      sets: 1,
+      activity_kind: 'run',
+      cardio_format: 'steady',
+      target_duration_minutes: 30,
+      target_hr_zone: 2,
+    });
+    expect(newPlanExercise({ name: 'Spin', type: 'class' })).toEqual({
+      name: 'Spin',
+      type: 'class',
+      sets: 1,
+      class_name: 'Spin',
+      target_duration_minutes: 45,
+    });
+  });
+
   it('names the targets a type change clears', () => {
     const lift = { name: 'Squat', type: 'reps' as const, sets: 3, reps: '8', target_weight: 60 };
     expect(targetsClearedBy(lift, 'cardio')).toEqual(['reps', 'weight']);
