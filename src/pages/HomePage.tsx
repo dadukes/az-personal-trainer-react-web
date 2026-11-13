@@ -1,5 +1,5 @@
 import { Check, ChevronRight, Dumbbell, Footprints, HeartPulse, Pencil, Play, Ruler, Sparkles } from 'lucide-react';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type CSSProperties } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { ActivityIcon } from '@/components/ActivityRow';
@@ -22,6 +22,7 @@ import {
   type DashboardResponse,
   type HistoryItem,
 } from '@/lib/api';
+import { activityTitle } from '@/lib/activities';
 import { loadManualCapture, manualCaptureFromLog, saveManualCapture, type ManualHealthCapture } from '@/lib/health';
 import {
   dateLabel,
@@ -396,31 +397,34 @@ export default function HomePage() {
     const name = splitFocus(todayPlan.focus);
     const heroLink = 'flex min-h-11 flex-1 items-center justify-center text-[14px] font-semibold';
     return (
-      <Surface tone="hero" className="flex flex-col gap-4" style={{ padding: '20px' }}>
-        <div className="flex flex-col gap-1.5">
-          <span className="text-[13px] font-semibold" style={{ color: 'var(--hero-sub)' }}>
-            {meta ? `Today · ${meta}` : 'Today'}
-          </span>
-          <h2 className="type-display m-0" style={{ color: 'var(--hero-ink)' }}>
-            {name.title}
-          </h2>
-          {name.subtitle ? (
-            <span className="text-[16px] font-medium leading-[22px]" style={{ color: 'var(--hero-sub)' }}>
-              {name.subtitle}
+      // From xl the name and note sit on the left and the actions on the right (board `WebHome`).
+      <Surface tone="hero" className="flex flex-col gap-4 xl:flex-row xl:flex-wrap xl:items-end xl:justify-between xl:gap-6" style={{ padding: 'clamp(20px, 2vw, 28px)' }}>
+        <div className="flex flex-col gap-4 xl:min-w-[260px] xl:flex-1">
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[13px] font-semibold xl:text-[14px]" style={{ color: 'var(--hero-sub)' }}>
+              {meta ? `Today · ${meta}` : 'Today'}
             </span>
+            <h2 className="type-display m-0 xl:text-[56px]" style={{ color: 'var(--hero-ink)' }}>
+              {name.title}
+            </h2>
+            {name.subtitle ? (
+              <span className="text-[16px] font-medium leading-[22px] xl:text-[17px]" style={{ color: 'var(--hero-sub)' }}>
+                {name.subtitle}
+              </span>
+            ) : null}
+          </div>
+          {todayPlan.ai_notes ? (
+            <p className="m-0 flex gap-2.5 text-[14px] leading-5 xl:text-[15px] xl:leading-[22px]" style={{ color: 'var(--hero-ink)' }}>
+              <Sparkles size={18} color="var(--aqua)" fill="var(--aqua)" className="mt-px flex-shrink-0" />
+              <span className="line-clamp-3">{todayPlan.ai_notes}</span>
+            </p>
           ) : null}
         </div>
-        {todayPlan.ai_notes ? (
-          <p className="m-0 flex gap-2.5 text-[14px] leading-5" style={{ color: 'var(--hero-ink)' }}>
-            <Sparkles size={18} color="var(--aqua)" fill="var(--aqua)" className="mt-px flex-shrink-0" />
-            <span className="line-clamp-3">{todayPlan.ai_notes}</span>
-          </p>
-        ) : null}
-        <div className="flex flex-col gap-1">
+        <div className="flex flex-col gap-1 xl:w-[260px]">
           <Button size="lg" fullWidth leftIcon={<Play size={18} fill="var(--on-aqua)" />} onClick={() => navigate('/workout/today')}>
             Start workout
           </Button>
-          <div className="flex">
+          <div className="flex xl:flex-col">
             <button type="button" className={heroLink} style={{ color: 'var(--hero-ink)' }} onClick={() => navigate(`/plan/${todayKey}`)}>
               View plan
             </button>
@@ -440,7 +444,7 @@ export default function HomePage() {
 
   return (
     // Extra bottom padding keeps the last section clear of the floating log button.
-    <div className="mx-auto flex w-full max-w-[680px] animate-fade-slide-up flex-col gap-6 px-4 pb-28 pt-6 sm:px-10 sm:pt-10">
+    <div className="mx-auto flex w-full max-w-[680px] animate-fade-slide-up flex-col gap-6 px-4 pb-28 pt-6 sm:px-10 sm:pt-10 xl:max-w-[1120px]">
       <header className="flex items-center justify-between gap-3">
         <div className="flex min-w-0 flex-col gap-0.5">
           <span className="type-meta font-semibold" style={{ color: 'var(--ink-3)' }}>
@@ -454,155 +458,222 @@ export default function HomePage() {
         <UserMenu className="md:hidden" />
       </header>
 
-      <PendingWorkoutsCard />
-      {renderToday()}
+      {/* From xl: today and the week on the left, health and Recent on the right (board `WebHome`).
+          Below that the two columns stack in the same order. */}
+      <div className="flex flex-col gap-6 xl:grid xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start xl:gap-5">
+        <div className="flex min-w-0 flex-col gap-6 xl:gap-5">
+          <PendingWorkoutsCard />
+          {renderToday()}
 
-      {/* This week: one strip, the plan's ticks and everything else. */}
-      {showWeek ? (
-        <section aria-label="This week" className="flex flex-col gap-3">
-          <div className="flex items-baseline justify-between">
-            <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
-              This week
-            </h2>
-            {week.planned > 0 ? (
-              <span className="type-meta font-semibold" style={{ color: 'var(--ink-3)' }}>
-                {week.done} of {week.planned} {week.planned === 1 ? 'workout' : 'workouts'}
-              </span>
-            ) : null}
-          </div>
-          <Surface padding="12px 6px 10px">
-            <div className="grid grid-cols-7">
-              {week.days.map((d) => (
-                <button
-                  key={d.date}
-                  type="button"
-                  aria-label={d.label}
-                  onClick={() => navigate(`/plan/${d.dayKey}`)}
-                  className="flex min-h-[66px] flex-col items-center gap-1.5 rounded-control transition-transform active:scale-[0.96]"
-                >
-                  <span className="text-[12px] font-semibold" style={{ color: d.isToday ? 'var(--ink)' : 'var(--ink-3)' }}>
-                    {d.letter}
+          {/* This week: one strip, the plan's ticks and everything else. */}
+          {showWeek ? (
+            <section aria-label="This week" className="flex flex-col gap-3">
+              <div className="flex items-baseline justify-between">
+                <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                  This week
+                </h2>
+                {week.planned > 0 ? (
+                  <span className="type-meta font-semibold" style={{ color: 'var(--ink-3)' }}>
+                    {week.done} of {week.planned} {week.planned === 1 ? 'workout' : 'workouts'}
                   </span>
-                  <span aria-hidden="true">
-                    <StatusTick status={d.state} label={String(d.dayOfMonth)} otherActivity={d.otherCount > 0} />
-                  </span>
-                </button>
-              ))}
-            </div>
-            {missed ? (
-              <div className="mx-2.5 mt-2.5 flex items-center gap-2 pt-1.5" style={{ borderTop: '1px solid var(--line)' }}>
-                <span className="flex-1 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
-                  {capitalize(missed.dayKey)}&rsquo;s {missed.title} isn&rsquo;t ticked. Did it?
-                </span>
-                <Button variant="link" size="sm" onClick={() => logWorkout({ date: missed.date, day: missed.dayKey })}>
-                  Log it
-                </Button>
+                ) : null}
               </div>
-            ) : null}
-          </Surface>
-        </section>
-      ) : null}
-
-      {/* Health in one row: only the numbers there are. */}
-      {stats.length > 0 ? (
-        <Surface padding="10px 16px 16px" className="flex flex-col gap-2.5">
-          <div className="flex items-center justify-between">
-            <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
-              Health
-            </h2>
-            <button
-              type="button"
-              onClick={openCapture}
-              aria-label="Edit today's health numbers"
-              className="flex min-h-11 items-center gap-1.5 text-[13px] font-semibold"
-              style={{ color: 'var(--ink-3)' }}
-            >
-              Edit
-              <Pencil size={15} />
-            </button>
-          </div>
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${stats.length}, minmax(0, 1fr))` }}>
-            {stats.map((stat) => (
-              <div key={stat.key} className="flex min-w-0 flex-col gap-1">
-                <span className="type-stat truncate" style={{ color: 'var(--ink)' }}>
-                  {stat.value}
-                </span>
-                <span className="text-[12px] leading-4" style={{ color: 'var(--ink-3)' }}>
-                  {stat.label}
-                </span>
+              <div className="hidden grid-cols-7 gap-2 xl:grid">
+                {week.days.map((d) => {
+                  const minutes = workoutFor(planDays, d.dayKey)?.estimated_duration_minutes ?? null;
+                  const others = weekActivities[d.date] ?? [];
+                  const today = d.isToday && d.state !== 'done';
+                  const rest = d.state === 'rest';
+                  return (
+                    <button
+                      key={d.date}
+                      type="button"
+                      aria-label={d.label}
+                      onClick={() => navigate(`/plan/${d.dayKey}`)}
+                      className="flex min-h-[124px] flex-col gap-1.5 rounded-button p-3 text-left transition-transform active:scale-[0.97]"
+                      style={{
+                        background: today ? 'var(--ink)' : rest ? 'transparent' : 'var(--surface)',
+                        color: today ? 'var(--ground)' : rest ? 'var(--ink-2)' : 'var(--ink)',
+                        boxShadow: rest ? 'inset 0 0 0 1px var(--line)' : undefined,
+                      }}
+                    >
+                      <span className="flex items-center justify-between text-[13px] font-semibold">
+                        {d.isToday ? 'Today' : capitalize(d.dayKey).slice(0, 3)}
+                        {d.state === 'done' ? <Check size={16} strokeWidth={3} color="var(--teal)" aria-hidden /> : null}
+                      </span>
+                      <span className="line-clamp-3 text-[14px] font-bold leading-[19px]">{d.title ?? 'Rest'}</span>
+                      {d.title && minutes ? <span className="text-[12.5px] opacity-85">{minutes} min</span> : null}
+                      {others.length > 0 ? (
+                        <span className="mt-auto flex min-w-0 items-center gap-1.5 text-[12.5px] font-semibold">
+                          <span className="h-[7px] w-[7px] flex-shrink-0 rounded-full" style={{ background: 'var(--sky-fill)' }} />
+                          <span className="truncate">
+                            {activityTitle(others[0])}
+                            {others.length > 1 ? ` +${others.length - 1}` : ''}
+                          </span>
+                        </span>
+                      ) : null}
+                    </button>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        </Surface>
-      ) : (
-        <Surface padding="16px" className="flex flex-col gap-3">
-          <div className="flex flex-col gap-1">
-            <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
-              Let your coach see how you slept
-            </h2>
-            <p className="m-0 text-[14px] leading-5" style={{ color: 'var(--ink-2)' }}>
-              Sleep, resting heart rate and steps help it adapt your training.
-            </p>
-          </div>
-          <Button variant="quiet" className="self-start" style={{ height: 44 }} onClick={openCapture}>
-            Enter today&rsquo;s numbers
-          </Button>
-        </Surface>
-      )}
+              {missed ? (
+                <div className="hidden items-center gap-2 xl:flex">
+                  <span className="flex-1 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+                    {capitalize(missed.dayKey)}&rsquo;s {missed.title} isn&rsquo;t ticked. Did it?
+                  </span>
+                  <Button variant="link" size="sm" onClick={() => logWorkout({ date: missed.date, day: missed.dayKey })}>
+                    Log it
+                  </Button>
+                </div>
+              ) : null}
+              <Surface padding="12px 6px 10px" className="xl:hidden">
+                <div className="grid grid-cols-7">
+                  {week.days.map((d) => (
+                    <button
+                      key={d.date}
+                      type="button"
+                      aria-label={d.label}
+                      onClick={() => navigate(`/plan/${d.dayKey}`)}
+                      className="flex min-h-[66px] flex-col items-center gap-1.5 rounded-control transition-transform active:scale-[0.96]"
+                    >
+                      <span className="text-[12px] font-semibold" style={{ color: d.isToday ? 'var(--ink)' : 'var(--ink-3)' }}>
+                        {d.letter}
+                      </span>
+                      <span aria-hidden="true">
+                        <StatusTick status={d.state} label={String(d.dayOfMonth)} otherActivity={d.otherCount > 0} />
+                      </span>
+                    </button>
+                  ))}
+                </div>
+                {missed ? (
+                  <div className="mx-2.5 mt-2.5 flex items-center gap-2 pt-1.5" style={{ borderTop: '1px solid var(--line)' }}>
+                    <span className="flex-1 text-[13.5px] leading-[19px]" style={{ color: 'var(--ink-2)' }}>
+                      {capitalize(missed.dayKey)}&rsquo;s {missed.title} isn&rsquo;t ticked. Did it?
+                    </span>
+                    <Button variant="link" size="sm" onClick={() => logWorkout({ date: missed.date, day: missed.dayKey })}>
+                      Log it
+                    </Button>
+                  </div>
+                ) : null}
+              </Surface>
+            </section>
+          ) : null}
+        </div>
 
-      {/* Recent: the latest few sessions. */}
-      {recent.length > 0 ? (
-        <section aria-label="Recent" className="flex flex-col gap-3">
-          <div className="flex items-center justify-between">
-            <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
-              Recent
-            </h2>
-            <button
-              type="button"
-              onClick={() => navigate('/activities')}
-              className="-my-3 flex min-h-11 items-center text-[13px] font-semibold"
-              style={{ color: 'var(--teal)' }}
-            >
-              All activities
-            </button>
-          </div>
-          <Surface padding="0" className="overflow-hidden">
-            {recent.map((item, i) => {
-              const line = recentLine(item, profile.preferred_unit_system, now);
-              const isWorkout = item.kind === 'workout';
-              return (
+        <div className="flex min-w-0 flex-col gap-6 xl:gap-5">
+          {/* Health in one row: only the numbers there are (two by two in the side column). */}
+          {stats.length > 0 ? (
+            <Surface padding="10px 16px 16px" className="flex flex-col gap-2.5">
+              <div className="flex items-center justify-between">
+                <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                  Health
+                </h2>
                 <button
-                  key={item.id}
                   type="button"
-                  onClick={() => navigate(isWorkout ? `/activities/workout/${item.id}` : `/activities/${item.id}`)}
-                  className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left"
-                  style={{ borderTop: i === 0 ? undefined : '1px solid var(--line)' }}
+                  onClick={openCapture}
+                  aria-label="Edit today's health numbers"
+                  className="flex min-h-11 items-center gap-1.5 text-[13px] font-semibold"
+                  style={{ color: 'var(--ink-3)' }}
                 >
-                  <span
-                    className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control"
-                    style={{ background: isWorkout ? 'var(--tint)' : 'var(--sunken)' }}
-                  >
-                    {item.kind === 'workout' ? (
-                      <Check size={20} strokeWidth={2.6} color="var(--teal)" />
-                    ) : (
-                      <ActivityIcon item={item.activity} size={20} color="var(--sky)" />
-                    )}
-                  </span>
-                  <span className="flex min-w-0 flex-1 flex-col gap-px">
-                    <span className="truncate text-[15px] font-semibold leading-5" style={{ color: 'var(--ink)' }}>
-                      {line.title}
-                    </span>
-                    <span className="truncate text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>
-                      {line.meta}
-                    </span>
-                  </span>
-                  <ChevronRight size={16} color="var(--ink-3)" className="flex-shrink-0" />
+                  Edit
+                  <Pencil size={15} />
                 </button>
-              );
-            })}
-          </Surface>
-        </section>
-      ) : null}
+              </div>
+              <div
+                className="grid grid-cols-[repeat(var(--cols),minmax(0,1fr))] gap-2 xl:grid-cols-2 xl:gap-y-4"
+                style={{ '--cols': stats.length } as CSSProperties}
+              >
+                {stats.map((stat) => (
+                  <div key={stat.key} className="flex min-w-0 flex-col gap-1">
+                    <span className="type-stat truncate" style={{ color: 'var(--ink)' }}>
+                      {stat.value}
+                    </span>
+                    <span className="text-[12px] leading-4" style={{ color: 'var(--ink-3)' }}>
+                      {stat.label}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Surface>
+          ) : (
+            <Surface padding="16px" className="flex flex-col gap-3">
+              <div className="flex flex-col gap-1">
+                <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                  Let your coach see how you slept
+                </h2>
+                <p className="m-0 text-[14px] leading-5" style={{ color: 'var(--ink-2)' }}>
+                  Sleep, resting heart rate and steps help it adapt your training.
+                </p>
+              </div>
+              <Button variant="quiet" className="self-start" style={{ height: 44 }} onClick={openCapture}>
+                Enter today&rsquo;s numbers
+              </Button>
+            </Surface>
+          )}
+
+          {/* Recent: the latest few sessions. */}
+          {recent.length > 0 ? (
+            <section aria-label="Recent" className="flex flex-col gap-3">
+              <div className="flex items-center justify-between">
+                <h2 className="type-section-title m-0" style={{ color: 'var(--ink)' }}>
+                  Recent
+                </h2>
+                <button
+                  type="button"
+                  onClick={() => navigate('/activities')}
+                  className="-my-3 flex min-h-11 items-center text-[13px] font-semibold"
+                  style={{ color: 'var(--teal)' }}
+                >
+                  All activities
+                </button>
+              </div>
+              <Surface padding="0" className="overflow-hidden">
+                {recent.map((item, i) => {
+                  const line = recentLine(item, profile.preferred_unit_system, now);
+                  const isWorkout = item.kind === 'workout';
+                  return (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => navigate(isWorkout ? `/activities/workout/${item.id}` : `/activities/${item.id}`)}
+                      className="flex min-h-16 w-full items-center gap-3 px-4 py-3 text-left"
+                      style={{ borderTop: i === 0 ? undefined : '1px solid var(--line)' }}
+                    >
+                      <span
+                        className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-control"
+                        style={{ background: isWorkout ? 'var(--tint)' : 'var(--sunken)' }}
+                      >
+                        {item.kind === 'workout' ? (
+                          <Check size={20} strokeWidth={2.6} color="var(--teal)" />
+                        ) : (
+                          <ActivityIcon item={item.activity} size={20} color="var(--sky)" />
+                        )}
+                      </span>
+                      <span className="flex min-w-0 flex-1 flex-col gap-px">
+                        <span className="truncate text-[15px] font-semibold leading-5" style={{ color: 'var(--ink)' }}>
+                          {line.title}
+                        </span>
+                        <span className="truncate text-[13px] leading-[18px]" style={{ color: 'var(--ink-3)' }}>
+                          {line.meta}
+                        </span>
+                      </span>
+                      <ChevronRight size={16} color="var(--ink-3)" className="flex-shrink-0" />
+                    </button>
+                  );
+                })}
+              </Surface>
+              <button
+                type="button"
+                onClick={() => navigate('/progress')}
+                className="-mt-1 hidden min-h-11 items-center self-start text-[14px] font-bold xl:flex"
+                style={{ color: 'var(--teal)' }}
+              >
+                See your progress
+              </button>
+            </section>
+          ) : null}
+        </div>
+      </div>
 
       {/* Every manual capture lives on one button, so competing "Log" buttons don't pile up. */}
       <QuickActionsFab

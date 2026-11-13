@@ -43,10 +43,15 @@ Scoped guidance for shared UI. See the root [CLAUDE.md](../../CLAUDE.md) for pro
   In `add` mode it asks the kind first (Strength / Hold / Mobility / Cardio / Class, `ADD_KINDS`): the
   catalog kinds search as before and the pick carries `type`; Cardio lists the sports and Class takes a
   name, with no search. `newPlanExercise` (plan day) and `addExercise` (logbook) start it as that kind.
-- **`ProgressSnapshotSection.tsx`** — the `/progress` cards (`StrengthCard`, `ConsistencyCard` with the
-  28-day grid, `BodyCard`, `FitnessCard`) from `progress_snapshot`, plus the body entries list, **collapsed** by default
-  behind "Show entries (N)" (the card leads with the weight trend and tiles). Presentational;
-  the page owns fetching. Mirrors the mobile `progress-snapshot-section`.
+- **`ProgressReport.tsx`** — the Progress reporting page's cards (Phase 9, board `WebProgress`): `KpiRow`,
+  `StrengthTableCard`, `WeightChartCard`, `TrainingTimeCard` and `ConsistencyGridCard`, from `GET /progress/report`.
+  Charts are plain SVG drawn at the container's measured width (`useWidth`), so text stays at real sizes; one series in
+  `--series`; a tooltip on hover (value first, then the label); a **Table** toggle on each chart. Logic in
+  `src/lib/report.ts`. Presentational; the page owns fetching.
+- **`ProgressSnapshotSection.tsx`** — `BodyCard`: measurements other than weight from `progress_snapshot`, plus
+  the body entries list, **collapsed** by default behind "Show entries (N)", with Add and edit. Its Strength,
+  Consistency and Fitness cards were replaced by `ProgressReport.tsx` in Phase 9 (mobile's
+  `progress-snapshot-section` still has them).
 - **`BodyMeasurementDialog.tsx`** — add or edit one body measurement (metric chips, value in the
   user's units, date, note; delete in edit mode). Presentational like `HealthCaptureDialog`.
   The web adds **editing**, which mobile doesn't have yet; device-imported rows never open it.

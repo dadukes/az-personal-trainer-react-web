@@ -27,10 +27,10 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 |-------|------|-------|
 | `/login` | `LoginPage` | Always navy (board `Welcome`): tagline, email and password, Sign in, "New here? Create an account"; keeps the delete-account link |
 | `/onboarding` | `OnboardingPage` | 3 steps (board `Onboarding`): name and coach voice; goal, level and session length; days and what gets in the way. Sends only backend-accepted profile fields |
-| `/` | `HomePage` | Today's job first, then the week strip, health in one row and Recent (Phase 8A); every manual-capture dialog hangs off the `QuickActionsFab` |
+| `/` | `HomePage` | Today's job first, then the week strip, health in one row and Recent (Phase 8A); two columns from `xl` (Phase 9); every manual-capture dialog hangs off the `QuickActionsFab` |
 | `/coach` | `CoachPage` | SSE chat (board `Coach`): plain coach text under the Forma mark, navy bubbles for the user, pill quick replies, rounded composer; desktop context panel from `xl` |
 | `/fuel` | `FuelPage` | Eaten today against Burned so far (`lib/fuel.ts`), meal photo (camera or library on a phone, drag and drop on desktop) → `logNutrition`, today's meals |
-| `/progress` | `ProgressPage` | Level bar, Strength, Consistency with the 28-day grid (`lib/progress.ts` over `/history`), Body, Fitness, Health trends, real coach insights only |
+| `/progress` | `ProgressPage` | The reporting page (Phase 9, board `WebProgress`): a range (4 weeks, 12 weeks, 6 months, 1 year; remembered in this browser) scopes the KPI row and four cards from `GET /progress/report` (`components/ProgressReport.tsx`, logic in `lib/report.ts`); then Body (entries, Add and edit), Health trends and real coach insights only |
 | `/activities` | `ActivitiesPage` | This week's sessions, time and distance up top; every session newest first from `GET /history`, cursor-paged, one Surface of rows per Mon–Sun week (`groupByWeek`) with older weeks' totals; workouts show ticked sets (`done_sets`) |
 | `/activities/:id` | `ActivityDetailPage` | One activity (`getActivity`): stats (duration, distance, pace/speed, a ride's max speed, calories, elevation, XP — only what the device shared, in `DetailHeader`'s `StatGrid`), `HeartRateCard` with the `hr_curve` chart, note. **Edit** for coach/quick logs (`ActivityEditDialog`); imports are read-only |
 | `/activities/workout/:id` | `WorkoutDetailPage` | One guided workout (`getWorkoutSession`): plan-day title, duration/sets/volume/calories/elevation/XP, watch HR combined across its recordings with one chart (`HeartRateCard`) — or, with no recording, the phone-sent all-day readings as "General HR data" (`GeneralHeartRateCard`: avg + smoothed curve, no max/zones/XP) — every exercise by section from the server's `exercises` (plan day merged with the logs: `logged` set pills, `done` without sets — "Recorded on your watch" / "logged with your coach" — and dashed `not_logged` cards). **Edit, or clicking an exercise, opens the logbook in Edit mode** (`/workout/edit/:id`) |
@@ -54,7 +54,7 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   **Today** is one card: Resume when a workout is in progress; else the navy hero with the day's name (`splitFocus` turns "Upper Body B (Incline Press & Back Sculpt)" into a title and a line), length and count, the coach's note, a labelled **Start workout**, View plan and "Already did it? Log it"; a **Done today** card (time, minutes and XP from today's `GET /history` row; no set count, since `total_sets` counts unticked sets) with View or edit and Log another; a **Rest day** card with "Next up"; or, with no plan, an invite to plan with the coach.
   **This week** is one Mon–Sun strip of `StatusTick`s with a separate sky dot for activity outside the plan (watch import, coach log, quick log), never mixed with the plan's tick, and "N of M workouts". A day opens its plan day; the latest missed plan day offers "Did it? Log it".
   **Health** is one row with only the numbers captured today, else an invite to enter them. **Recent** lists the newest three sessions from `GET /history`. The page still sets the store's `weekPlan` (`buildWeekPlan`) for Coach's side panel. A quick log re-loads the dashboard and Recent.
-  Desktop is a single 680 px column until Phase 9's two-column Home.
+  **From `xl` (1280) it's two columns** (Phase 9, board `WebHome`): today and the week on the left, Health (two by two) and Recent with "See your progress" on the right. The hero puts its actions beside the name, and the week becomes seven day cards (name, minutes, a tick when done, the first other activity with a sky dot). Below `xl` the columns stack in the same order as before. The board's "Log something" header button was left out: the FAB stays the single way in to the capture dialogs.
 - **Workout draft**: every change is stored (`workoutSync.ts`), and the page reopens a workout in progress from that alone, so it needs neither the plan nor a network, and a plan changed since can't throw it away. Home shows **Resume workout** in place of today's start, plus anything still waiting to sync (`WorkoutStatus.tsx`). Opening a different day asks first. While that question is open, nothing may be written from the day on screen, or it would replace the workout being resumed.
 - **Workout session**: an **immersive route**. `AppShell` hides all nav, so the logbook's X is the
   only exit and it asks first. A sentinel `history.pushState` entry turns browser/system Back into
@@ -106,9 +106,19 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
 - **Fuel**: read the file as a base64 data URL and post to `logNutrition`. Meals load from
   `getNutritionLogs`; Eaten sums today's, and a new log is prepended. Burned so far needs height,
   birth year and sex in the profile plus a weigh-in, or it isn't shown.
-- **Progress** (phase 8B): see the route table. `HealthTrendChart` is plain SVG now: one metric
-  at a time, chips only for metrics with data in the last 30 days, and the whole card hides when
-  there are none. The "This week" tiles and the placeholder insights are gone.
+- **Progress** (Phase 9): a reporting page on every width, cards in a grid of `minmax(420px, 1fr)` columns that stack on a phone.
+  The range picker scopes the KPI row and the four report cards; a new range keeps the old one on screen, dimmed, until it lands.
+  **KPIs** show only what has data: Sessions / week (averaged from `averaged_from`, so a year doesn't count months before the
+  account), Day streak with the level (or Level alone with no streak), VO2 max and Resting HR (from the 28-day snapshot), and
+  Zone 2+ / week (or Cardio / week without zones) over the range.
+  **Cards**: Strength as a table of every lift done twice (biggest gain first, 8 then "Show all"), Body weight (daily means,
+  latest 7-day average, + Weigh-in), Training time per week (bars) with the zone bar, and Consistency (one column per week,
+  full width past 12 weeks). Charts are plain SVG at the container's real width, one series in `--series`, with a hover
+  tooltip and a **Table** toggle on each, so no value is hover-only. The grid's workout and other-activity marks differ by
+  shape as well as colour (the two fills fail the colour-only check). Strength, Consistency and Fitness's 28-day cards were
+  replaced by these; Body keeps measurements other than weight and the entries.
+  `HealthTrendChart` is plain SVG: one metric at a time, chips only for metrics with data in the last 30 days, and the whole
+  card hides when there are none.
 - **Activities** (nav item between Fuel and Progress): one list for individual sessions; Progress
   keeps the trends. Rows are the `Row` primitive: a tick tile for workouts, the activity's icon for the rest. Week headers come from
   the response's `weeks` (whole-week totals, so a week split across two pages still adds up).
@@ -119,11 +129,9 @@ Scoped guidance for the screens. See the root [CLAUDE.md](../../CLAUDE.md) for p
   else to `/activities`. Zones come from the server (`seconds_in_zone`); `zone_model: null` with HR
   present → "Add your birth year to see heart-rate zones" → Profile. Coach and quick logs are
   editable (XP moves by the server's `xp_delta`); imports are read-only.
-- **Progress / Your progress**: `ProgressSnapshotSection` renders `GET /progress` →
-  `progress_snapshot` (store: `progressSnapshot`) — the web twin of the mobile section, same
-  rules: strength → consistency → body → fitness; a `null` field means "not tracked" (render
-  nothing, never nag); weight's headline is the 7-day average and the sparkline only shows once
-  the backend returns a trend; body changes are colour-neutral. Entries come from
+- **Progress / Body**: `ProgressSnapshotSection`'s `BodyCard` renders `progress_snapshot`'s measurements other than
+  weight and VO2 max (store: `progressSnapshot`); a `null` field means "not tracked" (render nothing, never nag); body
+  changes are colour-neutral. Entries come from
   `getBodyMeasurements` (90 days), sit collapsed behind "Show entries (N)", and include rows
   the **mobile app imported from Health Connect** — those show their source ("Fitdays",
   "Garmin Connect") and are **read-only** (the

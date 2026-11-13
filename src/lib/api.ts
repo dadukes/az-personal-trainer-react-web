@@ -709,6 +709,56 @@ export interface ProgressSnapshot {
   nutrition: { days_logged: number; avg_protein_g: number | null } | null;
 }
 
+/** `GET /progress/report` ranges: whole Mon–Sun weeks ending with this one. */
+export type ReportRange = '4w' | '12w' | '6m' | '1y';
+
+/** One lift in the report's strength table: first session's best against the latest. */
+export interface ReportLift {
+  name: string;
+  /** `e1rm_kg` for loaded lifts (from/to in kg, 1 dp); `reps` for bodyweight moves. */
+  measure: 'e1rm_kg' | 'reps';
+  from: number;
+  to: number;
+  sessions: number;
+  /** Past the server's noise threshold (e1RM up 2.5%, or more reps). */
+  improved: boolean;
+}
+
+export interface ReportWeek {
+  /** Monday, local. */
+  week_start: string;
+  sessions: number;
+  duration_minutes: number;
+  distance_km: number;
+}
+
+/**
+ * The web's reporting page (`GET /progress/report`). Same maths as `progress_snapshot`, over a
+ * chosen range. Null sections mean "not tracked" and render nothing.
+ */
+export interface ProgressReport {
+  range: ReportRange;
+  weeks_in_range: number;
+  /** First day (a Monday) and today, local `YYYY-MM-DD`. */
+  from: string;
+  to: string;
+  /** Where per-week averages start: `from`, or the day the account was made when later. */
+  averaged_from: string;
+  summary: { sessions: number; sessions_per_week: number; active_days: number; training_minutes: number };
+  strength: { exercises_tracked: number; exercises_improved: number; lifts: ReportLift[] } | null;
+  weight: (NonNullable<ProgressSnapshot['weight']> & { points: { date: string; kg: number }[] }) | null;
+  cardio: ProgressSnapshot['cardio'];
+  /** Every week of the range, oldest first. */
+  weeks: ReportWeek[];
+  /** Only days with training, oldest first; a workout wins the day. */
+  days: { date: string; mark: 'workout' | 'other' }[];
+}
+
+export interface ProgressReportResponse {
+  success: boolean;
+  data: ProgressReport;
+}
+
 /** AI-generated insight cards, served separately + cached so the main screen never blocks. */
 export interface ProgressInsightsResponse {
   success: boolean;
@@ -1419,6 +1469,11 @@ export async function getProgress(accessToken: string): Promise<ProgressResponse
  */
 export async function getProgressInsights(accessToken: string): Promise<ProgressInsightsResponse> {
   return apiFetch<ProgressInsightsResponse>('/progress/insights', accessToken);
+}
+
+/** The reporting page's numbers and series over `range` (no LLM; fast). */
+export async function getProgressReport(accessToken: string, range: ReportRange): Promise<ProgressReportResponse> {
+  return apiFetch<ProgressReportResponse>(`/progress/report?range=${range}`, accessToken);
 }
 
 // ─── Body measurements ────────────────────────────────────────────────────────
